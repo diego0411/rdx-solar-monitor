@@ -1,5 +1,8 @@
 import { upsertGrowattLatestData } from '../repositories/deviceLatestData.repository.js';
-import { listActiveGrowattDevices } from '../repositories/devices.repository.js';
+import {
+  listActiveGrowattDevices,
+  updateGrowattDeviceTelemetryState,
+} from '../repositories/devices.repository.js';
 import { GrowattProvider } from '../providers/growatt/GrowattProvider.js';
 import { normalizeGrowattLatestData } from '../providers/growatt/normalizeGrowattLatestData.js';
 import { env } from '../config/env.js';
@@ -71,6 +74,9 @@ export async function syncGrowattLatest() {
         try {
           const normalized = normalizeGrowattLatestData(data, device.id);
           await upsertGrowattLatestData(normalized);
+          await updateGrowattDeviceTelemetryState(
+            device.id, normalized.device_status, normalized.collected_at,
+          );
           result.updated += 1;
         } catch (error) {
           result.failed += 1;

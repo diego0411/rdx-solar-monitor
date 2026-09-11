@@ -1,6 +1,6 @@
 import { HyxiProvider } from '../providers/hyxi/HyxiProvider.js';
 import { normalizeHyxiDeviceRealtime } from '../providers/hyxi/normalizeHyxiDeviceRealtime.js';
-import { listActiveHyxiDevices } from '../repositories/devices.repository.js';
+import { listActiveHyxiDevices, updateDeviceInfo } from '../repositories/devices.repository.js';
 import { upsertDeviceLatestData } from '../repositories/deviceLatestData.repository.js';
 
 const provider = new HyxiProvider();
@@ -12,9 +12,23 @@ export async function syncHyxiRealtime() {
   for (const device of devices) {
     try {
       const { data } = await provider.getDeviceRealtime(device.serial_number);
-      await upsertDeviceLatestData(normalizeHyxiDeviceRealtime(data, device.id));
+      const latest = normalizeHyxiDeviceRealtime(data, device.id);
+      await upsertDeviceLatestData(latest);
+      if (latest.collected_at) {
+        await updateDeviceInfo(device.id, {
+          status: latest.device_status,
+          last_data_at: latest.collected_at,
+        });
+      }
       result.updated += 1;
-    } catch {
+    } catch (error) {
+      console.error('HYXi realtime device sync failed:', {
+        serial_number: device.serial_number,
+        message: error.message,
+        http_status: error.status ?? error.statusCode ?? null,
+        provider_code: error.providerCode ?? null,
+        provider_msg: error.providerMsg ?? null,
+      });
       result.failed += 1;
     }
   }

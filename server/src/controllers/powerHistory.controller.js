@@ -1,5 +1,6 @@
 import { syncHyxiPowerHistory } from '../services/hyxiPowerHistory.service.js';
 import { listPlantPowerIntervals } from '../repositories/plantPowerIntervals.repository.js';
+import { getStoredPlantById } from '../repositories/plants.repository.js';
 
 function validDate(value) {
   return typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value)
@@ -22,7 +23,15 @@ export async function getStoredPowerHistory(req, res) {
     return res.status(400).json({ error: 'plantId o startTime inválidos' });
   }
   try {
-    return res.json(await listPlantPowerIntervals(req.params.plantId, req.query.startTime));
+    let rows = await listPlantPowerIntervals(req.params.plantId, req.query.startTime);
+    if (!rows.length) {
+      const plant = await getStoredPlantById(req.params.plantId);
+      if (plant?.provider === 'hyxi' && plant.active && plant.external_plant_id) {
+        await syncHyxiPowerHistory(plant.external_plant_id, req.query.startTime);
+        rows = await listPlantPowerIntervals(req.params.plantId, req.query.startTime);
+      }
+    }
+    return res.json(rows);
   } catch {
     return res.status(503).json({ error: 'No se pudo consultar la curva de potencia' });
   }

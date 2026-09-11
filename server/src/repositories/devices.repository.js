@@ -58,6 +58,23 @@ export async function upsertGrowattDevice(device) {
   return 'inserted';
 }
 
+export async function linkGrowattDeviceToPlant(serialNumber, plantId) {
+  const { data, error } = await supabase.from('devices').update({ plant_id: plantId })
+    .eq('provider', 'growatt').eq('serial_number', serialNumber).select('id');
+  if (error) throw new Error(`No se pudo vincular el dispositivo Growatt: ${error.message}`);
+  return data.length;
+}
+
+export async function updateGrowattDeviceTelemetryState(id, deviceStatus, collectedAt) {
+  const values = {
+    status: deviceStatus,
+    ...(collectedAt ? { last_data_at: collectedAt } : {}),
+  };
+  const { data, error } = await supabase.from('devices').update(values)
+    .eq('id', id).eq('provider', 'growatt').select('id').single();
+  if (error || !data) throw new Error('No se pudo actualizar el estado del dispositivo Growatt');
+}
+
 export async function listStoredDevices() {
   const devices = [];
   const pageSize = 1000;

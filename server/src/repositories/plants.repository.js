@@ -13,6 +13,21 @@ export async function listActiveHyxiPlants() {
   }
 }
 
+export async function getStoredPlantById(id) {
+  const { data, error } = await supabase.from('plants')
+    .select('id, provider, external_plant_id, active').eq('id', id).maybeSingle();
+  if (error) throw new Error('No se pudo consultar la planta almacenada');
+  return data;
+}
+
+export async function listActiveGrowattPlants() {
+  const { data, error } = await supabase.from('plants')
+    .select('id, external_plant_id').eq('provider', 'growatt')
+    .not('external_plant_id', 'is', null).order('id', { ascending: true });
+  if (error) throw new Error('No se pudieron consultar las plantas Growatt activas');
+  return data;
+}
+
 export async function updatePlantDetail(id, detail) {
   const { data, error } = await supabase.from('plants').update({
     plant_type: detail.plant_type,

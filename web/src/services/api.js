@@ -3,8 +3,13 @@ import { getSession } from './supabase.js';
 
 export async function apiFetch(path, options = {}) {
   const session = await getSession();
+  if (!session?.access_token) {
+    const error = new Error('Sesión no autenticada');
+    error.status = 401;
+    throw error;
+  }
   const headers = new Headers(options.headers);
-  if (session?.access_token) headers.set('Authorization', `Bearer ${session.access_token}`);
+  headers.set('Authorization', `Bearer ${session.access_token}`);
   const response = await fetch(`${API_URL}/${path.replace(/^\/+/, '')}`, {
     ...options,
     headers,

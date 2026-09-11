@@ -6,7 +6,16 @@ import { fileURLToPath } from 'node:url';
 
 const provider = new GrowattProvider();
 const PROGRESS_FILE = fileURLToPath(new URL('../../.cache/growatt-plant-sync.json', import.meta.url));
-const RECENT_WINDOW_MS = 5 * 60 * 1000;
+const SYNC_INTERVAL_MS = 5 * 60 * 1000;
+let scheduledSync = null;
+
+function scheduleNextSync(result) {
+  if (scheduledSync || result.remaining_users === 0 || result.errors.length > 0) return;
+  scheduledSync = setTimeout(() => {
+    scheduledSync = null;
+    syncGrowattPlants().catch(() => {});
+  }, SYNC_INTERVAL_MS);
+}
 
 function readProgress() {
   if (!existsSync(PROGRESS_FILE)) return {};
@@ -26,8 +35,9 @@ function writeProgress(progress) {
 export async function syncGrowattPlants() {
   const account = await getOrCreateGrowattAccount();
   const result = {
-    provider: 'growatt', fetched_users: 0, processed_user: null, fetched_plants: 0,
-    inserted: 0, updated: 0, remaining_users: 0, failed: 0, errors: [],
+    provider: 'growatt', fetched_users: 0, processed_user: null, processed_users: 0,
+    next_user: null, fetched_plants: 0, inserted: 0, updated: 0, remaining_users: 0,
+    failed: 0, errors: [],
   };
   const lastSyncedAt = new Date().toISOString();
   let users;
@@ -41,14 +51,14 @@ export async function syncGrowattPlants() {
   }
 
   const progress = readProgress();
-  const now = Date.now();
   const candidates = users.map(user => ({
     user,
     userName: user.c_user_name ?? user.user_name ?? user.username,
-  })).filter(({ userName }) => userName && (!progress[userName]
-    || now - Number(progress[userName]) >= RECENT_WINDOW_MS));
+  })).filter(({ userName }) => userName && !progress[userName]);
+  result.processed_users = users.length - candidates.length;
   result.remaining_users = candidates.length;
-  const selected = candidates.sort((a, b) => (Number(progress[a.userName] || 0) - Number(progress[b.userName] || 0)))[0];
+  result.next_user = candidates[0]?.userName ?? null;
+  const selected = candidates[0];
   if (!selected) return result;
 
   result.processed_user = selected.userName;
@@ -66,15 +76,15 @@ export async function syncGrowattPlants() {
         result.errors.push(error instanceof Error ? error.message : 'Error de upsert Growatt');
       }
     }
-    progress[selected.userName] = now;
+    progress[selected.userName] = true;
     writeProgress(progress);
-    result.remaining_users = users.filter(user => {
-      const name = user.c_user_name ?? user.user_name ?? user.username;
-      return name && name !== selected.userName;
-    }).length;
+    result.processed_users += 1;
+    result.remaining_users -= 1;
+    result.next_user = candidates[1]?.userName ?? null;
   } catch (error) {
     result.failed += 1;
     result.errors.push(error instanceof Error ? error.message : 'Error de consulta Growatt');
   }
+  scheduleNextSync(result);
   return result;
 }

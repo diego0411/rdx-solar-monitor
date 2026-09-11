@@ -130,6 +130,31 @@ export class GrowattProvider {
     return devices;
   }
 
+  async listPlantDevices(plantId) {
+    const url = new URL('/v1/device/list', this.baseUrl);
+    url.search = new URLSearchParams({
+      plant_id: String(plantId), page: '1', perpage: '100',
+    });
+    const response = await fetch(url, {
+      method: 'GET',
+      headers: { Accept: 'application/json', token: this.apiToken },
+      redirect: 'error',
+      signal: AbortSignal.timeout(10000),
+    });
+    if (!response.ok) throw new Error('Growatt plant devices request failed');
+
+    const payload = await response.json();
+    if (Number(payload?.error_code) === 10012) {
+      const error = new Error('Growatt rate limit');
+      error.rateLimited = true;
+      throw error;
+    }
+    if (payload?.code !== 0 && payload?.error_code !== 0) {
+      throw new Error('Growatt plant devices response failed');
+    }
+    return Array.isArray(payload?.data?.devices) ? payload.data.devices : [];
+  }
+
   async queryLastData(deviceType, deviceSns, apiToken) {
     const cacheKey = `${deviceType}:${apiToken}`;
     const cached = lastDataCache.get(cacheKey);

@@ -45,6 +45,22 @@ const providerGroups = [
     ['offline_devices', 'Sin conexión'], ['unknown_devices', 'Desconocido'],
   ] },
 ];
+const hyxiInventoryMetrics = [
+  ['total_plants', 'Plantas'],
+  ['inverter_devices', 'Inversores'],
+  ['communication_devices', 'Dispositivos de comunicación'],
+  ['total_devices', 'Total dispositivos HYXi'],
+];
+const hyxiDeviceGroups = [
+  { title: 'Inversores', metrics: [
+    ['inverter_total', 'Total'], ['inverter_online', 'En línea'],
+    ['inverter_offline', 'Sin conexión'], ['inverter_alarm', 'Con alarma'],
+  ] },
+  { title: 'Comunicación', metrics: [
+    ['communication_total', 'Total'], ['communication_online', 'En línea'],
+    ['communication_offline', 'Sin conexión'], ['communication_alarm', 'Con alarma'],
+  ] },
+];
 
 function formatValue(value) {
   return typeof value === 'number' && Number.isFinite(value) ? formatter.format(value) : '—';
@@ -124,7 +140,25 @@ onUnmounted(() => controller.abort());
       <div v-if="summary.providers?.length" class="providers-grid">
         <article v-for="provider in summary.providers" :key="provider.provider" class="card provider-card">
           <h3 class="provider-title">{{ providerNames[provider.provider] ?? provider.provider }}</h3>
-          <div v-for="group in providerGroups" :key="group.title" class="provider-group">
+          <div v-if="provider.provider === 'hyxi'" class="provider-group">
+            <h4>Inventario HYXi</h4>
+            <dl class="provider-metrics">
+              <div v-for="[key, label] in hyxiInventoryMetrics" :key="key">
+                <dt>{{ label }}</dt><dd>{{ formatValue(provider[key]) }}</dd>
+              </div>
+            </dl>
+          </div>
+          <template v-if="provider.provider === 'hyxi'">
+            <div v-for="group in hyxiDeviceGroups" :key="group.title" class="provider-group">
+              <h4>{{ group.title }}</h4>
+              <dl class="provider-metrics">
+                <div v-for="[key, label] in group.metrics" :key="key">
+                  <dt>{{ label }}</dt><dd>{{ formatValue(provider[key]) }}</dd>
+                </div>
+              </dl>
+            </div>
+          </template>
+          <div v-for="group in providerGroups.filter(group => provider.provider !== 'hyxi' || group.title !== 'Dispositivos')" :key="group.title" class="provider-group">
             <h4>{{ group.title }}</h4>
             <dl class="provider-metrics">
               <div v-for="[key, label] in group.metrics" :key="key">

@@ -82,7 +82,10 @@ export class HyxiProvider {
     const payload = await hyxiClient.get(`${HYXI_ENDPOINTS.deviceRealtime}?${query}`);
 
     if (payload?.success !== true || payload.code !== '0') {
-      throw new Error('Invalid HYXi device realtime response');
+      const error = new Error(payload?.msg || 'Invalid HYXi device realtime response');
+      error.providerCode = payload?.code;
+      error.providerMsg = payload?.msg;
+      throw error;
     }
 
     return payload;

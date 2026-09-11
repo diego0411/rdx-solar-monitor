@@ -11,6 +11,7 @@ const props = defineProps({ plantId: { type: String, required: true }, timezone:
 const today = new Date();
 const selectedDate = ref(`${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`);
 const points = ref([]), loading = ref(false), error = ref(''), container = ref(null);
+const chartWidth = ref(0), chartHeight = ref(0), chartReady = ref(false);
 let chart, observer;
 const seriesFields = [
   ['generation_power_w', 'Generación'],
@@ -23,14 +24,22 @@ function dispose() {
   chart?.dispose();
   observer = null;
   chart = null;
+  chartReady.value = false;
 }
 function render() {
   if (!container.value || !points.value.length) return;
   if (!chart) {
     chart = echarts.init(container.value);
-    observer = new ResizeObserver(() => chart?.resize());
+    chartReady.value = true;
+    observer = new ResizeObserver(entries => {
+      chartWidth.value = Math.round(entries[0]?.contentRect.width ?? container.value?.clientWidth ?? 0);
+      chartHeight.value = Math.round(entries[0]?.contentRect.height ?? container.value?.clientHeight ?? 0);
+      chart?.resize();
+    });
     observer.observe(container.value);
   }
+  chartWidth.value = container.value.clientWidth;
+  chartHeight.value = container.value.clientHeight;
   let formatter;
   try {
     formatter = new Intl.DateTimeFormat('es-BO', { timeZone: props.timezone || undefined, hour: '2-digit', minute: '2-digit' });
@@ -61,8 +70,12 @@ watch(() => [props.plantId, selectedDate.value], async ([id, day], previous, onC
     const data = await apiFetch(`/plants/${encodeURIComponent(id)}/power-history?${new URLSearchParams({ startTime: day })}`, { signal: controller.signal });
     if (!Array.isArray(data)) throw new Error('Respuesta inválida');
     if (!controller.signal.aborted) points.value = [...data].sort((a, b) => Date.parse(a.interval_start) - Date.parse(b.interval_start));
-  } catch {
-    if (!controller.signal.aborted) error.value = 'No se pudo cargar la curva de potencia. Comprueba la conexión o selecciona otra fecha.';
+  } catch (failure) {
+    if (!controller.signal.aborted) {
+      error.value = failure.status === 401
+        ? 'Tu sesión no está autenticada. Inicia sesión nuevamente para cargar la curva de potencia.'
+        : 'No se pudo cargar la curva de potencia. Comprueba la conexión o selecciona otra fecha.';
+    }
   } finally {
     if (!controller.signal.aborted) loading.value = false;
   }
@@ -78,6 +91,7 @@ onBeforeUnmount(dispose);
       <h2 id="power-title">Curva de potencia</h2>
       <label>Fecha <input v-model="selectedDate" type="date" /></label>
     </div>
+    <p role="status">DEBUG points={{ points.length }} · container={{ chartWidth }}×{{ chartHeight }} · chart={{ chartReady ? 'sí' : 'no' }}</p>
     <p v-if="loading" role="status">Cargando curva de potencia…</p>
     <p v-else-if="error" role="alert">{{ error }}</p>
     <p v-else-if="!selectedDate">Selecciona una fecha.</p>

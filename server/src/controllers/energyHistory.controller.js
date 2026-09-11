@@ -1,11 +1,21 @@
 import { syncHyxiEnergyHistory } from '../services/hyxiEnergyHistory.service.js';
 import { listEnergyIntervals } from '../repositories/energyIntervals.repository.js';
+import { getStoredPlantById } from '../repositories/plants.repository.js';
 
 function validQuery({ timeType, startTime }) {
   return typeof timeType === 'string' && /^[123]$/.test(timeType)
     && typeof startTime === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(startTime)
     && Number.isFinite(Date.parse(startTime))
     && new Date(startTime).toISOString().slice(0, 10) === startTime;
+}
+
+function hasEnergyValues(rows) {
+  return rows.some(row => [
+    row.generation_kwh,
+    row.consumption_kwh,
+    row.grid_import_kwh,
+    row.grid_export_kwh,
+  ].some(value => value !== null && value !== undefined));
 }
 
 export async function postHyxiSyncEnergyHistory(req, res) {
@@ -24,7 +34,16 @@ export async function getStoredEnergyHistory(req, res) {
     return res.status(400).json({ error: 'plantId, timeType o startTime inválidos' });
   }
   try {
-    return res.json(await listEnergyIntervals(req.params.plantId, Number(req.query.timeType), req.query.startTime));
+    const timeType = Number(req.query.timeType);
+    let rows = await listEnergyIntervals(req.params.plantId, timeType, req.query.startTime);
+    if (!hasEnergyValues(rows) && timeType === 1) {
+      const plant = await getStoredPlantById(req.params.plantId);
+      if (plant?.provider === 'hyxi' && plant.active && plant.external_plant_id) {
+        await syncHyxiEnergyHistory(plant.external_plant_id, 1, req.query.startTime);
+        rows = await listEnergyIntervals(req.params.plantId, 1, req.query.startTime);
+      }
+    }
+    return res.json(rows);
   } catch {
     return res.status(503).json({ error: 'No se pudo consultar el histórico energético' });
   }

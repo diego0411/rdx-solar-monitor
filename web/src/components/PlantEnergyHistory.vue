@@ -68,6 +68,7 @@ watch(() => [props.plantId, selectedDate.value], async ([id, day], previous, onC
   }
 }, { immediate: true });
 watch(container, () => { dispose(); render(); }, { flush: 'post' });
+watch(points, render, { flush: 'post' });
 watch(() => props.timezone, render);
 onBeforeUnmount(dispose);
 </script>

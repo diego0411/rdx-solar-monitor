@@ -1,5 +1,5 @@
 const devicePageStates = new Map([
-  [1, 'offline'], [2, 'online'], [3, 'alarm'], [10, 'inactive'],
+  [1, 'online'], [2, 'offline'], [3, 'alarm'], [10, 'inactive'],
 ]);
 
 export function normalizeHyxiDevicePage(device, plantId) {

@@ -9,6 +9,22 @@ function sum(rows, field) {
   return Number(value.toFixed(2));
 }
 
+function summarizeHyxiDevices(devices) {
+  const inverters = devices.filter(device => ['STRING_INVERTER', 'HYBRID_INVERTER']
+    .includes(device.device_type));
+  const communication = devices.filter(device => device.device_type === 'COLLECTOR');
+  return {
+    inverter_total: inverters.length,
+    inverter_online: inverters.filter(device => device.status === 'online').length,
+    inverter_offline: inverters.filter(device => device.status === 'offline').length,
+    inverter_alarm: inverters.filter(device => device.status === 'alarm').length,
+    communication_total: communication.length,
+    communication_online: communication.filter(device => device.status === 'online').length,
+    communication_offline: communication.filter(device => device.status === 'offline').length,
+    communication_alarm: communication.filter(device => device.status === 'alarm').length,
+  };
+}
+
 export async function getDashboardSummary() {
   const data = await readDashboardData();
   const plantIds = new Set(data.plants.map(plant => plant.id));
@@ -21,15 +37,19 @@ export async function getDashboardSummary() {
   const providers = [...new Set([...data.plants, ...devices].map(row => row.provider))].sort();
   return {
     ...summarize(scoped, now),
-    providers: providers.map(provider => ({
-      provider,
-      ...summarize({
+    providers: providers.map(provider => {
+      const providerDevices = devices.filter(row => row.provider === provider);
+      return {
+        provider,
+        ...summarize({
         plants: data.plants.filter(row => row.provider === provider),
-        devices: devices.filter(row => row.provider === provider),
+        devices: providerDevices,
         latest: latest.filter(row => row.device.provider === provider),
         energy: data.energy.filter(row => row.provider === provider),
-      }, now),
-    })),
+        }, now),
+        ...(provider === 'hyxi' ? summarizeHyxiDevices(providerDevices) : {}),
+      };
+    }),
   };
 }
 
@@ -46,6 +66,9 @@ function summarize({ plants, devices, latest, energy }, now) {
     alarm_plants: plants.filter(plant => plant.status === 'alarm').length,
     total_capacity_kwp: sum(plants, 'capacity_kwp'),
     total_devices: devices.length,
+    inverter_devices: devices.filter(device => ['STRING_INVERTER', 'HYBRID_INVERTER']
+      .includes(device.device_type)).length,
+    communication_devices: devices.filter(device => device.device_type === 'COLLECTOR').length,
     online_devices: devices.filter(device => device.status === 'online').length,
     unknown_devices: devices.filter(device => !['online', 'offline'].includes(device.status)).length,
     current_generation_power_w: sum(fresh, 'pv_power'),

@@ -17,6 +17,29 @@ function hasElectricalMetric(row) {
       'battery_discharge_power'].some(key => row[key] != null && Number.isFinite(Number(row[key])));
 }
 
+function latestTimestamp(values) {
+  return values.filter(value => value && Number.isFinite(Date.parse(value)))
+    .sort((a, b) => Date.parse(b) - Date.parse(a))[0] ?? null;
+}
+
+function summarizeHyxiDevices(devices, latestCollectedAt, plantLastSyncedAt) {
+  const inverters = devices.filter(device => ['STRING_INVERTER', 'HYBRID_INVERTER']
+    .includes(device.device_type));
+  const communication = devices.filter(device => device.device_type === 'COLLECTOR');
+  return {
+    inverter_total: inverters.length,
+    inverter_online: inverters.filter(device => device.status === 'online').length,
+    inverter_offline: inverters.filter(device => device.status === 'offline').length,
+    inverter_alarm: inverters.filter(device => device.status === 'alarm').length,
+    communication_total: communication.length,
+    communication_online: communication.filter(device => device.status === 'online').length,
+    communication_offline: communication.filter(device => device.status === 'offline').length,
+    communication_alarm: communication.filter(device => device.status === 'alarm').length,
+    latest_collected_at: latestCollectedAt,
+    latest_synced_at: latestTimestamp([plantLastSyncedAt, ...devices.map(device => device.last_synced_at)]),
+  };
+}
+
 export async function getPlantOverview(plantId) {
   const plant = (await listStoredPlants()).find(row => row.id === plantId.toLowerCase());
   if (!plant) return null;
@@ -79,8 +102,15 @@ export async function getPlantsOverview() {
     listStoredPlants(), listStoredDevices(), listDeviceLatestData(), listPlantEnergySummaries(),
   ]);
   const devicesById = new Map(devices.map(device => [device.id, device]));
+  const activeDevicesByPlant = new Map();
+  for (const device of devices.filter(device => device.active === true)) {
+    const stored = activeDevicesByPlant.get(device.plant_id) ?? [];
+    stored.push(device);
+    activeDevicesByPlant.set(device.plant_id, stored);
+  }
   const energyByPlant = new Map(summaries.map(summary => [summary.plant_id, summary]));
   const telemetryByPlant = new Map();
+  const now = Date.now();
   for (const row of latest) {
     const device = devicesById.get(row.device_id);
     if (!device) continue;
@@ -104,11 +134,11 @@ export async function getPlantsOverview() {
     telemetryByPlant.set(device.plant_id, aggregate);
   }
   // listStoredPlants already orders by name ascending, then id.
-  const now = Date.now();
   return plants.filter(plant => plant.active === true).map(plant => {
     const energy = energyByPlant.get(plant.id);
     const telemetry = telemetryByPlant.get(plant.id);
     const freshness = telemetryFreshness(telemetry?.electricalLastDataAt ?? null, now);
+    const plantDevices = activeDevicesByPlant.get(plant.id) ?? [];
     return {
       id: plant.id,
       external_plant_id: plant.external_plant_id,
@@ -122,6 +152,9 @@ export async function getPlantsOverview() {
       last_data_at: telemetry?.lastDataAt ?? null,
       ...freshness,
       data_status: telemetry?.electricalHasFresh ? 'fresh' : freshness.data_status,
+      ...(plant.provider === 'hyxi'
+        ? summarizeHyxiDevices(plantDevices, telemetry?.lastDataAt ?? null, plant.last_synced_at)
+        : {}),
     };
   });
 }

@@ -1,6 +1,6 @@
 import { GrowattProvider } from '../providers/growatt/GrowattProvider.js';
 import { syncGrowattPlants } from '../services/growattPlants.service.js';
-import { syncGrowattDevices } from '../services/growattDevices.service.js';
+import { linkNextGrowattPlantDevices } from '../services/growattDevices.service.js';
 import { syncGrowattLatest } from '../services/growattLatest.service.js';
 
 const provider = new GrowattProvider();
@@ -29,7 +29,7 @@ export async function postGrowattSyncPlants(req, res) {
 
 export async function postGrowattSyncDevices(req, res) {
   try {
-    return res.json(await syncGrowattDevices({ forceCached: true }));
+    return res.json(await linkNextGrowattPlantDevices());
   } catch (error) {
     if (error.cachedDataUnavailable) {
       return res.status(409).json({
