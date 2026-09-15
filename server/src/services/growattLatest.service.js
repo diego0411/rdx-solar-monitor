@@ -6,6 +6,7 @@ import {
 import { GrowattProvider } from '../providers/growatt/GrowattProvider.js';
 import { normalizeGrowattLatestData } from '../providers/growatt/normalizeGrowattLatestData.js';
 import { env } from '../config/env.js';
+import { updateGrowattPlantStatusesFromDevices } from '../repositories/plants.repository.js';
 
 const provider = new GrowattProvider();
 
@@ -83,6 +84,12 @@ export async function syncGrowattLatest() {
         }
       }
     }
+  }
+  try {
+    result.plants = await updateGrowattPlantStatusesFromDevices();
+  } catch (error) {
+    result.failed += 1;
+    result.errors.push(error instanceof Error ? error.message : 'Error de estados de plantas Growatt');
   }
   return result;
 }

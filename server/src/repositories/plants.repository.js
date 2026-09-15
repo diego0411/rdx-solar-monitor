@@ -28,6 +28,32 @@ export async function listActiveGrowattPlants() {
   return data;
 }
 
+export function deriveGrowattPlantStatus(devices) {
+  const statuses = devices.map(device => device.status);
+  if (statuses.includes('alarm')) return 'alarm';
+  if (statuses.includes('online')) return 'online';
+  if (statuses.length > 0 && statuses.every(status => status === 'offline')) return 'offline';
+  return 'unknown';
+}
+
+export async function updateGrowattPlantStatusesFromDevices() {
+  const [{ data: plants, error: plantsError }, { data: devices, error: devicesError }] = await Promise.all([
+    supabase.from('plants').select('id, name').eq('provider', 'growatt').eq('active', true),
+    supabase.from('devices').select('plant_id, status').eq('provider', 'growatt').eq('active', true),
+  ]);
+  if (plantsError || devicesError) throw new Error('No se pudieron calcular los estados de plantas Growatt');
+
+  const results = [];
+  for (const plant of plants) {
+    const status = deriveGrowattPlantStatus(devices.filter(device => device.plant_id === plant.id));
+    const { error } = await supabase.from('plants').update({ status })
+      .eq('id', plant.id).eq('provider', 'growatt');
+    if (error) throw new Error(`No se pudo actualizar el estado de la planta Growatt ${plant.id}`);
+    results.push({ id: plant.id, name: plant.name, status });
+  }
+  return results;
+}
+
 export async function updatePlantDetail(id, detail) {
   const { data, error } = await supabase.from('plants').update({
     plant_type: detail.plant_type,
