@@ -29,6 +29,7 @@ async function logout() {
       <nav aria-label="Navegación principal">
         <RouterLink to="/" class="nav-link" exact-active-class="is-active">Dashboard</RouterLink>
         <RouterLink to="/plants" class="nav-link" active-class="is-active">Plantas</RouterLink>
+        <RouterLink to="/map" class="nav-link" active-class="is-active">Mapa</RouterLink>
         <RouterLink to="/devices" class="nav-link" active-class="is-active">Dispositivos</RouterLink>
       </nav>
       <div>

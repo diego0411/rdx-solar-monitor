@@ -1,6 +1,7 @@
 import { createRouter, createWebHistory } from 'vue-router';
 import DashboardView from '../views/DashboardView.vue';
 import PlantsView from '../views/PlantsView.vue';
+import PlantMapView from '../views/PlantMapView.vue';
 import PlantDetailView from '../views/PlantDetailView.vue';
 import LoginView from '../views/LoginView.vue';
 import DevicesView from '../views/DevicesView.vue';
@@ -13,6 +14,7 @@ const router = createRouter({
     { path: '/login', name: 'login', component: LoginView },
     { path: '/', name: 'dashboard', component: DashboardView },
     { path: '/plants', name: 'plants', component: PlantsView },
+    { path: '/map', name: 'map', component: PlantMapView },
     { path: '/devices', name: 'devices', component: DevicesView },
     { path: '/devices/:id', name: 'device-detail', component: DeviceDetailView },
     { path: '/plants/:id', name: 'plant-detail', component: PlantDetailView },

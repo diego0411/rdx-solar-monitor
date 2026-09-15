@@ -55,6 +55,9 @@ export async function getPlantOverview(plantId) {
     const values = rows.filter(row => row[key] != null && Number.isFinite(Number(row[key])));
     return values.length ? rounded(values.reduce((total, row) => total + Number(row[key]), 0)) : null;
   };
+  const growattInverterLatest = devices.filter(device => device.provider === 'growatt'
+    && device.active === true && String(device.device_type).toUpperCase() === 'MIN')
+    .map(device => latestById.get(device.id)).filter(Boolean);
   const soc = electrical.filter(row => row.battery_soc != null && Number.isFinite(Number(row.battery_soc)));
   const timestamps = latest.map(row => row.collected_at).filter(value => value && Number.isFinite(Date.parse(value)));
   const energy = summaries.find(row => row.plant_id === plant.id);
@@ -68,10 +71,16 @@ export async function getPlantOverview(plantId) {
       longitude: rounded(plant.longitude),
       last_data_at: lastDataAt,
     },
-    energy: Object.fromEntries([
-      'today_generation_kwh', 'month_generation_kwh', 'year_generation_kwh', 'total_generation_kwh',
-      'today_consumption_kwh', 'month_consumption_kwh', 'year_consumption_kwh', 'total_consumption_kwh',
-    ].map(key => [key, rounded(energy?.[key])])),
+    energy: {
+      ...Object.fromEntries([
+        'today_generation_kwh', 'month_generation_kwh', 'year_generation_kwh', 'total_generation_kwh',
+        'today_consumption_kwh', 'month_consumption_kwh', 'year_consumption_kwh', 'total_consumption_kwh',
+      ].map(key => [key, rounded(energy?.[key])])),
+      ...(plant.provider === 'growatt' ? {
+        today_generation_kwh: sum(growattInverterLatest, 'today_energy'),
+        total_generation_kwh: sum(growattInverterLatest, 'total_energy'),
+      } : {}),
+    },
     realtime: {
       ...telemetryFreshness(lastDataAt),
       pv_power: sum(electrical, 'pv_power'),
