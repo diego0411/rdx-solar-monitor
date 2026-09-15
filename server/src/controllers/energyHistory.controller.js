@@ -1,4 +1,5 @@
 import { syncHyxiEnergyHistory } from '../services/hyxiEnergyHistory.service.js';
+import { syncGrowattEnergyHistory } from '../services/growattEnergyHistory.service.js';
 import { listEnergyIntervals } from '../repositories/energyIntervals.repository.js';
 import { getStoredPlantById } from '../repositories/plants.repository.js';
 
@@ -15,7 +16,8 @@ function hasEnergyValues(rows) {
     row.consumption_kwh,
     row.grid_import_kwh,
     row.grid_export_kwh,
-  ].some(value => value !== null && value !== undefined));
+  ].some(value => value !== null && value !== undefined && String(value).trim() !== ''
+    && Number.isFinite(Number(value))));
 }
 
 export async function postHyxiSyncEnergyHistory(req, res) {
@@ -40,11 +42,14 @@ export async function getStoredEnergyHistory(req, res) {
       const plant = await getStoredPlantById(req.params.plantId);
       if (plant?.provider === 'hyxi' && plant.active && plant.external_plant_id) {
         await syncHyxiEnergyHistory(plant.external_plant_id, 1, req.query.startTime);
-        rows = await listEnergyIntervals(req.params.plantId, 1, req.query.startTime);
+      } else if (plant?.provider === 'growatt' && plant.active) {
+        await syncGrowattEnergyHistory(plant, req.query.startTime);
       }
+      rows = await listEnergyIntervals(req.params.plantId, 1, req.query.startTime);
     }
     return res.json(rows);
-  } catch {
+  } catch (error) {
+    if (error?.frequentAccess) return res.status(503).json({ error: 'FREQUENTLY_ACCESS' });
     return res.status(503).json({ error: 'No se pudo consultar el histórico energético' });
   }
 }

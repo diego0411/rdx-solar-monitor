@@ -111,6 +111,7 @@ export async function getPlantsOverview() {
     listStoredPlants(), listStoredDevices(), listDeviceLatestData(), listPlantEnergySummaries(),
   ]);
   const devicesById = new Map(devices.map(device => [device.id, device]));
+  const latestByDeviceId = new Map(latest.map(row => [row.device_id, row]));
   const activeDevicesByPlant = new Map();
   for (const device of devices.filter(device => device.active === true)) {
     const stored = activeDevicesByPlant.get(device.plant_id) ?? [];
@@ -123,21 +124,24 @@ export async function getPlantsOverview() {
   for (const row of latest) {
     const device = devicesById.get(row.device_id);
     if (!device) continue;
+    const electricalMetric = hasElectricalMetric(row);
+    const effectiveLastDataAt = row.collected_at
+      ?? (device.provider === 'growatt' && electricalMetric ? row.updated_at : null);
     const aggregate = telemetryByPlant.get(device.plant_id)
       ?? { power: 0, lastDataAt: null, electricalLastDataAt: null, electricalHasFresh: false };
     const power = Number(row.pv_power ?? 0);
     if (device.device_type !== 'COLLECTOR' && Number.isFinite(power)) aggregate.power += power;
-    if (row.collected_at && Number.isFinite(Date.parse(row.collected_at))
-        && (aggregate.lastDataAt === null || Date.parse(row.collected_at) > Date.parse(aggregate.lastDataAt))) {
-      aggregate.lastDataAt = row.collected_at;
+    if (effectiveLastDataAt && Number.isFinite(Date.parse(effectiveLastDataAt))
+        && (aggregate.lastDataAt === null || Date.parse(effectiveLastDataAt) > Date.parse(aggregate.lastDataAt))) {
+      aggregate.lastDataAt = effectiveLastDataAt;
     }
-    if (hasElectricalMetric(row) && row.collected_at && Number.isFinite(Date.parse(row.collected_at))
+    if (electricalMetric && effectiveLastDataAt && Number.isFinite(Date.parse(effectiveLastDataAt))
         && (aggregate.electricalLastDataAt === null
-          || Date.parse(row.collected_at) > Date.parse(aggregate.electricalLastDataAt))) {
-      aggregate.electricalLastDataAt = row.collected_at;
+          || Date.parse(effectiveLastDataAt) > Date.parse(aggregate.electricalLastDataAt))) {
+      aggregate.electricalLastDataAt = effectiveLastDataAt;
     }
-    if (hasElectricalMetric(row)
-        && telemetryFreshness(row.collected_at, now).data_status === 'fresh') {
+    if (electricalMetric
+        && telemetryFreshness(effectiveLastDataAt, now).data_status === 'fresh') {
       aggregate.electricalHasFresh = true;
     }
     telemetryByPlant.set(device.plant_id, aggregate);
@@ -148,6 +152,19 @@ export async function getPlantsOverview() {
     const telemetry = telemetryByPlant.get(plant.id);
     const freshness = telemetryFreshness(telemetry?.electricalLastDataAt ?? null, now);
     const plantDevices = activeDevicesByPlant.get(plant.id) ?? [];
+    const growattInverterLatest = plantDevices.filter(device => device.provider === 'growatt'
+      && String(device.device_type).toUpperCase() === 'MIN')
+      .map(device => latestByDeviceId.get(device.id)).filter(Boolean);
+    const growattInverters = plantDevices.filter(device => device.provider === 'growatt'
+      && String(device.device_type).toUpperCase() === 'MIN');
+    const sumGrowattValue = getter => {
+      const values = growattInverterLatest.map(getter)
+        .filter(value => value !== null && value !== undefined && String(value).trim() !== ''
+          && Number.isFinite(Number(value)));
+      return values.length
+        ? rounded(values.reduce((total, value) => total + Number(value), 0))
+        : null;
+    };
     return {
       id: plant.id,
       external_plant_id: plant.external_plant_id,
@@ -156,14 +173,23 @@ export async function getPlantsOverview() {
       status: plant.status,
       capacity_kwp: rounded(plant.capacity_kwp),
       current_power_w: rounded(telemetry?.power ?? 0),
-      today_generation_kwh: rounded(energy?.today_generation_kwh),
-      today_consumption_kwh: rounded(energy?.today_consumption_kwh),
+      today_generation_kwh: plant.provider === 'growatt'
+        ? sumGrowattValue(row => row.today_energy)
+        : rounded(energy?.today_generation_kwh),
+      today_consumption_kwh: plant.provider === 'growatt'
+        ? sumGrowattValue(row => row.raw_data?.elocalLoadToday)
+        : rounded(energy?.today_consumption_kwh),
       last_data_at: telemetry?.lastDataAt ?? null,
       ...freshness,
       data_status: telemetry?.electricalHasFresh ? 'fresh' : freshness.data_status,
       ...(plant.provider === 'hyxi'
         ? summarizeHyxiDevices(plantDevices, telemetry?.lastDataAt ?? null, plant.last_synced_at)
-        : {}),
+        : plant.provider === 'growatt' ? {
+          inverter_total: growattInverters.length,
+          inverter_online: growattInverters.filter(device => device.status === 'online').length,
+          inverter_offline: growattInverters.filter(device => device.status === 'offline').length,
+          inverter_alarm: growattInverters.filter(device => device.status === 'alarm').length,
+        } : {}),
     };
   });
 }

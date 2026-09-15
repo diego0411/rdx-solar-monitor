@@ -15,14 +15,14 @@ export async function listActiveHyxiPlants() {
 
 export async function getStoredPlantById(id) {
   const { data, error } = await supabase.from('plants')
-    .select('id, provider, external_plant_id, active').eq('id', id).maybeSingle();
+    .select('id, provider, external_plant_id, active, timezone').eq('id', id).maybeSingle();
   if (error) throw new Error('No se pudo consultar la planta almacenada');
   return data;
 }
 
 export async function listActiveGrowattPlants() {
   const { data, error } = await supabase.from('plants')
-    .select('id, external_plant_id').eq('provider', 'growatt')
+    .select('id, external_plant_id, timezone').eq('provider', 'growatt').eq('active', true)
     .not('external_plant_id', 'is', null).order('id', { ascending: true });
   if (error) throw new Error('No se pudieron consultar las plantas Growatt activas');
   return data;

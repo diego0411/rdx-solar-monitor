@@ -58,6 +58,15 @@ export async function upsertGrowattDevice(device) {
   return 'inserted';
 }
 
+export async function listActiveGrowattMinDevicesByPlant(plantId) {
+  const { data, error } = await supabase.from('devices')
+    .select('id, serial_number').eq('plant_id', plantId)
+    .eq('provider', 'growatt').eq('active', true).ilike('device_type', 'min')
+    .order('id', { ascending: true });
+  if (error) throw new Error('No se pudieron consultar los inversores Growatt de la planta');
+  return data;
+}
+
 export async function linkGrowattDeviceToPlant(serialNumber, plantId) {
   const { data, error } = await supabase.from('devices').update({ plant_id: plantId })
     .eq('provider', 'growatt').eq('serial_number', serialNumber).select('id');

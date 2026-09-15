@@ -2,20 +2,24 @@ import app from './app.js';
 import { env } from './config/env.js';
 import { syncGrowattPlants } from './services/growattPlants.service.js';
 import { syncGrowattLatest } from './services/growattLatest.service.js';
+import { syncGrowattPowerHistory } from './services/growattPowerHistory.service.js';
+import { syncGrowattEnergyHistory } from './services/growattEnergyHistory.service.js';
 import { syncHyxiPlants } from './services/hyxiPlants.service.js';
 import { syncHyxiDevices } from './services/hyxiDevices.service.js';
 import { syncHyxiRealtime } from './services/hyxiRealtime.service.js';
 import { syncHyxiEnergySummary } from './services/hyxiEnergySummary.service.js';
 import { syncHyxiPowerHistory } from './services/hyxiPowerHistory.service.js';
 import { syncHyxiEnergyHistory } from './services/hyxiEnergyHistory.service.js';
-import { listActiveHyxiPlants } from './repositories/plants.repository.js';
+import { listActiveGrowattPlants, listActiveHyxiPlants } from './repositories/plants.repository.js';
 
 const HYXI_SYNC_INTERVAL_MS = 5 * 60 * 1000;
 const HYXI_HISTORY_SYNC_INTERVAL_MS = 10 * 60 * 1000;
 const GROWATT_LATEST_INTERVAL_MS = 5 * 60 * 1000;
+const GROWATT_HISTORY_SYNC_INTERVAL_MS = 30 * 60 * 1000;
 let hyxiSyncRunning = false;
 let hyxiHistorySyncRunning = false;
 let growattLatestSyncRunning = false;
+let growattHistorySyncRunning = false;
 
 async function runGrowattLatestSync() {
   if (growattLatestSyncRunning) return;
@@ -29,6 +33,31 @@ async function runGrowattLatestSync() {
     console.error('Growatt automatic latest sync failed:', error);
   } finally {
     growattLatestSyncRunning = false;
+  }
+}
+
+async function runGrowattHistorySync() {
+  if (growattHistorySyncRunning) return;
+  growattHistorySyncRunning = true;
+  try {
+    const plants = await listActiveGrowattPlants();
+    const date = currentBoliviaDate();
+    for (const plant of plants) {
+      try {
+        await syncGrowattPowerHistory(plant, date);
+        await syncGrowattEnergyHistory(plant, date);
+      } catch (error) {
+        if (error?.frequentAccess) {
+          console.error(`Growatt automatic history sync FREQUENTLY_ACCESS for ${plant.external_plant_id}`);
+        } else {
+          console.error(`Growatt automatic history sync failed for ${plant.external_plant_id}:`, error);
+        }
+      }
+    }
+  } catch (error) {
+    console.error('Growatt automatic history sync failed:', error);
+  } finally {
+    growattHistorySyncRunning = false;
   }
 }
 
@@ -89,6 +118,8 @@ app.listen(env.PORT, () => {
   syncGrowattPlants().catch(() => {});
   runGrowattLatestSync();
   setInterval(runGrowattLatestSync, GROWATT_LATEST_INTERVAL_MS);
+  runGrowattHistorySync();
+  setInterval(runGrowattHistorySync, GROWATT_HISTORY_SYNC_INTERVAL_MS);
   runHyxiSync();
   setInterval(runHyxiSync, HYXI_SYNC_INTERVAL_MS);
   runHyxiHistorySync();

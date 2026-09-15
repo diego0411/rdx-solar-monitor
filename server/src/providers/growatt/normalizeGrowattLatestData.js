@@ -11,7 +11,7 @@ function numeric(value) {
   return Number.isFinite(number) ? number : null;
 }
 
-function timestamp(value) {
+export function parseGrowattTimestamp(value) {
   if (typeof value !== 'string') return null;
   const match = /^(\d{4}-\d{2}-\d{2}) (\d{2}:\d{2}:\d{2})$/.exec(value);
   if (!match) return null;
@@ -27,7 +27,7 @@ export function normalizeGrowattLatestData(data, deviceId) {
   return {
     device_id: deviceId,
     provider: 'growatt',
-    collected_at: timestamp(value(data, 'time')),
+    collected_at: parseGrowattTimestamp(value(data, 'time')),
     pv_power: value(data, 'ppv'),
     ac_power: value(data, 'pac'),
     today_energy: value(data, 'eacToday'),

@@ -1,6 +1,17 @@
 import { syncHyxiPowerHistory } from '../services/hyxiPowerHistory.service.js';
 import { listPlantPowerIntervals } from '../repositories/plantPowerIntervals.repository.js';
 import { getStoredPlantById } from '../repositories/plants.repository.js';
+import { syncGrowattPowerHistory } from '../services/growattPowerHistory.service.js';
+
+const powerFields = [
+  'generation_power_w', 'consumption_power_w', 'grid_import_power_w',
+  'grid_export_power_w', 'battery_charge_power_w', 'battery_discharge_power_w',
+];
+
+function hasPowerValues(rows) {
+  return rows.some(row => powerFields.some(field => row[field] !== null
+    && row[field] !== undefined && Number.isFinite(Number(row[field]))));
+}
 
 function validDate(value) {
   return typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value)
@@ -24,15 +35,18 @@ export async function getStoredPowerHistory(req, res) {
   }
   try {
     let rows = await listPlantPowerIntervals(req.params.plantId, req.query.startTime);
-    if (!rows.length) {
+    if (!hasPowerValues(rows)) {
       const plant = await getStoredPlantById(req.params.plantId);
       if (plant?.provider === 'hyxi' && plant.active && plant.external_plant_id) {
-        await syncHyxiPowerHistory(plant.external_plant_id, req.query.startTime);
-        rows = await listPlantPowerIntervals(req.params.plantId, req.query.startTime);
+        if (!rows.length) await syncHyxiPowerHistory(plant.external_plant_id, req.query.startTime);
+      } else if (plant?.provider === 'growatt' && plant.active) {
+        await syncGrowattPowerHistory(plant, req.query.startTime);
       }
+      rows = await listPlantPowerIntervals(req.params.plantId, req.query.startTime);
     }
     return res.json(rows);
-  } catch {
+  } catch (error) {
+    if (error?.frequentAccess) return res.status(503).json({ error: 'FREQUENTLY_ACCESS' });
     return res.status(503).json({ error: 'No se pudo consultar la curva de potencia' });
   }
 }

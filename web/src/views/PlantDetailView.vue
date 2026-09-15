@@ -79,7 +79,7 @@ watch(() => route.params.id, async (id, previous, onCleanup) => {
       <dl class="general-grid">
         <div><dt>Nombre</dt><dd>{{ detail.plant.name }}</dd></div>
         <div><dt>Proveedor</dt><dd>{{ detail.plant.provider ?? 'Sin datos' }}</dd></div>
-        <div><dt>Estado HYXi</dt><dd><span class="badge" :class="`state-${detail.plant.status}`">{{ statuses[detail.plant.status] ?? statuses.unknown }}</span></dd></div>
+        <div><dt>Estado</dt><dd><span class="badge" :class="`state-${detail.plant.status}`">{{ statuses[detail.plant.status] ?? statuses.unknown }}</span></dd></div>
         <div><dt>Capacidad</dt><dd>{{ number(detail.plant.capacity_kwp, 'kWp') }}</dd></div>
         <div><dt>Tipo de planta</dt><dd>{{ detail.plant.plant_type ?? 'Sin datos' }}</dd></div>
         <div><dt>Zona horaria</dt><dd>{{ detail.plant.timezone ?? 'Sin datos' }}</dd></div>

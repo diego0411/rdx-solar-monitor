@@ -5,6 +5,7 @@ export { decryptGrowattToken } from './growattTokenCrypto.js';
 
 const DEVICE_LIST_PATH = '/v4/new-api/queryDeviceList';
 const LAST_DATA_PATH = '/v4/new-api/queryLastData';
+const HISTORICAL_DATA_PATH = '/v4/new-api/queryHistoricalData';
 const DEVICE_LIST_CACHE_TTL_MS = 60000;
 const LAST_DATA_CACHE_TTL_MS = 300000;
 const USER_PLANT_CACHE_TTL_MS = 300000;
@@ -196,6 +197,37 @@ export class GrowattProvider {
     }
     lastDataCache.set(cacheKey, { payload, expiresAt: Date.now() + LAST_DATA_CACHE_TTL_MS });
     return { payload, rateLimited: false };
+  }
+
+  async queryHistoricalData(deviceSn, date, apiToken = this.apiToken) {
+    const url = new URL(HISTORICAL_DATA_PATH, this.baseUrl);
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: {
+        Accept: 'application/json',
+        token: apiToken,
+        'Content-Type': 'application/x-www-form-urlencoded',
+      },
+      body: new URLSearchParams({ deviceType: 'min', deviceSn: String(deviceSn), date }),
+      redirect: 'error',
+      signal: AbortSignal.timeout(10000),
+    });
+
+    if (!response.ok) throw new Error('Growatt historical data request failed');
+
+    let payload = await response.json();
+    if (typeof payload === 'string') payload = JSON.parse(payload);
+    if (Number(payload?.code) === 102 || Number(payload?.error_code) === 102) {
+      const error = new Error(payload?.message || payload?.error_msg || 'FREQUENTLY_ACCESS');
+      error.rateLimited = true;
+      error.frequentAccess = true;
+      error.statusCode = 429;
+      throw error;
+    }
+    if (payload?.code !== 0 && payload?.error_code !== 0) {
+      throw new Error('Growatt historical data response failed');
+    }
+    return payload;
   }
 
   async listPlants() {

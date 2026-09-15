@@ -59,7 +59,7 @@ onUnmounted(() => controller.abort());
         <RouterLink :to="`/plants/${plant.id}`" class="card plant-row" :aria-label="`Ver detalle de ${plant.name}`">
           <div class="plant-heading"><h2>{{ plant.name }}</h2><span class="provider">{{ providerNames[plant.provider] ?? plant.provider }}</span><span class="open-label">Ver detalle →</span></div>
           <div class="state-badges">
-            <span>Estado HYXi <span class="badge" :class="`state-${plant.status}`">{{ statuses[plant.status] ?? statuses.unknown }}</span></span>
+            <span>Estado <span class="badge" :class="`state-${plant.status}`">{{ statuses[plant.status] ?? statuses.unknown }}</span></span>
             <span>Telemetría <span class="badge" :class="`data-${plant.data_status}`">{{ freshness[plant.data_status] ?? freshness.no_data }}</span></span>
           </div>
           <dl class="plant-metrics">
@@ -69,8 +69,8 @@ onUnmounted(() => controller.abort());
             <div><dt>Consumo de hoy</dt><dd>{{ formatValue(plant.today_consumption_kwh, 'kWh') }}</dd></div>
             <div><dt>Última lectura</dt><dd class="date-value">{{ lastData(plant.last_data_at) }}</dd><small>{{ age(plant.data_age_minutes) }}</small></div>
           </dl>
-          <div v-if="plant.provider === 'hyxi'" class="technical-status">
-            <div>
+          <div v-if="plant.inverter_total != null" class="technical-status">
+            <div v-if="plant.inverter_total != null">
               <h3>Inversores</h3>
               <dl class="technical-metrics">
                 <div><dt>Total</dt><dd>{{ plant.inverter_total }}</dd></div>
@@ -79,7 +79,7 @@ onUnmounted(() => controller.abort());
                 <div><dt>Con alarma</dt><dd>{{ plant.inverter_alarm }}</dd></div>
               </dl>
             </div>
-            <div>
+            <div v-if="plant.communication_total != null">
               <h3>Comunicación</h3>
               <dl class="technical-metrics">
                 <div><dt>Total</dt><dd>{{ plant.communication_total }}</dd></div>
@@ -88,7 +88,7 @@ onUnmounted(() => controller.abort());
                 <div><dt>Con alarma</dt><dd>{{ plant.communication_alarm }}</dd></div>
               </dl>
             </div>
-            <dl class="technical-dates">
+            <dl v-if="plant.provider === 'hyxi'" class="technical-dates">
               <div><dt>Última telemetría técnica</dt><dd>{{ lastData(plant.latest_collected_at) }}</dd></div>
               <div><dt>Última sincronización técnica</dt><dd>{{ lastData(plant.latest_synced_at) }}</dd></div>
             </dl>
