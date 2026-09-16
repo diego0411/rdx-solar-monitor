@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { getHyxiPlantAlarms } from '../controllers/hyxi.controller.js';
+import { getHyxiPlantAlarms, getHyxiRecentAlarms } from '../controllers/hyxi.controller.js';
 import { postHyxiSyncPowerHistory } from '../controllers/powerHistory.controller.js';
 import { getHyxiPlantPowerHistory } from '../controllers/hyxi.controller.js';
 import { postHyxiSyncEnergyHistory } from '../controllers/energyHistory.controller.js';
@@ -11,6 +11,7 @@ import { getHyxiHealth, getHyxiPlant, getHyxiPlants, postHyxiSyncPlants, postHyx
 const router = Router();
 
 router.get('/health', getHyxiHealth);
+router.get('/alarms/recent', getHyxiRecentAlarms);
 router.post('/sync/realtime', postHyxiSyncRealtime);
 router.post('/sync/energy-summary', postHyxiSyncEnergySummary);
 router.get('/devices/:deviceSn', getHyxiDevice);

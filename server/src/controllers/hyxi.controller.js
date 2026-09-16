@@ -5,8 +5,17 @@ import { syncHyxiDeviceDetails } from '../services/hyxiDeviceDetails.service.js'
 import { syncHyxiDevices } from '../services/hyxiDevices.service.js';
 import { syncHyxiPlants } from '../services/hyxiPlants.service.js';
 import { syncHyxiPlantDetails } from '../services/hyxiPlantDetails.service.js';
+import { getRecentHyxiAlarms } from '../services/hyxiRecentAlarms.service.js';
 
 const provider = new HyxiProvider();
+
+export async function getHyxiRecentAlarms(req, res) {
+  try {
+    return res.json(await getRecentHyxiAlarms());
+  } catch {
+    return res.status(502).json({ provider: 'hyxi', error: 'HYXi recent alarms request failed' });
+  }
+}
 
 export async function getHyxiPlantAlarms(req, res) {
   const parsePage = (value, fallback) => {

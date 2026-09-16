@@ -24,13 +24,30 @@ async function request(method, path, body) {
       signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
     });
 
-    if (!response.ok) {
-      throw new Error('Unsuccessful HTTP response');
+    let payload = null;
+    if (response.status !== 204) {
+      try {
+        payload = await response.json();
+      } catch {
+        payload = null;
+      }
     }
-
-    return response.status === 204 ? null : await response.json();
-  } catch {
-    throw new Error('HYXi request failed');
+    if (!response.ok || (payload && typeof payload === 'object'
+        && ((Object.hasOwn(payload, 'success') && payload.success !== true)
+          || (Object.hasOwn(payload, 'code') && String(payload.code) !== '0')))) {
+      const failure = new Error('Unsuccessful HYXi response');
+      failure.httpStatus = response.status;
+      failure.providerCode = payload?.code ?? payload?.error_code;
+      failure.providerMsg = payload?.msg ?? payload?.message ?? payload?.error;
+      throw failure;
+    }
+    return payload;
+  } catch (error) {
+    const failure = new Error('HYXi request failed');
+    failure.httpStatus = error?.httpStatus;
+    failure.providerCode = error?.providerCode;
+    failure.providerMsg = error?.providerMsg;
+    throw failure;
   }
 }
 

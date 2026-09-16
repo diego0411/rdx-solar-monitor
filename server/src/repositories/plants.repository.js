@@ -5,7 +5,7 @@ export async function listActiveHyxiPlants() {
   const pageSize = 1000;
   for (let offset = 0; ; offset += pageSize) {
     const { data, error } = await supabase.from('plants')
-      .select('id, external_plant_id').eq('provider', 'hyxi').eq('active', true)
+      .select('id, external_plant_id, name').eq('provider', 'hyxi').eq('active', true)
       .order('id', { ascending: true }).range(offset, offset + pageSize - 1);
     if (error) throw new Error('No se pudieron consultar las plantas HYXi activas');
     plants.push(...data);

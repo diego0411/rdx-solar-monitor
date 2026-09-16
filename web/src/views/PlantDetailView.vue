@@ -4,6 +4,7 @@ import { useRoute } from 'vue-router';
 import { apiFetch } from '../services/api.js';
 import PlantPowerCurve from '../components/PlantPowerCurve.vue';
 import PlantEnergyHistory from '../components/PlantEnergyHistory.vue';
+import PlantEnergyFlow from '../components/PlantEnergyFlow.vue';
 
 const route = useRoute();
 const detail = ref(null), loading = ref(true), error = ref(''), notFound = ref(false);
@@ -98,6 +99,7 @@ watch(() => route.params.id, async (id, previous, onCleanup) => {
       <h2 id="realtime-title">Flujo energético</h2>
       <p class="telemetry"><span class="badge" :class="`data-${detail.realtime.data_status}`">{{ freshness[detail.realtime.data_status] ?? freshness.no_data }}</span> <span>{{ age(detail.realtime.data_age_minutes) }}</span></p>
       <p v-if="detail.realtime.data_status === 'stale'" class="stale-notice" role="note"><strong>Telemetría desactualizada.</strong> Los valores corresponden a la última lectura conocida y pueden diferir de la potencia actual.</p>
+      <PlantEnergyFlow :realtime="detail.realtime" />
       <p v-if="!visibleRealtime.length">Sin datos de telemetría.</p>
       <div class="metrics"><article v-for="[key, label, unit] in visibleRealtime" :key="key" class="card metric"><h3>{{ label }}</h3><p>{{ number(detail.realtime[key], unit) }}</p><small v-if="key === 'current_grid_power'">Unidad original del API</small></article></div>
     </section>
