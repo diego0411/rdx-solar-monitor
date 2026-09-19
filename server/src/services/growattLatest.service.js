@@ -1,6 +1,7 @@
 import { upsertGrowattLatestData } from '../repositories/deviceLatestData.repository.js';
 import {
   listActiveGrowattDevices,
+  updateGrowattDeviceName,
   updateGrowattDeviceTelemetryState,
 } from '../repositories/devices.repository.js';
 import { GrowattProvider } from '../providers/growatt/GrowattProvider.js';
@@ -23,6 +24,10 @@ function getRows(payload, deviceType) {
 function serialOf(data, deviceType) {
   if (String(deviceType).toUpperCase() === 'MIN') return data?.serialNum;
   return data?.deviceSn ?? data?.device_sn ?? data?.sn ?? data?.serialNumber ?? data?.serialNum;
+}
+
+function aliasOf(data) {
+  return typeof data?.alias === 'string' && data.alias.trim() ? data.alias.trim() : null;
 }
 
 export async function syncGrowattLatest() {
@@ -79,6 +84,14 @@ export async function syncGrowattLatest() {
             device.id, normalized.device_status, normalized.collected_at,
           );
           result.updated += 1;
+          const alias = aliasOf(data);
+          if (alias && !device.name) {
+            try {
+              await updateGrowattDeviceName(device.id, alias);
+            } catch {
+              // Best-effort: el nombre se reintentará en la próxima sincronización.
+            }
+          }
         } catch (error) {
           result.failed += 1;
         }

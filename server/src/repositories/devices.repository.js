@@ -19,7 +19,7 @@ export async function listActiveGrowattDevices() {
   const pageSize = 1000;
   for (let offset = 0; ; offset += pageSize) {
     const { data, error } = await supabase.from('devices')
-      .select('id, serial_number, device_type, active')
+      .select('id, serial_number, device_type, name, active')
       .eq('provider', 'growatt').eq('active', true)
       .order('id', { ascending: true }).range(offset, offset + pageSize - 1);
     if (error) throw new Error(`No se pudieron consultar los dispositivos Growatt: ${error.message}`);
@@ -72,6 +72,12 @@ export async function linkGrowattDeviceToPlant(serialNumber, plantId) {
     .eq('provider', 'growatt').eq('serial_number', serialNumber).select('id');
   if (error) throw new Error(`No se pudo vincular el dispositivo Growatt: ${error.message}`);
   return data.length;
+}
+
+export async function updateGrowattDeviceName(id, name) {
+  const { data, error } = await supabase.from('devices').update({ name })
+    .eq('id', id).eq('provider', 'growatt').select('id').single();
+  if (error || !data) throw new Error('No se pudo actualizar el nombre del dispositivo Growatt');
 }
 
 export async function updateGrowattDeviceTelemetryState(id, deviceStatus, collectedAt) {

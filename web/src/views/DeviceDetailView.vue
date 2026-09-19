@@ -2,6 +2,7 @@
 import { ref, computed, watch } from 'vue';
 import { useRoute } from 'vue-router';
 import { apiFetch } from '../services/api.js';
+import { deviceDisplayName } from '../utils/deviceDisplay.js';
 const route = useRoute();
 const detail = ref(null), loading = ref(true), error = ref('');
 const statuses = { online: 'En línea', offline: 'Sin conexión', alarm: 'Alarma', inactive: 'Inactivo', unknown: 'Desconocido' };
@@ -37,7 +38,7 @@ watch(() => route.params.id, async (id, previous, cleanup) => {
 
 <template>
   <RouterLink class="back-link" to="/devices">← Volver a dispositivos</RouterLink>
-  <header class="page-header"><p class="eyebrow">Monitoreo multimarca</p><h1>{{ detail?.device.name || detail?.device.serial_number || 'Detalle de dispositivo' }}</h1></header>
+  <header class="page-header"><p class="eyebrow">Monitoreo multimarca</p><h1>{{ deviceDisplayName(detail?.device, 'Detalle de dispositivo') }}</h1></header>
   <p v-if="loading" class="card" role="status">Cargando dispositivo…</p>
   <p v-else-if="error" class="card" role="alert">{{ error }}</p>
   <div v-else-if="detail" class="sections">

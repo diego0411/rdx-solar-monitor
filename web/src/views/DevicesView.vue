@@ -1,6 +1,7 @@
 <script setup>
 import { ref, computed, onMounted, onUnmounted } from 'vue';
 import { apiFetch } from '../services/api.js';
+import { deviceDisplayName } from '../utils/deviceDisplay.js';
 const devices = ref([]), loading = ref(true), error = ref('');
 const provider = ref(''), status = ref('');
 const controller = new AbortController();
@@ -39,7 +40,7 @@ onUnmounted(() => controller.abort());
     <p v-if="!filtered.length" class="card">No hay dispositivos que coincidan con los filtros.</p>
     <ul v-else class="device-list">
       <li v-for="device in filtered" :key="device.id" class="card">
-        <div class="device-heading"><h2>{{ device.name || device.serial_number || 'Dispositivo sin nombre' }}</h2><span class="badge">{{ names[device.provider] ?? device.provider }}</span><span class="badge" :class="`state-${device.status}`">{{ states[device.status] ?? device.status ?? states.unknown }}</span></div>
+        <div class="device-heading"><h2>{{ deviceDisplayName(device) }}</h2><span class="badge">{{ names[device.provider] ?? device.provider }}</span><span class="badge" :class="`state-${device.status}`">{{ states[device.status] ?? device.status ?? states.unknown }}</span></div>
         <dl>
           <div><dt>Detalle</dt><dd><RouterLink :to="`/devices/${device.id}`">Ver dispositivo →</RouterLink></dd></div>
           <div><dt>Número de serie</dt><dd>{{ device.serial_number ?? 'Sin datos' }}</dd></div>

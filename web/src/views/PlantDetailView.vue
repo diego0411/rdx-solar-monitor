@@ -2,6 +2,7 @@
 import { ref, watch, computed } from 'vue';
 import { useRoute } from 'vue-router';
 import { apiFetch } from '../services/api.js';
+import { deviceDisplayName } from '../utils/deviceDisplay.js';
 import PlantPowerCurve from '../components/PlantPowerCurve.vue';
 import PlantEnergyHistory from '../components/PlantEnergyHistory.vue';
 import PlantEnergyFlow from '../components/PlantEnergyFlow.vue';
@@ -110,7 +111,7 @@ watch(() => route.params.id, async (id, previous, onCleanup) => {
       <p v-if="!detail.devices.length" class="card">No hay dispositivos registrados para esta planta.</p>
       <ul v-else class="device-list">
         <li v-for="device in detail.devices" :key="device.id" class="card">
-          <h3><RouterLink :to="`/devices/${device.id}`">{{ device.name ?? 'Dispositivo sin nombre' }} →</RouterLink></h3>
+          <h3><RouterLink :to="`/devices/${device.id}`">{{ deviceDisplayName(device) }} →</RouterLink></h3>
           <dl class="general-grid">
             <div><dt>Número de serie</dt><dd>{{ device.serial_number ?? 'Sin datos' }}</dd></div>
             <div><dt>Modelo</dt><dd>{{ device.model ?? 'Sin datos' }}</dd></div>
