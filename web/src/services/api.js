@@ -21,3 +21,15 @@ export async function apiFetch(path, options = {}) {
   }
   return response.status === 204 ? null : response.json();
 }
+
+let myProfilePromise = null;
+
+export function getMyProfile() {
+  if (!myProfilePromise) {
+    myProfilePromise = apiFetch('/auth/me').catch(error => {
+      myProfilePromise = null;
+      throw error;
+    });
+  }
+  return myProfilePromise;
+}

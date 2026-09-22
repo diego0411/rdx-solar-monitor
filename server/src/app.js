@@ -7,6 +7,8 @@ import devicesRoutes from './routes/devices.routes.js';
 import dashboardRoutes from './routes/dashboard.routes.js';
 import authRoutes from './routes/auth.routes.js';
 import growattRoutes from './routes/growatt.routes.js';
+import usersRoutes from './routes/users.routes.js';
+import clientsRoutes from './routes/clients.routes.js';
 import { requireAuth } from './middleware/auth.middleware.js';
 import { loadProfile } from './middleware/authorization.middleware.js';
 
@@ -22,5 +24,7 @@ app.use('/api/dashboard', requireAuth, loadProfile, dashboardRoutes);
 app.use('/api/integrations', requireAuth, loadProfile);
 app.use('/api/integrations/hyxi', hyxiRoutes);
 app.use('/api/integrations/growatt', growattRoutes);
+app.use('/api/users', usersRoutes);
+app.use('/api/clients', clientsRoutes);
 
 export default app;

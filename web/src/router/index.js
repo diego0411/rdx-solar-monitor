@@ -7,7 +7,9 @@ import LoginView from '../views/LoginView.vue';
 import DevicesView from '../views/DevicesView.vue';
 import AlarmsView from '../views/AlarmsView.vue';
 import DeviceDetailView from '../views/DeviceDetailView.vue';
+import UsersView from '../views/UsersView.vue';
 import { getSession, supabase } from '../services/supabase.js';
+import { getMyProfile } from '../services/api.js';
 
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
@@ -20,6 +22,7 @@ const router = createRouter({
     { path: '/alarms', name: 'alarms', component: AlarmsView },
     { path: '/devices/:id', name: 'device-detail', component: DeviceDetailView },
     { path: '/plants/:id', name: 'plant-detail', component: PlantDetailView },
+    { path: '/users', name: 'users', component: UsersView },
   ],
 });
 
@@ -27,6 +30,16 @@ router.beforeEach(async to => {
   const session = await getSession();
   if (to.name !== 'login' && !session) return { name: 'login' };
   if (to.name === 'login' && session) return { name: 'dashboard' };
+  if (to.name === 'users' && session) {
+    try {
+      const me = await getMyProfile();
+      if (me?.profile?.role !== 'rdx_admin' && me?.profile?.role !== 'client_admin') {
+        return { name: 'dashboard' };
+      }
+    } catch {
+      return { name: 'dashboard' };
+    }
+  }
 });
 
 const subscription = supabase?.auth.onAuthStateChange((event, session) => {

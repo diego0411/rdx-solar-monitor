@@ -1,8 +1,18 @@
 <script setup>
-import { ref } from 'vue';
+import { onMounted, ref } from 'vue';
 import { useRouter } from 'vue-router';
 import { supabase } from '../services/supabase.js';
+import { getMyProfile } from '../services/api.js';
 const router = useRouter();
+const showUsers = ref(false);
+onMounted(async () => {
+  try {
+    const me = await getMyProfile();
+    showUsers.value = me?.profile?.role === 'rdx_admin' || me?.profile?.role === 'client_admin';
+  } catch {
+    showUsers.value = false;
+  }
+});
 const signingOut = ref(false), logoutError = ref('');
 async function logout() {
   if (signingOut.value) return;
@@ -32,6 +42,7 @@ async function logout() {
         <RouterLink to="/map" class="nav-link" active-class="is-active">Mapa</RouterLink>
         <RouterLink to="/devices" class="nav-link" active-class="is-active">Dispositivos</RouterLink>
         <RouterLink to="/alarms" class="nav-link" active-class="is-active">Alarmas</RouterLink>
+        <RouterLink v-if="showUsers" to="/users" class="nav-link" active-class="is-active">Usuarios</RouterLink>
       </nav>
       <div>
         <button class="logout-button" :disabled="signingOut" @click="logout">{{ signingOut ? 'Cerrando sesión…' : 'Cerrar sesión' }}</button>
