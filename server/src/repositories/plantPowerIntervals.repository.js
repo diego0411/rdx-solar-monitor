@@ -1,4 +1,5 @@
 import { supabase } from '../config/supabase.js';
+import { localDateKey } from '../utils/timezone.js';
 
 export async function upsertPlantPowerIntervals(rows) {
   if (!rows.length) return;
@@ -28,20 +29,13 @@ export async function listPlantPowerIntervals(plantId, startTime) {
   const lower = new Date(start - 86400000).toISOString();
   const upper = new Date(start + 2 * 86400000).toISOString();
   const rows = [];
-  const formatters = new Map();
   for (let offset = 0; ; offset += 1000) {
     const { data, error } = await supabase.from('plant_power_intervals').select('*')
       .eq('plant_id', plantId).gte('interval_start', lower).lt('interval_start', upper)
       .order('interval_start', { ascending: true }).range(offset, offset + 999);
     if (error) throw new Error('No se pudo consultar la curva de potencia');
     for (const row of data) {
-      const timezone = row.timezone ?? 'UTC';
-      if (!formatters.has(timezone)) formatters.set(timezone, new Intl.DateTimeFormat('en-US', {
-        timeZone: timezone, year: 'numeric', month: '2-digit', day: '2-digit',
-      }));
-      const parts = Object.fromEntries(formatters.get(timezone)
-        .formatToParts(new Date(row.interval_start)).map(part => [part.type, part.value]));
-      if (`${parts.year.padStart(4, '0')}-${parts.month}-${parts.day}` === startTime) rows.push(row);
+      if (localDateKey(row.interval_start, row.timezone) === startTime) rows.push(row);
     }
     if (data.length < 1000) return rows;
   }

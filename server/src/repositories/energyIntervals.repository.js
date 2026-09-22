@@ -1,4 +1,5 @@
 import { supabase } from '../config/supabase.js';
+import { localDateKey } from '../utils/timezone.js';
 
 export async function resolveHyxiPlant(externalPlantId) {
   const { data, error } = await supabase.from('plants').select('id')
@@ -34,7 +35,6 @@ export async function listEnergyIntervals(plantId, timeType, startTime) {
   const prefixLength = timeType === 1 ? 10 : timeType === 2 ? 7 : 4;
   const prefix = startTime.slice(0, prefixLength);
   const rows = [];
-  const formatters = new Map();
   for (let offset = 0; ; offset += 1000) {
     const { data, error } = await supabase.from('energy_intervals').select('*')
       .eq('plant_id', plantId).eq('interval_type', timeType)
@@ -42,14 +42,8 @@ export async function listEnergyIntervals(plantId, timeType, startTime) {
       .order('interval_start', { ascending: true }).range(offset, offset + 999);
     if (error) throw new Error('No se pudo consultar el histórico energético');
     for (const row of data) {
-      const timezone = row.timezone ?? 'UTC';
-      if (!formatters.has(timezone)) formatters.set(timezone, new Intl.DateTimeFormat('en-US', {
-        timeZone: timezone, year: 'numeric', month: '2-digit', day: '2-digit',
-      }));
-      const parts = Object.fromEntries(formatters.get(timezone)
-        .formatToParts(new Date(row.interval_start)).map(part => [part.type, part.value]));
-      const date = `${parts.year.padStart(4, '0')}-${parts.month}-${parts.day}`;
-      if (date.slice(0, prefixLength) === prefix) rows.push(row);
+      const date = localDateKey(row.interval_start, row.timezone);
+      if (date !== null && date.slice(0, prefixLength) === prefix) rows.push(row);
     }
     if (data.length < 1000) return rows;
   }
