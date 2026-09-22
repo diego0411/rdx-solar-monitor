@@ -2,6 +2,15 @@ import { GrowattProvider } from '../providers/growatt/GrowattProvider.js';
 import { syncGrowattPlants } from '../services/growattPlants.service.js';
 import { linkNextGrowattPlantDevices } from '../services/growattDevices.service.js';
 import { syncGrowattLatest } from '../services/growattLatest.service.js';
+import { getCurrentGrowattAlarms } from '../services/growattCurrentAlarms.service.js';
+
+export async function getGrowattCurrentAlarms(req, res) {
+  try {
+    return res.json(await getCurrentGrowattAlarms(req.scope?.plantIds ?? null));
+  } catch {
+    return res.status(503).json({ error: 'No se pudo consultar el diagnóstico actual Growatt' });
+  }
+}
 
 const provider = new GrowattProvider();
 

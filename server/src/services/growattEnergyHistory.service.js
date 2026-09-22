@@ -62,7 +62,7 @@ export function deriveGrowattEnergyHistory(plant, devices, powerRows) {
         provider: 'growatt',
         interval_type: 1,
         interval_start: row.interval_start,
-        timezone: row.timezone ?? plant.timezone ?? 'America/La_Paz',
+        timezone: row.timezone ?? plant.timezone ?? 'UTC',
         ...energy,
         battery_charge_kwh: null,
         battery_discharge_kwh: null,

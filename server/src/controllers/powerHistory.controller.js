@@ -2,6 +2,7 @@ import { syncHyxiPowerHistory } from '../services/hyxiPowerHistory.service.js';
 import { listPlantPowerIntervals } from '../repositories/plantPowerIntervals.repository.js';
 import { getStoredPlantById } from '../repositories/plants.repository.js';
 import { syncGrowattPowerHistory } from '../services/growattPowerHistory.service.js';
+import { plantInScope } from '../middleware/authorization.middleware.js';
 
 const powerFields = [
   'generation_power_w', 'consumption_power_w', 'grid_import_power_w',
@@ -32,6 +33,9 @@ export async function getStoredPowerHistory(req, res) {
   if (!validDate(req.query.startTime)
       || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(req.params.plantId)) {
     return res.status(400).json({ error: 'plantId o startTime inválidos' });
+  }
+  if (!plantInScope(req.scope, req.params.plantId.toLowerCase())) {
+    return res.status(404).json({ error: 'Planta no encontrada' });
   }
   try {
     let rows = await listPlantPowerIntervals(req.params.plantId, req.query.startTime);

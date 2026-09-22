@@ -8,6 +8,7 @@ import dashboardRoutes from './routes/dashboard.routes.js';
 import authRoutes from './routes/auth.routes.js';
 import growattRoutes from './routes/growatt.routes.js';
 import { requireAuth } from './middleware/auth.middleware.js';
+import { loadProfile } from './middleware/authorization.middleware.js';
 
 const app = express();
 
@@ -15,11 +16,11 @@ app.use(cors());
 app.use(express.json());
 app.use('/api/auth', authRoutes);
 app.use('/api/health', healthRoutes);
-app.use('/api/integrations', requireAuth);
+app.use('/api/plants', requireAuth, loadProfile, plantsRoutes);
+app.use('/api/devices', requireAuth, loadProfile, devicesRoutes);
+app.use('/api/dashboard', requireAuth, loadProfile, dashboardRoutes);
+app.use('/api/integrations', requireAuth, loadProfile);
 app.use('/api/integrations/hyxi', hyxiRoutes);
 app.use('/api/integrations/growatt', growattRoutes);
-app.use('/api/plants', requireAuth, plantsRoutes);
-app.use('/api/devices', requireAuth, devicesRoutes);
-app.use('/api/dashboard', requireAuth, dashboardRoutes);
 
 export default app;

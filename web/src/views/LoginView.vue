@@ -48,9 +48,8 @@ async function login() {
 h1 { font-size: 28px; }
 form { display: grid; gap: 10px; margin-top: 28px; }
 label { font-size: 14px; font-weight: 600; }
-input { width: 100%; min-width: 0; padding: 12px; margin-bottom: 10px; border: 1px solid #cad8ce; border-radius: 8px; font: inherit; }
-button { padding: 12px; border: 0; border-radius: 8px; background: #174d3c; color: white; font: inherit; font-weight: 600; cursor: pointer; }
+input { margin-bottom: 10px; padding: 12px; border-radius: 8px; }
+button { padding: 12px; border: 0; border-radius: 8px; background: var(--rdx-primary); color: white; font: inherit; font-weight: 600; cursor: pointer; }
 button:disabled { opacity: .6; cursor: default; }
-input:focus-visible, button:focus-visible { outline: 3px solid #529b79; outline-offset: 3px; }
-.login-error { color: #963d2a; font-size: 14px; }
+.login-error { color: var(--rdx-danger); font-size: 14px; }
 </style>

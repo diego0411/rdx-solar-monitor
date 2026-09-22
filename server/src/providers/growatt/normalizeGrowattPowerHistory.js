@@ -1,4 +1,4 @@
-import { parseGrowattTimestamp } from './normalizeGrowattLatestData.js';
+import { parseGrowattTimestamp } from './growattStates.js';
 
 const fields = {
   ppv: 'generation_power_w',
@@ -23,9 +23,12 @@ function pointsOf(payload) {
   return [];
 }
 
-export function normalizeGrowattPowerHistory(payload) {
+export function normalizeGrowattPowerHistory(payload, plantTimezone) {
   return pointsOf(payload).map(rawData => ({
-    interval_start: parseGrowattTimestamp(rawData?.time),
+    interval_start: parseGrowattTimestamp(
+      rawData?.time,
+      plantTimezone,
+    ),
     ...Object.fromEntries(Object.entries(fields).map(([source, target]) => [
       target, numeric(rawData?.[source]),
     ])),

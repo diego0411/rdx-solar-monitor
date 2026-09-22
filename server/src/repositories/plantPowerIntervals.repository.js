@@ -8,6 +8,20 @@ export async function upsertPlantPowerIntervals(rows) {
   if (error) throw new Error('No se pudo guardar la curva de potencia');
 }
 
+export async function latestPlantConsumption(plantId) {
+  const since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+  const { data, error } = await supabase.from('plant_power_intervals')
+    .select('interval_start, consumption_power_w, timezone')
+    .eq('plant_id', plantId)
+    .gte('interval_start', since)
+    .not('consumption_power_w', 'is', null)
+    .order('interval_start', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (error) throw new Error('No se pudo consultar el consumo de planta');
+  return data ?? null;
+}
+
 export async function listPlantPowerIntervals(plantId, startTime) {
   const start = Date.parse(`${startTime}T00:00:00.000Z`);
   // Pad UTC bounds for timezone offsets, then filter by the stored local date.

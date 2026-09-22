@@ -2,6 +2,7 @@ import { syncHyxiEnergyHistory } from '../services/hyxiEnergyHistory.service.js'
 import { syncGrowattEnergyHistory } from '../services/growattEnergyHistory.service.js';
 import { listEnergyIntervals } from '../repositories/energyIntervals.repository.js';
 import { getStoredPlantById } from '../repositories/plants.repository.js';
+import { plantInScope } from '../middleware/authorization.middleware.js';
 
 function validQuery({ timeType, startTime }) {
   return typeof timeType === 'string' && /^[123]$/.test(timeType)
@@ -34,6 +35,9 @@ export async function getStoredEnergyHistory(req, res) {
   if (!validQuery(req.query)
       || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(req.params.plantId)) {
     return res.status(400).json({ error: 'plantId, timeType o startTime inválidos' });
+  }
+  if (!plantInScope(req.scope, req.params.plantId.toLowerCase())) {
+    return res.status(404).json({ error: 'Planta no encontrada' });
   }
   try {
     const timeType = Number(req.query.timeType);

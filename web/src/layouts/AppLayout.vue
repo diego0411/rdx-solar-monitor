@@ -31,6 +31,7 @@ async function logout() {
         <RouterLink to="/plants" class="nav-link" active-class="is-active">Plantas</RouterLink>
         <RouterLink to="/map" class="nav-link" active-class="is-active">Mapa</RouterLink>
         <RouterLink to="/devices" class="nav-link" active-class="is-active">Dispositivos</RouterLink>
+        <RouterLink to="/alarms" class="nav-link" active-class="is-active">Alarmas</RouterLink>
       </nav>
       <div>
         <button class="logout-button" :disabled="signingOut" @click="logout">{{ signingOut ? 'Cerrando sesión…' : 'Cerrar sesión' }}</button>
@@ -45,7 +46,6 @@ async function logout() {
 </template>
 
 <style scoped>
-.logout-button { width: 100%; border: 1px solid #cad8ce; border-radius: 8px; padding: 10px 14px; background: white; color: #174d3c; font: inherit; cursor: pointer; }
+.logout-button { width: 100%; border: 1px solid var(--rdx-border-strong); border-radius: 8px; padding: 10px 14px; background: var(--rdx-surface); color: var(--rdx-primary); font: inherit; cursor: pointer; }
 .logout-button:disabled { opacity: .6; cursor: default; }
-.logout-button:focus-visible { outline: 3px solid #529b79; outline-offset: 3px; }
 </style>

@@ -68,6 +68,61 @@ test('comparte el llenado de cache entre consultas simultaneas', async () => {
   assert.equal(first, second);
 });
 
+test('expone failures sanitizados solo fuera de production y los conserva en cache', async () => {
+  const originalEnv = process.env.NODE_ENV;
+  const originalConsoleError = console.error;
+  console.error = () => {};
+  try {
+    for (const env of ['development', 'test', undefined, 'production']) {
+      if (env === undefined) delete process.env.NODE_ENV;
+      else process.env.NODE_ENV = env;
+      const getRecent = createHyxiRecentAlarmsService({
+        listPlants: async () => [
+          { id: 'p1', external_plant_id: 'e1' },
+          { id: 'p2', external_plant_id: 'e2' },
+        ],
+        provider: {
+          async getPlantAlarms(id) {
+            if (id === 'e1') throw Object.assign(new Error('fallback'), {
+              httpStatus: 429, statusCode: 500, providerCode: 'RATE_LIMIT',
+              providerMsg: 'Bearer private-token token=secret-value',
+            });
+            throw Object.assign(new Error('fallback'), { statusCode: 503 });
+          },
+        },
+      });
+      const result = await getRecent();
+      assert.equal(await getRecent(), result);
+      assert.equal(result.partial, true);
+      assert.equal(result.failed_plants, 2);
+      assert.equal(result.checked_plants, 2);
+      assert.deepEqual(result.alarms, []);
+      if (env === 'production') {
+        assert.equal(Object.hasOwn(result, 'failures'), false);
+      } else {
+        assert.deepEqual(result.failures, [
+          {
+            plant_id: 'p1', external_plant_id: 'e1', http_status: 429,
+            provider_code: 'RATE_LIMIT', provider_msg: 'Bearer [REDACTED] token=[REDACTED]',
+          },
+          {
+            plant_id: 'p2', external_plant_id: 'e2', http_status: 503,
+            provider_code: null, provider_msg: 'fallback',
+          },
+        ]);
+      }
+      const getEmpty = createHyxiRecentAlarmsService({ listPlants: async () => [] });
+      const empty = await getEmpty();
+      if (env === 'production') assert.equal(Object.hasOwn(empty, 'failures'), false);
+      else assert.deepEqual(empty.failures, []);
+    }
+  } finally {
+    if (originalEnv === undefined) delete process.env.NODE_ENV;
+    else process.env.NODE_ENV = originalEnv;
+    console.error = originalConsoleError;
+  }
+});
+
 test('hyxiClient conserva status, codigo y mensaje sin exponer la solicitud', async () => {
   const originalFetch = globalThis.fetch;
   let fetchCalls = 0;

@@ -11,7 +11,7 @@ const provider = new HyxiProvider();
 
 export async function getHyxiRecentAlarms(req, res) {
   try {
-    return res.json(await getRecentHyxiAlarms());
+    return res.json(await getRecentHyxiAlarms(req.scope?.plantIds ?? null));
   } catch {
     return res.status(502).json({ provider: 'hyxi', error: 'HYXi recent alarms request failed' });
   }

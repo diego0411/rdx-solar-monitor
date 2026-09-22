@@ -156,6 +156,69 @@ export class GrowattProvider {
     return Array.isArray(payload?.data?.devices) ? payload.data.devices : [];
   }
 
+  async checkDeviceBySn(deviceSn) {
+    const url = new URL('/v1/device/check/sn', this.baseUrl);
+    url.search = new URLSearchParams({ dataloggerSn: String(deviceSn) });
+    const response = await fetch(url, {
+      method: 'GET',
+      headers: { Accept: 'application/json', token: this.apiToken },
+      redirect: 'error',
+      signal: AbortSignal.timeout(10000),
+    });
+    if (!response.ok) throw new Error('Growatt device check request failed');
+    let payload = await response.json();
+    if (typeof payload === 'string') payload = JSON.parse(payload);
+    if (Number(payload?.code) === 102 || Number(payload?.error_code) === 102) {
+      const error = new Error('Growatt rate limit');
+      error.rateLimited = true;
+      throw error;
+    }
+    return payload;
+  }
+
+  async deviceTlxDataInfo(deviceSn) {
+    const url = new URL('/v1/device/tlx/tlx_data_info', this.baseUrl);
+    url.search = new URLSearchParams({ device_sn: String(deviceSn) });
+    const response = await fetch(url, {
+      method: 'GET',
+      headers: { Accept: 'application/json', token: this.apiToken },
+      redirect: 'error',
+      signal: AbortSignal.timeout(10000),
+    });
+    if (!response.ok) throw new Error('Growatt TLX data info request failed');
+    let payload = await response.json();
+    if (typeof payload === 'string') payload = JSON.parse(payload);
+    if (Number(payload?.code) === 102 || Number(payload?.error_code) === 102) {
+      const error = new Error('Growatt rate limit');
+      error.rateLimited = true;
+      throw error;
+    }
+    return payload;
+  }
+
+  async plantDetails(plantId) {
+    const url = new URL('/v1/plant/details', this.baseUrl);
+    url.search = new URLSearchParams({ plant_id: String(plantId) });
+    const response = await fetch(url, {
+      method: 'GET',
+      headers: { Accept: 'application/json', token: this.apiToken },
+      redirect: 'error',
+      signal: AbortSignal.timeout(10000),
+    });
+    if (!response.ok) throw new Error('Growatt plant details request failed');
+    let payload = await response.json();
+    if (typeof payload === 'string') payload = JSON.parse(payload);
+    if (Number(payload?.code) === 102 || Number(payload?.error_code) === 102) {
+      const error = new Error('Growatt rate limit');
+      error.rateLimited = true;
+      throw error;
+    }
+    if (payload?.code !== 0 && payload?.error_code !== 0) {
+      throw new Error('Growatt plant details response failed');
+    }
+    return payload?.data;
+  }
+
   async queryLastData(deviceType, deviceSns, apiToken) {
     const cacheKey = `${deviceType}:${apiToken}`;
     const cached = lastDataCache.get(cacheKey);

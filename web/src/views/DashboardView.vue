@@ -1,267 +1,2114 @@
 <script setup>
-import { onMounted, onUnmounted, ref } from 'vue';
+import { computed, onMounted, onUnmounted, ref } from 'vue';
 import { apiFetch } from '../services/api.js';
 
 const summary = ref(null);
+const growattAlarms = ref(null);
+const hyxiAlarms = ref(null);
+
 const loading = ref(true);
 const error = ref('');
-const syncLoading = ref(false);
-const syncError = ref('');
-const syncResult = ref(null);
-const controller = new AbortController();
-const formatter = new Intl.NumberFormat('es-BO', { maximumFractionDigits: 2 });
 
-const primaryMetrics = [
-  ['total_plants', 'Total plantas', 'neutral'],
-  ['online_plants', 'En línea', 'online'],
-  ['offline_plants', 'Sin conexión', 'offline'],
-  ['alarm_plants', 'Con alarma', 'alarm'],
-];
-const energyMetrics = [
-  ['total_capacity_kwp', 'Capacidad instalada', 'kWp'],
-  ['current_generation_power_w', 'Generación actual', 'W'],
-  ['current_consumption_power_w', 'Consumo actual', 'W'],
-  ['current_grid_import_power_w', 'Importación de red', 'W'],
-  ['current_grid_export_power_w', 'Exportación de red', 'W'],
-  ['today_generation_kwh', 'Generación de hoy', 'kWh'],
-  ['today_consumption_kwh', 'Consumo de hoy', 'kWh'],
-  ['month_generation_kwh', 'Generación del mes', 'kWh'],
-  ['year_generation_kwh', 'Generación del año', 'kWh'],
-  ['total_generation_kwh', 'Generación total', 'kWh'],
-];
-const systemMetrics = [
-  ['total_devices', 'Dispositivos'],
-  ['online_devices', 'Dispositivos en línea', 'online'],
-  ['offline_devices', 'Dispositivos sin conexión', 'offline'],
-  ['unknown_devices', 'Estado desconocido', 'unknown'],
-];
-const providerNames = { hyxi: 'HYXi', growatt: 'Growatt' };
-const providerMetrics = [
-  ['total_plants', 'Plantas'],
-  ['online_plants', 'Plantas en línea', 'online'],
-  ['offline_plants', 'Plantas sin conexión', 'offline'],
-  ['alarm_plants', 'Plantas con alarma', 'alarm'],
-  ['total_devices', 'Dispositivos'],
-  ['online_devices', 'Dispositivos en línea', 'online'],
-  ['offline_devices', 'Dispositivos sin conexión', 'offline'],
-  ['unknown_devices', 'Estado desconocido', 'unknown'],
-];
-const hyxiInventoryGroups = [
-  { title: 'Inversores', metrics: [
-    ['inverter_total', 'Total'], ['inverter_online', 'En línea', 'online'],
-    ['inverter_offline', 'Sin conexión', 'offline'], ['inverter_alarm', 'Alarma', 'alarm'],
-  ] },
-  { title: 'Comunicación', metrics: [
-    ['communication_total', 'Total'], ['communication_online', 'En línea', 'online'],
-    ['communication_offline', 'Sin conexión', 'offline'], ['communication_alarm', 'Alarma', 'alarm'],
-  ] },
-];
+const lastUpdatedAt = ref(null);
+const refreshError = ref('');
+const refreshInFlight = ref(false);
+
+let refreshTimer = null;
+const REFRESH_INTERVAL_MS = 60 * 1000;
+
+const controller = new AbortController();
+
+const formatter = new Intl.NumberFormat('es-BO', {
+  maximumFractionDigits: 2,
+});
+
+const clockFormatter = new Intl.DateTimeFormat('es-BO', {
+  hour: '2-digit',
+  minute: '2-digit',
+  hour12: false,
+});
+
+const providerNames = {
+  hyxi: 'HYXi',
+  growatt: 'Growatt',
+};
 
 function available(value) {
   return typeof value === 'number' && Number.isFinite(value);
 }
+
 function formatValue(value) {
-  return available(value) ? formatter.format(value) : '—';
-}
-function availableMetrics(source, metrics) {
-  return metrics.filter(([key]) => available(source?.[key]));
-}
-
-async function syncGrowatt() {
-  if (syncLoading.value) return;
-  syncLoading.value = true;
-  syncError.value = '';
-  syncResult.value = null;
-  try {
-    syncResult.value = await apiFetch('/integrations/growatt/sync/latest', { method: 'POST' });
-  } catch {
-    syncError.value = 'No se pudo ejecutar la sincronización Growatt.';
-  } finally {
-    syncLoading.value = false;
-  }
+  return available(value)
+    ? formatter.format(value)
+    : '—';
 }
 
-onMounted(async () => {
-  try {
-    const data = await apiFetch('/dashboard/summary', { signal: controller.signal });
-    if (!data || typeof data !== 'object' || Array.isArray(data)) throw new Error('Respuesta inválida');
-    summary.value = data;
-  } catch {
-    if (!controller.signal.aborted) error.value = 'No se pudo cargar el resumen. Comprueba la conexión con el servidor y vuelve a cargar la página.';
-  } finally {
-    loading.value = false;
+function formatEnergy(value) {
+  if (!available(value)) return '—';
+
+  if (Math.abs(value) >= 1000) {
+    return `${formatter.format(value / 1000)} MWh`;
   }
+
+  return `${formatter.format(value)} kWh`;
+}
+
+function formatPower(value) {
+  if (!available(value)) return '—';
+
+  if (Math.abs(value) >= 1000) {
+    return `${formatter.format(value / 1000)} kW`;
+  }
+
+  return `${formatter.format(value)} W`;
+}
+
+function providerLabel(provider) {
+  return providerNames[provider]
+    ?? provider
+    ?? '—';
+}
+
+function formatClock(timestamp) {
+  if (!timestamp) return '—';
+
+  return clockFormatter.format(
+    new Date(timestamp),
+  );
+}
+
+const growattAlarmItems = computed(() => {
+  const data = growattAlarms.value;
+
+  if (Array.isArray(data)) return data;
+  if (Array.isArray(data?.alarms)) return data.alarms;
+  if (Array.isArray(data?.items)) return data.items;
+
+  return [];
 });
-onUnmounted(() => controller.abort());
+
+const hyxiAlarmItems = computed(() => {
+  const data = hyxiAlarms.value;
+
+  if (Array.isArray(data)) return data;
+  if (Array.isArray(data?.alarms)) return data.alarms;
+  if (Array.isArray(data?.items)) return data.items;
+
+  return [];
+});
+
+const hyxiUnavailable = computed(() => {
+  if (!hyxiAlarms.value) {
+    return true;
+  }
+
+  return (
+    hyxiAlarms.value.partial === true
+    || (
+      Number(hyxiAlarms.value.failed_plants) > 0
+      && Number(hyxiAlarms.value.checked_plants) > 0
+      && Number(hyxiAlarms.value.failed_plants)
+        >= Number(hyxiAlarms.value.checked_plants)
+    )
+  );
+});
+
+const currentIncidents = computed(() => {
+  return growattAlarmItems.value.length
+    + hyxiAlarmItems.value.length;
+});
+
+const topMaxValue = computed(() => {
+  const values = (summary.value?.top_plants ?? [])
+    .map(plant => Number(plant.today_generation_kwh))
+    .filter(Number.isFinite);
+
+  return values.length ? Math.max(...values) : 0;
+});
+
+const topPlants = computed(() =>
+  (summary.value?.top_plants ?? []).map(plant => ({
+    ...plant,
+    width: topMaxValue.value > 0
+      ? `${Math.max(
+        4,
+        Math.min(
+          100,
+          Number(plant.today_generation_kwh) * 100
+            / topMaxValue.value,
+        ),
+      )}%`
+      : '4%',
+  })),
+);
+
+const providerCards = computed(() => {
+  return (summary.value?.providers ?? []).map(
+    provider => ({
+      ...provider,
+      label: providerLabel(provider.provider),
+    }),
+  );
+});
+
+/*
+ * Carga inicial o refresco periódico de los datos del
+ * dashboard usando solo la API RDX existente.
+ *
+ * Nunca se dispara sync de fabricantes y nunca se recarga
+ * la página: se reemplazan los valores en memoria.
+ *
+ * El guard refreshInFlight evita requests simultáneos si
+ * un refresco anterior sigue activo.
+ */
+async function fetchDashboard({ initial = false } = {}) {
+  if (refreshInFlight.value) {
+    return;
+  }
+
+  refreshInFlight.value = true;
+
+  if (initial) {
+    loading.value = true;
+  }
+
+  error.value = '';
+  refreshError.value = '';
+
+  try {
+    const [
+      summaryResult,
+      growattResult,
+      hyxiResult,
+    ] = await Promise.allSettled([
+      apiFetch('/dashboard/summary', {
+        signal: controller.signal,
+      }),
+
+      apiFetch(
+        '/integrations/growatt/alarms/current',
+        {
+          signal: controller.signal,
+        },
+      ),
+
+      apiFetch(
+        '/integrations/hyxi/alarms/recent',
+        {
+          signal: controller.signal,
+        },
+      ),
+    ]);
+
+    if (summaryResult.status !== 'fulfilled') {
+      throw summaryResult.reason;
+    }
+
+    if (
+      !summaryResult.value
+      || typeof summaryResult.value !== 'object'
+      || Array.isArray(summaryResult.value)
+    ) {
+      throw new Error('Respuesta inválida');
+    }
+
+    summary.value = summaryResult.value;
+    lastUpdatedAt.value = Date.now();
+
+    /*
+     * Cada fuente se actualiza solo si respondió: así un
+     * fallo parcial no borra los últimos datos válidos.
+     */
+    if (growattResult.status === 'fulfilled') {
+      growattAlarms.value = growattResult.value;
+    }
+
+    if (hyxiResult.status === 'fulfilled') {
+      hyxiAlarms.value = hyxiResult.value;
+    }
+
+    error.value = '';
+    refreshError.value = '';
+  } catch {
+    if (!controller.signal.aborted) {
+      if (initial) {
+        error.value =
+          'No se pudo cargar el resumen ejecutivo. '
+          + 'Comprueba la conexión con el servidor '
+          + 'y vuelve a cargar la página.';
+      } else {
+        refreshError.value =
+          'No se pudo actualizar. Se conservan '
+          + 'los últimos datos.';
+      }
+    }
+  } finally {
+    refreshInFlight.value = false;
+
+    if (initial) {
+      loading.value = false;
+    }
+  }
+}
+
+onMounted(() => {
+  void fetchDashboard({ initial: true });
+
+  refreshTimer = setInterval(() => {
+    void fetchDashboard();
+  }, REFRESH_INTERVAL_MS);
+});
+
+onUnmounted(() => {
+  if (refreshTimer !== null) {
+    clearInterval(refreshTimer);
+    refreshTimer = null;
+  }
+
+  controller.abort();
+});
 </script>
 
 <template>
   <div class="dashboard-view">
-  <header class="dashboard-header">
-    <div>
-      <p class="eyebrow">RDX Solar Monitor</p>
-      <h1>Resumen energético</h1>
-      <p class="header-description">Estado operativo y desempeño de todas tus instalaciones solares.</p>
-    </div>
-    <div class="header-action">
-      <span class="update-label">Actualización manual de telemetría</span>
-      <button type="button" class="sync-button" :disabled="syncLoading" @click="syncGrowatt">
-        {{ syncLoading ? 'Sincronizando…' : 'Sync Growatt' }}
-      </button>
-    </div>
-  </header>
+    <header class="dashboard-header">
+      <div>
+        <p class="eyebrow">
+          RDX Solar Monitor
+        </p>
 
-  <div v-if="loading" class="card page-state" role="status" aria-live="polite">Cargando resumen…</div>
-  <div v-else-if="error" class="card page-state error-state" role="alert">
-    <h2>No se pudo cargar el dashboard</h2>
-    <p>{{ error }}</p>
-  </div>
+        <h1>
+          Vista ejecutiva
+        </h1>
 
-  <main v-else-if="summary" class="dashboard">
-    <div v-if="syncError" class="sync-message sync-error" role="alert">{{ syncError }}</div>
-    <div v-if="syncResult" class="sync-message" role="status">
-      <strong>Growatt actualizado</strong>
-      <span>Procesados {{ syncResult.processed }}</span>
-      <span>Actualizados {{ syncResult.updated }}</span>
-      <span>Sin datos {{ syncResult.no_data }}</span>
-      <span>Fallidos {{ syncResult.failed }}</span>
-      <ul v-if="syncResult.errors?.length">
-        <li v-for="(syncItem, index) in syncResult.errors" :key="index">{{ syncItem.error_message }}</li>
-      </ul>
-    </div>
-
-    <section class="primary-grid" aria-label="Estado general de plantas">
-      <article v-for="[key, label, state] in primaryMetrics" :key="key" class="primary-kpi" :class="`kpi-${state}`">
-        <span class="status-dot" aria-hidden="true"></span>
-        <div><p>{{ label }}</p><strong>{{ formatValue(summary[key]) }}</strong></div>
-      </article>
-    </section>
-
-    <section class="dashboard-section" aria-labelledby="energy-title">
-      <div class="section-heading">
-        <div><p class="section-kicker">Rendimiento</p><h2 id="energy-title">Energía</h2></div>
-        <p>Producción, consumo y balance con la red.</p>
+        <p class="header-description">
+          Supervisión unificada del parque fotovoltaico
+          administrado por RDX Technology.
+        </p>
       </div>
-      <dl class="energy-grid">
-        <div v-for="[key, label, unit] in availableMetrics(summary, energyMetrics)" :key="key" class="energy-metric">
-          <dt>{{ label }}</dt>
-          <dd>{{ formatValue(summary[key]) }} <span>{{ unit }}</span></dd>
-        </div>
-      </dl>
-    </section>
 
-    <section class="dashboard-section" aria-labelledby="system-title">
-      <div class="section-heading">
-        <div><p class="section-kicker">Operación</p><h2 id="system-title">Estado del sistema</h2></div>
-        <p>Disponibilidad general de plantas y equipos.</p>
+      <div class="header-meta">
+        <span>
+          Monitoreo multi-marca
+        </span>
+
+        <strong>
+          HYXi + Growatt
+        </strong>
+
+        <span
+          v-if="summary && lastUpdatedAt"
+          class="update-note"
+        >
+          Última actualización
+          {{ formatClock(lastUpdatedAt) }}
+        </span>
+
+        <span
+          v-if="refreshError"
+          class="update-note update-error"
+          role="status"
+        >
+          {{ refreshError }}
+        </span>
       </div>
-      <div class="system-layout">
-        <dl class="system-metrics">
-          <div v-for="[key, label, state] in availableMetrics(summary, systemMetrics)" :key="key">
-            <dt><span v-if="state" class="mini-dot" :class="`dot-${state}`"></span>{{ label }}</dt>
-            <dd>{{ formatValue(summary[key]) }}</dd>
+    </header>
+
+    <div
+      v-if="loading"
+      class="card page-state"
+      role="status"
+      aria-live="polite"
+    >
+      Cargando vista ejecutiva…
+    </div>
+
+    <div
+      v-else-if="error"
+      class="card page-state error-state"
+      role="alert"
+    >
+      <h2>
+        No se pudo cargar el dashboard
+      </h2>
+
+      <p>
+        {{ error }}
+      </p>
+    </div>
+
+    <main
+      v-else-if="summary"
+      class="dashboard"
+    >
+      <!-- RESUMEN DEL PARQUE -->
+
+      <section>
+        <div class="section-heading">
+          <div>
+            <p class="section-kicker">
+              Portafolio
+            </p>
+
+            <h2>
+              Resumen del parque
+            </h2>
           </div>
-        </dl>
-        <div class="system-note">
-          <strong>{{ formatValue(summary.online_plants) }} de {{ formatValue(summary.total_plants) }}</strong>
-          <span>plantas operando en línea</span>
-        </div>
-      </div>
-    </section>
 
-    <section v-if="summary.providers?.length" class="dashboard-section" aria-labelledby="providers-title">
-      <div class="section-heading">
-        <div><p class="section-kicker">Integraciones</p><h2 id="providers-title">Proveedores</h2></div>
-        <p>Inventario y disponibilidad por plataforma.</p>
-      </div>
-      <div class="providers-grid">
-        <article v-for="provider in summary.providers" :key="provider.provider" class="provider-panel">
-          <header class="provider-header">
-            <div><span class="provider-mark"></span><h3>{{ providerNames[provider.provider] ?? provider.provider }}</h3></div>
-            <span>{{ formatValue(provider.total_plants) }} plantas</span>
+          <p>
+            Indicadores consolidados de las instalaciones
+            fotovoltaicas registradas.
+          </p>
+        </div>
+
+        <div class="executive-kpis">
+          <article class="executive-kpi">
+            <span class="kpi-icon">
+              01
+            </span>
+
+            <div>
+              <p>
+                Plantas
+              </p>
+
+              <strong>
+                {{ formatValue(summary.total_plants) }}
+              </strong>
+
+              <small>
+                instalaciones activas
+              </small>
+            </div>
+          </article>
+
+          <article class="executive-kpi">
+            <span class="kpi-icon">
+              02
+            </span>
+
+            <div>
+              <p>
+                Capacidad instalada
+              </p>
+
+              <strong>
+                {{
+                  formatValue(
+                    summary.total_capacity_kwp,
+                  )
+                }}
+
+                <em>
+                  kWp
+                </em>
+              </strong>
+
+              <small>
+                potencia fotovoltaica instalada
+              </small>
+            </div>
+          </article>
+
+          <article class="executive-kpi featured-kpi">
+            <span class="kpi-icon">
+              03
+            </span>
+
+            <div>
+              <p>
+                Generación de hoy
+              </p>
+
+              <strong>
+                {{
+                  formatValue(
+                    summary.today_generation_kwh,
+                  )
+                }}
+
+                <em>
+                  kWh
+                </em>
+              </strong>
+
+              <small>
+                producción registrada hoy
+              </small>
+            </div>
+          </article>
+
+          <article class="executive-kpi">
+            <span class="kpi-icon">
+              04
+            </span>
+
+            <div>
+              <p>
+                Generación actual
+              </p>
+
+              <strong>
+                {{
+                  formatPower(
+                    summary.current_generation_power_w,
+                  )
+                }}
+              </strong>
+
+              <small>
+                solo telemetría vigente
+              </small>
+            </div>
+          </article>
+        </div>
+      </section>
+
+      <!-- OPERACIÓN Y PRODUCCIÓN -->
+
+      <section class="overview-grid">
+        <article class="executive-panel">
+          <header class="panel-header">
+            <div>
+              <p class="section-kicker">
+                Operación
+              </p>
+
+              <h2>
+                Estado del parque
+              </h2>
+            </div>
+
+            <span class="panel-total">
+              {{ formatValue(summary.total_plants) }}
+              plantas
+            </span>
           </header>
-          <dl class="provider-overview">
-            <div v-for="[key, label, state] in availableMetrics(provider, providerMetrics)" :key="key">
-              <dt><span v-if="state" class="mini-dot" :class="`dot-${state}`"></span>{{ label }}</dt>
-              <dd>{{ formatValue(provider[key]) }}</dd>
+
+          <div class="state-group">
+            <p class="group-label">
+              Plantas
+            </p>
+
+            <div class="status-list">
+              <div class="status-row">
+                <span
+                  class="status-indicator status-online"
+                ></span>
+
+                <div>
+                  <strong>
+                    {{
+                      formatValue(summary.online_plants)
+                    }}
+                  </strong>
+
+                  <span>
+                    En línea
+                  </span>
+                </div>
+              </div>
+
+              <div class="status-row">
+                <span
+                  class="status-indicator status-offline"
+                ></span>
+
+                <div>
+                  <strong>
+                    {{
+                      formatValue(summary.offline_plants)
+                    }}
+                  </strong>
+
+                  <span>
+                    Sin conexión
+                  </span>
+                </div>
+              </div>
+
+              <div class="status-row">
+                <span
+                  class="status-indicator status-alarm"
+                ></span>
+
+                <div>
+                  <strong>
+                    {{
+                      formatValue(summary.alarm_plants)
+                    }}
+                  </strong>
+
+                  <span>
+                    Con alarma
+                  </span>
+                </div>
+              </div>
+
+              <div
+                v-if="
+                  Number(summary.unknown_plants) > 0
+                "
+                class="status-row"
+              >
+                <span
+                  class="status-indicator status-unknown"
+                ></span>
+
+                <div>
+                  <strong>
+                    {{
+                      formatValue(summary.unknown_plants)
+                    }}
+                  </strong>
+
+                  <span>
+                    Desconocido
+                  </span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="state-group">
+            <p class="group-label">
+              Telemetría
+            </p>
+
+            <div class="status-list telemetry-list">
+              <div class="status-row">
+                <span
+                  class="status-indicator status-online"
+                ></span>
+
+                <div>
+                  <strong>
+                    {{
+                      formatValue(summary.telemetry_current)
+                    }}
+                  </strong>
+
+                  <span>
+                    Actual
+                  </span>
+                </div>
+              </div>
+
+              <div class="status-row">
+                <span
+                  class="status-indicator status-stale"
+                ></span>
+
+                <div>
+                  <strong>
+                    {{
+                      formatValue(summary.telemetry_stale)
+                    }}
+                  </strong>
+
+                  <span>
+                    Atrasada
+                  </span>
+                </div>
+              </div>
+
+              <div class="status-row">
+                <span
+                  class="status-indicator status-unknown"
+                ></span>
+
+                <div>
+                  <strong>
+                    {{
+                      formatValue(summary.telemetry_no_data)
+                    }}
+                  </strong>
+
+                  <span>
+                    Sin datos
+                  </span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <p class="context-note">
+            El estado de planta corresponde a la condición
+            reportada por cada plataforma; la telemetría
+            refleja la vigencia de los últimos datos.
+          </p>
+        </article>
+
+        <article class="executive-panel">
+          <header class="panel-header">
+            <div>
+              <p class="section-kicker">
+                Energía
+              </p>
+
+              <h2>
+                Producción acumulada
+              </h2>
+            </div>
+
+            <span class="production-current">
+              {{
+                formatPower(
+                  summary.current_generation_power_w,
+                )
+              }}
+            </span>
+          </header>
+
+          <dl class="production-list">
+            <div class="production-main">
+              <dt>
+                Hoy
+              </dt>
+
+              <dd>
+                {{
+                  formatEnergy(
+                    summary.today_generation_kwh,
+                  )
+                }}
+              </dd>
+            </div>
+
+            <div>
+              <dt>
+                Mes
+              </dt>
+
+              <dd>
+                {{
+                  formatEnergy(
+                    summary.month_generation_kwh,
+                  )
+                }}
+              </dd>
+            </div>
+
+            <div>
+              <dt>
+                Año
+              </dt>
+
+              <dd>
+                {{
+                  formatEnergy(
+                    summary.year_generation_kwh,
+                  )
+                }}
+              </dd>
+            </div>
+
+            <div>
+              <dt>
+                Histórico registrado
+              </dt>
+
+              <dd>
+                {{
+                  formatEnergy(
+                    summary.total_generation_kwh,
+                  )
+                }}
+              </dd>
             </div>
           </dl>
-          <div v-if="provider.provider === 'hyxi'" class="technical-inventory">
-            <section v-for="group in hyxiInventoryGroups.filter(item => availableMetrics(provider, item.metrics).length)" :key="group.title">
-              <h4>{{ group.title }}</h4>
-              <dl>
-                <div v-for="[key, label, state] in availableMetrics(provider, group.metrics)" :key="key">
-                  <dt><span v-if="state" class="mini-dot" :class="`dot-${state}`"></span>{{ label }}</dt>
-                  <dd>{{ formatValue(provider[key]) }}</dd>
-                </div>
-              </dl>
-            </section>
+
+          <div class="data-warning">
+            <strong>
+              Cobertura parcial de acumulados
+            </strong>
+
+            <span>
+              Los acumulados mensual, anual e histórico
+              todavía no cuentan con la misma cobertura
+              de datos para HYXi y Growatt.
+            </span>
           </div>
         </article>
-      </div>
-    </section>
-  </main>
+      </section>
+
+      <!-- PRODUCCIÓN POR PLANTA -->
+
+      <section>
+        <div class="section-heading">
+          <div>
+            <p class="section-kicker">
+              Desempeño
+            </p>
+
+            <h2>
+              Producción por planta
+            </h2>
+          </div>
+
+          <RouterLink
+            class="text-link"
+            to="/plants"
+          >
+            Ver todas las plantas
+          </RouterLink>
+        </div>
+
+        <div
+          v-if="topPlants.length"
+          class="top-plants-card"
+        >
+          <ol class="top-plants-list">
+            <li
+              v-for="(plant, index) in topPlants"
+              :key="plant.plant_id"
+              class="top-plant"
+            >
+              <span class="top-rank">
+                {{ index + 1 }}
+              </span>
+
+              <span
+                class="provider-logo"
+                :class="
+                  `provider-${plant.provider}`
+                "
+              >
+                {{
+                  plant.provider === 'hyxi'
+                    ? 'HX'
+                    : 'GW'
+                }}
+              </span>
+
+              <div class="top-plant-info">
+                <strong>
+                  {{ plant.name }}
+                </strong>
+
+                <span>
+                  {{ providerLabel(plant.provider) }}
+                </span>
+              </div>
+
+              <div class="top-bar">
+                <span
+                  class="top-bar-fill"
+                  :style="{ width: plant.width }"
+                ></span>
+              </div>
+
+              <div class="top-energy">
+                <strong>
+                  {{
+                    formatEnergy(
+                      plant.today_generation_kwh,
+                    )
+                  }}
+                </strong>
+
+                <small>
+                  hoy
+                </small>
+              </div>
+            </li>
+          </ol>
+        </div>
+
+        <div
+          v-else
+          class="card page-state top-plants-empty"
+          role="status"
+        >
+          Aún no hay producción registrada hoy por planta
+          para armar el ranking.
+        </div>
+      </section>
+
+      <!-- PROVEEDORES -->
+
+      <section>
+        <div class="section-heading">
+          <div>
+            <p class="section-kicker">
+              Integraciones
+            </p>
+
+            <h2>
+              Plataformas conectadas
+            </h2>
+          </div>
+
+          <p>
+            Estado operativo e inventario
+            por fabricante.
+          </p>
+        </div>
+
+        <div class="providers-grid">
+          <article
+            v-for="provider in providerCards"
+            :key="provider.provider"
+            class="provider-card"
+          >
+            <header class="provider-card-header">
+              <div class="provider-title">
+                <span
+                  class="provider-logo"
+                  :class="
+                    `provider-${provider.provider}`
+                  "
+                >
+                  {{
+                    provider.provider === 'hyxi'
+                      ? 'HX'
+                      : 'GW'
+                  }}
+                </span>
+
+                <div>
+                  <h3>
+                    {{ provider.label }}
+                  </h3>
+
+                  <p>
+                    {{
+                      formatValue(
+                        provider.total_capacity_kwp,
+                      )
+                    }}
+                    kWp instalados
+                  </p>
+                </div>
+              </div>
+
+              <strong class="provider-count">
+                {{
+                  formatValue(
+                    provider.total_plants,
+                  )
+                }}
+
+                <small>
+                  plantas
+                </small>
+              </strong>
+            </header>
+
+            <div class="provider-groups">
+              <div class="provider-group">
+                <p class="group-label">
+                  Plantas
+                </p>
+
+                <div class="provider-chips">
+                  <span class="provider-chip">
+                    <span
+                      class="mini-dot dot-online"
+                    ></span>
+
+                    <strong>
+                      {{
+                        formatValue(
+                          provider.online_plants,
+                        )
+                      }}
+                    </strong>
+
+                    <small>
+                      En línea
+                    </small>
+                  </span>
+
+                  <span class="provider-chip">
+                    <span
+                      class="mini-dot dot-offline"
+                    ></span>
+
+                    <strong>
+                      {{
+                        formatValue(
+                          provider.offline_plants,
+                        )
+                      }}
+                    </strong>
+
+                    <small>
+                      Sin conexión
+                    </small>
+                  </span>
+
+                  <span class="provider-chip">
+                    <span
+                      class="mini-dot dot-alarm"
+                    ></span>
+
+                    <strong>
+                      {{
+                        formatValue(
+                          provider.alarm_plants,
+                        )
+                      }}
+                    </strong>
+
+                    <small>
+                      Alarma
+                    </small>
+                  </span>
+
+                  <span
+                    v-if="
+                      Number(
+                        provider.unknown_plants,
+                      ) > 0
+                    "
+                    class="provider-chip"
+                  >
+                    <span
+                      class="mini-dot dot-unknown"
+                    ></span>
+
+                    <strong>
+                      {{
+                        formatValue(
+                          provider.unknown_plants,
+                        )
+                      }}
+                    </strong>
+
+                    <small>
+                      Desconocido
+                    </small>
+                  </span>
+                </div>
+              </div>
+
+              <div class="provider-group">
+                <p class="group-label">
+                  Telemetría
+                </p>
+
+                <div class="provider-chips">
+                  <span class="provider-chip">
+                    <span
+                      class="mini-dot dot-online"
+                    ></span>
+
+                    <strong>
+                      {{
+                        formatValue(
+                          provider.telemetry_current,
+                        )
+                      }}
+                    </strong>
+
+                    <small>
+                      Actual
+                    </small>
+                  </span>
+
+                  <span class="provider-chip">
+                    <span
+                      class="mini-dot dot-stale"
+                    ></span>
+
+                    <strong>
+                      {{
+                        formatValue(
+                          provider.telemetry_stale,
+                        )
+                      }}
+                    </strong>
+
+                    <small>
+                      Atrasada
+                    </small>
+                  </span>
+
+                  <span class="provider-chip">
+                    <span
+                      class="mini-dot dot-unknown"
+                    ></span>
+
+                    <strong>
+                      {{
+                        formatValue(
+                          provider.telemetry_no_data,
+                        )
+                      }}
+                    </strong>
+
+                    <small>
+                      Sin datos
+                    </small>
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            <div class="provider-footer">
+              <span>
+                {{
+                  formatValue(
+                    provider.total_devices,
+                  )
+                }}
+                dispositivos registrados
+              </span>
+            </div>
+          </article>
+        </div>
+      </section>
+
+      <!-- INCIDENCIAS -->
+
+      <section>
+        <div class="section-heading">
+          <div>
+            <p class="section-kicker">
+              Supervisión
+            </p>
+
+            <h2>
+              Incidencias
+            </h2>
+          </div>
+
+          <p>
+            Estado de eventos disponible desde
+            las plataformas integradas.
+          </p>
+        </div>
+
+        <div class="incidents-grid">
+          <!-- GROWATT -->
+
+          <article class="incident-card">
+            <header>
+              <div>
+                <span
+                  class="provider-logo provider-growatt"
+                >
+                  GW
+                </span>
+
+                <div>
+                  <h3>
+                    Growatt
+                  </h3>
+
+                  <p>
+                    Diagnóstico actual
+                  </p>
+                </div>
+              </div>
+
+              <strong>
+                {{ growattAlarmItems.length }}
+              </strong>
+            </header>
+
+            <div
+              v-if="growattAlarms === null"
+              class="incident-state unavailable"
+            >
+              <span class="incident-icon">
+                !
+              </span>
+
+              <div>
+                <strong>
+                  Consulta no disponible
+                </strong>
+
+                <p>
+                  No fue posible consultar el diagnóstico
+                  actual de Growatt.
+                </p>
+              </div>
+            </div>
+
+            <div
+              v-else-if="
+                growattAlarmItems.length === 0
+              "
+              class="incident-state ok"
+            >
+              <span class="incident-icon">
+                ✓
+              </span>
+
+              <div>
+                <strong>
+                  Sin incidencias actuales
+                </strong>
+
+                <p>
+                  No se detectaron fallas o advertencias
+                  actuales en los dispositivos Growatt.
+                </p>
+              </div>
+            </div>
+
+            <div
+              v-else
+              class="incident-state warning"
+            >
+              <span class="incident-icon">
+                !
+              </span>
+
+              <div>
+                <strong>
+                  {{ growattAlarmItems.length }}
+                  incidencia(s) actual(es)
+                </strong>
+
+                <p>
+                  Consulta el módulo de Alarmas
+                  para revisar el detalle.
+                </p>
+              </div>
+            </div>
+          </article>
+
+          <!-- HYXI -->
+
+          <article class="incident-card">
+            <header>
+              <div>
+                <span
+                  class="provider-logo provider-hyxi"
+                >
+                  HX
+                </span>
+
+                <div>
+                  <h3>
+                    HYXi
+                  </h3>
+
+                  <p>
+                    Eventos de alarma
+                  </p>
+                </div>
+              </div>
+
+              <strong
+                v-if="!hyxiUnavailable"
+              >
+                {{ hyxiAlarmItems.length }}
+              </strong>
+
+              <strong
+                v-else
+                class="unavailable-symbol"
+              >
+                —
+              </strong>
+            </header>
+
+            <div
+              v-if="hyxiUnavailable"
+              class="incident-state unavailable"
+            >
+              <span class="incident-icon">
+                !
+              </span>
+
+              <div>
+                <strong>
+                  Consulta temporalmente no disponible
+                </strong>
+
+                <p>
+                  Los datos de las plantas HYXi continúan
+                  disponibles, pero actualmente no es
+                  posible consultar sus eventos de alarma.
+                </p>
+              </div>
+            </div>
+
+            <div
+              v-else-if="
+                hyxiAlarmItems.length === 0
+              "
+              class="incident-state ok"
+            >
+              <span class="incident-icon">
+                ✓
+              </span>
+
+              <div>
+                <strong>
+                  Sin alarmas reportadas
+                </strong>
+
+                <p>
+                  La consulta de eventos HYXi se completó
+                  correctamente.
+                </p>
+              </div>
+            </div>
+
+            <div
+              v-else
+              class="incident-state warning"
+            >
+              <span class="incident-icon">
+                !
+              </span>
+
+              <div>
+                <strong>
+                  {{ hyxiAlarmItems.length }}
+                  alarma(s)
+                </strong>
+
+                <p>
+                  Consulta el módulo de Alarmas
+                  para revisar el detalle.
+                </p>
+              </div>
+            </div>
+          </article>
+        </div>
+
+        <div class="incident-summary">
+          <span>
+            Incidencias visibles actualmente
+          </span>
+
+          <strong>
+            {{
+              hyxiUnavailable
+                ? `${growattAlarmItems.length} + HYXi no disponible`
+                : currentIncidents
+            }}
+          </strong>
+        </div>
+      </section>
+    </main>
   </div>
 </template>
 
 <style scoped>
-.dashboard-view { width: 100%; min-width: 0; }
-:global(.main-content:has(.dashboard-view)) { max-width: none; min-width: 0; }
-.dashboard-header { display: flex; align-items: flex-end; justify-content: space-between; gap: 32px; margin-bottom: 32px; padding-bottom: 28px; border-bottom: 1px solid #dfe7e1; }
-.dashboard-header h1 { margin: 4px 0 8px; font-size: clamp(30px, 4vw, 44px); letter-spacing: -.04em; color: #173f33; }
-.header-description { max-width: 620px; margin: 0; color: #617168; font-size: 16px; }
-.header-action { display: flex; align-items: center; gap: 14px; flex: 0 0 auto; }
-.update-label { color: #718078; font-size: 12px; }
-.sync-button { border: 0; border-radius: 9px; padding: 11px 17px; background: #174d3c; color: white; font: inherit; font-weight: 650; cursor: pointer; box-shadow: 0 5px 14px rgb(23 77 60 / 14%); }
-.sync-button:hover:not(:disabled) { background: #0f3e30; }
-.sync-button:disabled { opacity: .6; cursor: default; }
-.dashboard { display: grid; width: 100%; min-width: 0; gap: 42px; }
-.page-state { padding: 28px; }
-.error-state { border-color: #dfc1b9; }
-.error-state h2 { margin-top: 0; }
-.sync-message { display: flex; flex-wrap: wrap; gap: 8px 20px; padding: 14px 18px; border-radius: 9px; background: #edf5f0; color: #315b4b; font-size: 13px; }
-.sync-message ul { flex-basis: 100%; margin: 5px 0 0; padding-left: 18px; }
-.sync-error { background: #fbece8; color: #8b3827; }
-.primary-grid { display: grid; width: 100%; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 18px; }
-.primary-kpi { display: flex; align-items: flex-start; gap: 14px; min-width: 0; min-height: 132px; padding: 24px; border: 1px solid #dfe7e1; border-radius: 14px; background: #fff; box-shadow: 0 6px 22px rgb(23 63 51 / 6%); }
-.primary-kpi p { margin: 0 0 10px; color: #607068; font-size: 14px; font-weight: 600; }
-.primary-kpi strong { font-size: clamp(34px, 4vw, 48px); line-height: 1; color: #173f33; font-variant-numeric: tabular-nums; }
-.status-dot, .mini-dot { display: inline-block; flex: 0 0 auto; border-radius: 50%; background: #8a9991; }
-.status-dot { width: 9px; height: 9px; margin-top: 4px; }
-.kpi-online { background: #f1f8f3; border-color: #d1e7d8; }.kpi-online .status-dot, .dot-online { background: #38935f; }
-.kpi-offline { background: #f7f8f7; }.kpi-offline .status-dot, .dot-offline, .dot-unknown { background: #8a9991; }
-.kpi-alarm { background: #fff4f1; border-color: #f0d6cf; }.kpi-alarm .status-dot, .dot-alarm { background: #d3593f; }
-.dashboard-section { width: 100%; min-width: 0; }
-.section-heading { display: flex; align-items: flex-end; justify-content: space-between; gap: 24px; margin-bottom: 18px; }
-.section-heading h2 { margin: 2px 0 0; color: #173f33; font-size: 23px; letter-spacing: -.025em; }
-.section-heading > p { margin: 0; color: #718078; font-size: 13px; text-align: right; }
-.section-kicker { margin: 0; color: #4c8b70; font-size: 11px; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; }
-.energy-grid { display: grid; width: 100%; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 1px; margin: 0; overflow: hidden; border: 1px solid #dfe7e1; border-radius: 13px; background: #dfe7e1; }
-.energy-metric { min-width: 0; min-height: 116px; padding: 22px; background: #fff; }
-.energy-metric + .energy-metric { border-left: 0; }
-.energy-metric dt { min-height: 34px; color: #617168; font-size: 13px; }
-.energy-metric dd { margin: 9px 0 0; color: #174d3c; font-size: clamp(20px, 2.2vw, 28px); font-weight: 700; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
-.energy-metric dd span { color: #718078; font-size: 12px; font-weight: 500; white-space: nowrap; }
-.system-layout { display: grid; grid-template-columns: minmax(0, 2fr) minmax(220px, 1fr); gap: 16px; }
-.system-metrics { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); margin: 0; padding: 26px; border: 1px solid #dfe7e1; border-radius: 13px; background: #fff; box-shadow: 0 4px 18px rgb(23 63 51 / 4%); }
-.system-metrics > div { padding: 0 18px; }
-.system-metrics > div + div { border-left: 1px solid #dfe7e1; }
-.system-metrics dt, .provider-overview dt, .technical-inventory dt { display: flex; align-items: center; gap: 7px; color: #65756c; font-size: 12px; }
-.system-metrics dd { margin: 9px 0 0; color: #173f33; font-size: 28px; font-weight: 700; }
-.mini-dot { width: 6px; height: 6px; }
-.system-note { display: flex; flex-direction: column; justify-content: center; padding: 22px 26px; border-radius: 12px; background: #174d3c; color: white; }
-.system-note strong { font-size: 28px; }.system-note span { margin-top: 5px; color: #c9ded4; font-size: 13px; }
-.providers-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; }
-.provider-panel { min-width: 0; padding: 28px; border: 1px solid #dfe7e1; border-radius: 14px; background: #fff; box-shadow: 0 5px 20px rgb(23 63 51 / 5%); }
-.provider-header { display: flex; align-items: center; justify-content: space-between; gap: 20px; padding-bottom: 18px; border-bottom: 1px solid #e5ebe7; }
-.provider-header > div { display: flex; align-items: center; gap: 10px; }.provider-header h3 { margin: 0; color: #173f33; font-size: 21px; }
-.provider-header > span { color: #718078; font-size: 12px; }.provider-mark { width: 9px; height: 24px; border-radius: 5px; background: #56a27f; }
-.provider-overview { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px 26px; margin: 22px 0 0; }
-.provider-overview dd, .technical-inventory dd { margin: 5px 0 0; color: #174d3c; font-size: 21px; font-weight: 700; }
-.technical-inventory { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; margin-top: 24px; padding-top: 20px; border-top: 1px solid #e5ebe7; }
-.technical-inventory h4 { margin: 0 0 12px; color: #40594e; font-size: 13px; }.technical-inventory dl { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin: 0; }
-.technical-inventory dd { font-size: 17px; }
-@media (max-width: 1050px) { .energy-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }.system-layout { grid-template-columns: 1fr; } }
-@media (max-width: 800px) { .dashboard-header { align-items: flex-start; flex-direction: column; }.header-action { width: 100%; justify-content: space-between; }.primary-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }.providers-grid { grid-template-columns: 1fr; }.system-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 22px 0; }.system-metrics > div:nth-child(3) { border-left: 0; } }
-@media (max-width: 520px) { .dashboard { gap: 34px; }.header-action { align-items: stretch; flex-direction: column; }.sync-button { width: 100%; }.primary-grid, .energy-grid, .system-metrics { grid-template-columns: 1fr; }.energy-metric { padding: 18px; }.system-metrics > div { padding: 17px 4px; }.system-metrics > div + div { border-left: 0; border-top: 1px solid #e5ebe7; }.section-heading { align-items: flex-start; flex-direction: column; gap: 7px; }.section-heading > p { text-align: left; }.provider-panel { padding: 20px; }.technical-inventory { grid-template-columns: 1fr; } }
+.dashboard-view {
+  width: 100%;
+  min-width: 0;
+}
+
+:global(.main-content:has(.dashboard-view)) {
+  max-width: none;
+  min-width: 0;
+}
+
+/* HEADER */
+
+.dashboard-header {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 32px;
+  margin-bottom: 32px;
+  padding-bottom: 28px;
+  border-bottom: 1px solid var(--rdx-border);
+}
+
+.eyebrow,
+.section-kicker {
+  margin: 0;
+  color: var(--rdx-accent);
+  font-size: 11px;
+  font-weight: 750;
+  letter-spacing: .12em;
+  text-transform: uppercase;
+}
+
+.dashboard-header h1 {
+  margin: 4px 0 8px;
+  color: var(--rdx-text-strong);
+  font-size: clamp(32px, 4vw, 46px);
+  letter-spacing: -.045em;
+}
+
+.header-description {
+  max-width: 680px;
+  margin: 0;
+  color: var(--rdx-text-muted);
+  font-size: 15px;
+}
+
+.header-meta {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 3px;
+}
+
+.header-meta span {
+  color: var(--rdx-text-faint);
+  font-size: 11px;
+}
+
+.header-meta strong {
+  color: var(--rdx-text-muted);
+  font-size: 13px;
+}
+
+.update-note {
+  font-size: 10px;
+  color: var(--rdx-text-faint);
+}
+
+.update-note.update-error {
+  color: var(--rdx-danger);
+}
+
+/* GENERAL */
+
+.dashboard {
+  display: grid;
+  width: 100%;
+  min-width: 0;
+  gap: 42px;
+}
+
+.page-state {
+  padding: 28px;
+}
+
+.error-state {
+  border-color: var(--rdx-danger-soft);
+}
+
+.error-state h2 {
+  margin-top: 0;
+}
+
+.section-heading {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 24px;
+  margin-bottom: 18px;
+}
+
+.section-heading h2,
+.panel-header h2 {
+  margin: 2px 0 0;
+  color: var(--rdx-text-strong);
+  font-size: 23px;
+  letter-spacing: -.025em;
+}
+
+.section-heading > p {
+  max-width: 470px;
+  margin: 0;
+  color: var(--rdx-text-muted);
+  font-size: 13px;
+  text-align: right;
+}
+
+/* KPIs */
+
+.executive-kpis {
+  display: grid;
+  grid-template-columns:
+    repeat(4, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.executive-kpi {
+  display: flex;
+  align-items: flex-start;
+  gap: 16px;
+  min-width: 0;
+  min-height: 148px;
+  padding: 24px;
+  border: 1px solid var(--rdx-border);
+  border-radius: 15px;
+  background: var(--rdx-surface);
+  box-shadow:
+    0 6px 22px rgb(23 63 51 / 5%);
+}
+
+.executive-kpi.featured-kpi {
+  border-color: var(--rdx-success-soft);
+  background:
+    linear-gradient(
+      145deg,
+      var(--rdx-success-soft),
+      var(--rdx-surface)
+    );
+}
+
+.kpi-icon {
+  display: grid;
+  width: 34px;
+  height: 34px;
+  flex: 0 0 34px;
+  place-items: center;
+  border-radius: 9px;
+  background: var(--rdx-primary-soft);
+  color: var(--rdx-accent);
+  font-size: 10px;
+  font-weight: 800;
+}
+
+.executive-kpi p {
+  margin: 0 0 10px;
+  color: var(--rdx-text-muted);
+  font-size: 13px;
+  font-weight: 650;
+}
+
+.executive-kpi strong {
+  display: block;
+  color: var(--rdx-text-strong);
+  font-size: clamp(28px, 3vw, 40px);
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+
+.executive-kpi strong em {
+  color: var(--rdx-text-muted);
+  font-size: 13px;
+  font-style: normal;
+  font-weight: 600;
+}
+
+.executive-kpi small {
+  display: block;
+  margin-top: 11px;
+  color: var(--rdx-text-faint);
+  font-size: 11px;
+}
+
+/* ESTADO + PRODUCCIÓN */
+
+.overview-grid {
+  display: grid;
+  grid-template-columns:
+    minmax(0, 1fr)
+    minmax(0, 1fr);
+  gap: 18px;
+}
+
+.executive-panel {
+  min-width: 0;
+  padding: 27px;
+  border: 1px solid var(--rdx-border);
+  border-radius: 15px;
+  background: var(--rdx-surface);
+  box-shadow:
+    0 5px 20px rgb(23 63 51 / 4%);
+}
+
+.panel-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 20px;
+  padding-bottom: 20px;
+  border-bottom: 1px solid var(--rdx-border);
+}
+
+.panel-total,
+.production-current {
+  color: var(--rdx-text-muted);
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.state-group + .state-group {
+  margin-top: 4px;
+}
+
+.group-label {
+  margin: 0 0 10px;
+  color: var(--rdx-text-faint);
+  font-size: 10px;
+  font-weight: 750;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+}
+
+.status-list {
+  display: grid;
+  grid-template-columns:
+    repeat(auto-fit, minmax(150px, 1fr));
+  gap: 12px;
+}
+
+.state-group + .state-group .status-list {
+  padding-top: 20px;
+  border-top: 1px solid var(--rdx-border);
+}
+
+.status-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.status-indicator {
+  width: 10px;
+  height: 38px;
+  flex: 0 0 10px;
+  border-radius: 6px;
+}
+
+.status-online {
+  background: var(--rdx-success);
+}
+
+.status-offline {
+  background: var(--rdx-neutral);
+}
+
+.status-alarm {
+  background: var(--rdx-danger);
+}
+
+.status-stale {
+  background: var(--rdx-warning);
+}
+
+.status-unknown {
+  background: var(--rdx-neutral);
+}
+
+.status-row div {
+  display: flex;
+  flex-direction: column;
+}
+
+.status-row strong {
+  color: var(--rdx-text-strong);
+  font-size: 28px;
+  line-height: 1;
+}
+
+.status-row span:last-child {
+  margin-top: 5px;
+  color: var(--rdx-text-muted);
+  font-size: 11px;
+}
+
+.context-note {
+  margin: 18px 0 0;
+  color: var(--rdx-text-faint);
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+/* PRODUCCIÓN */
+
+.production-list {
+  margin: 22px 0 0;
+}
+
+.production-list > div {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  padding: 13px 0;
+  border-bottom: 1px solid var(--rdx-border);
+}
+
+.production-list dt {
+  color: var(--rdx-text-muted);
+  font-size: 12px;
+}
+
+.production-list dd {
+  margin: 0;
+  color: var(--rdx-primary);
+  font-size: 19px;
+  font-weight: 750;
+  font-variant-numeric: tabular-nums;
+}
+
+.production-list .production-main dd {
+  font-size: 27px;
+}
+
+.data-warning {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 18px;
+  padding: 13px 15px;
+  border-radius: 9px;
+  background: var(--rdx-warning-soft);
+}
+
+.data-warning strong {
+  color: var(--rdx-warning);
+  font-size: 11px;
+}
+
+.data-warning span {
+  color: var(--rdx-text-muted);
+  font-size: 10px;
+  line-height: 1.45;
+}
+
+/* PROVEEDORES */
+
+.providers-grid {
+  display: grid;
+  grid-template-columns:
+    repeat(2, minmax(0, 1fr));
+  gap: 18px;
+}
+
+.provider-card {
+  min-width: 0;
+  padding: 26px;
+  border: 1px solid var(--rdx-border);
+  border-radius: 15px;
+  background: var(--rdx-surface);
+  box-shadow:
+    0 5px 20px rgb(23 63 51 / 4%);
+}
+
+.provider-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+}
+
+.provider-title {
+  display: flex;
+  align-items: center;
+  gap: 13px;
+}
+
+.provider-logo {
+  display: grid;
+  width: 42px;
+  height: 42px;
+  flex: 0 0 42px;
+  place-items: center;
+  border-radius: 11px;
+  font-size: 11px;
+  font-weight: 850;
+  letter-spacing: .04em;
+}
+
+.provider-hyxi {
+  background: var(--rdx-success-soft);
+  color: var(--rdx-success);
+}
+
+.provider-growatt {
+  background: var(--rdx-neutral-soft);
+  color: var(--rdx-text-muted);
+}
+
+.provider-title h3,
+.incident-card h3 {
+  margin: 0;
+  color: var(--rdx-text-strong);
+  font-size: 19px;
+}
+
+.provider-title p,
+.incident-card header p {
+  margin: 4px 0 0;
+  color: var(--rdx-text-faint);
+  font-size: 11px;
+}
+
+.provider-count {
+  color: var(--rdx-text-strong);
+  font-size: 24px;
+  text-align: right;
+}
+
+.provider-count small {
+  display: block;
+  color: var(--rdx-text-faint);
+  font-size: 9px;
+  font-weight: 600;
+}
+
+.provider-groups {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  margin-top: 22px;
+}
+
+.provider-chips {
+  display: grid;
+  grid-template-columns:
+    repeat(auto-fit, minmax(120px, 1fr));
+  gap: 8px;
+}
+
+.provider-chip {
+  display: grid;
+  grid-template-columns: auto auto;
+  align-items: center;
+  justify-content: start;
+  column-gap: 7px;
+  padding: 11px 13px;
+  border: 1px solid var(--rdx-border);
+  border-radius: 10px;
+  background: var(--rdx-surface);
+}
+
+.provider-chip strong {
+  color: var(--rdx-text-strong);
+  font-size: 16px;
+}
+
+.provider-chip small {
+  grid-column: 1 / -1;
+  margin-top: 2px;
+  color: var(--rdx-text-faint);
+  font-size: 9px;
+}
+
+.mini-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+}
+
+.dot-online {
+  background: var(--rdx-success);
+}
+
+.dot-offline {
+  background: var(--rdx-neutral);
+}
+
+.dot-alarm {
+  background: var(--rdx-danger);
+}
+
+.dot-stale {
+  background: var(--rdx-warning);
+}
+
+.dot-unknown {
+  background: var(--rdx-neutral);
+}
+
+.provider-footer {
+  display: flex;
+  justify-content: flex-start;
+  gap: 20px;
+  margin-top: 18px;
+  color: var(--rdx-text-muted);
+  font-size: 11px;
+}
+
+/* PRODUCCIÓN POR PLANTA */
+
+.text-link {
+  color: var(--rdx-primary);
+  font-size: 13px;
+  font-weight: 650;
+  text-decoration: none;
+}
+
+.text-link:hover {
+  text-decoration: underline;
+}
+
+.top-plants-card {
+  padding: 10px 26px 16px;
+  border: 1px solid var(--rdx-border);
+  border-radius: 15px;
+  background: var(--rdx-surface);
+  box-shadow:
+    0 5px 20px rgb(23 63 51 / 4%);
+}
+
+.top-plants-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.top-plant {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 15px 0;
+  border-bottom: 1px solid var(--rdx-border);
+}
+
+.top-plant:last-child {
+  border-bottom: 0;
+}
+
+.top-rank {
+  width: 22px;
+  flex: 0 0 22px;
+  color: var(--rdx-text-faint);
+  font-size: 12px;
+  font-weight: 800;
+  text-align: center;
+}
+
+.top-plant .provider-logo {
+  width: 34px;
+  height: 34px;
+  flex: 0 0 34px;
+  font-size: 10px;
+}
+
+.top-plant-info {
+  display: flex;
+  width: 220px;
+  min-width: 0;
+  flex: 0 0 220px;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.top-plant-info strong {
+  overflow: hidden;
+  color: var(--rdx-text-strong);
+  font-size: 13px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.top-plant-info span {
+  color: var(--rdx-text-faint);
+  font-size: 10px;
+}
+
+.top-bar {
+  height: 9px;
+  min-width: 0;
+  flex: 1 1 auto;
+  overflow: hidden;
+  border-radius: 99px;
+  background: var(--rdx-neutral-soft);
+}
+
+.top-bar-fill {
+  display: block;
+  height: 100%;
+  border-radius: 99px;
+  background: linear-gradient(90deg, var(--rdx-success), var(--rdx-primary));
+}
+
+.top-energy {
+  display: flex;
+  width: 120px;
+  flex: 0 0 120px;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
+}
+
+.top-energy strong {
+  color: var(--rdx-primary);
+  font-size: 14px;
+  font-variant-numeric: tabular-nums;
+}
+
+.top-energy small {
+  color: var(--rdx-text-faint);
+  font-size: 10px;
+}
+
+.top-plants-empty {
+  text-align: center;
+  color: var(--rdx-text-muted);
+}
+
+/* INCIDENCIAS */
+
+.incidents-grid {
+  display: grid;
+  grid-template-columns:
+    repeat(2, minmax(0, 1fr));
+  gap: 18px;
+}
+
+.incident-card {
+  min-width: 0;
+  padding: 24px;
+  border: 1px solid var(--rdx-border);
+  border-radius: 14px;
+  background: var(--rdx-surface);
+  box-shadow:
+    0 5px 20px rgb(23 63 51 / 4%);
+}
+
+.incident-card header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  padding-bottom: 18px;
+  border-bottom: 1px solid var(--rdx-border);
+}
+
+.incident-card header > div {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.incident-card header > strong {
+  color: var(--rdx-text-strong);
+  font-size: 27px;
+}
+
+.unavailable-symbol {
+  color: var(--rdx-text-faint) !important;
+}
+
+.incident-state {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  margin-top: 18px;
+  padding: 15px;
+  border-radius: 10px;
+}
+
+.incident-state.ok {
+  background: var(--rdx-success-soft);
+  color: var(--rdx-success);
+}
+
+.incident-state.warning {
+  background: var(--rdx-warning-soft);
+  color: var(--rdx-warning);
+}
+
+.incident-state.unavailable {
+  background: var(--rdx-neutral-soft);
+  color: var(--rdx-text-muted);
+}
+
+.incident-icon {
+  display: grid;
+  width: 24px;
+  height: 24px;
+  flex: 0 0 24px;
+  place-items: center;
+  border-radius: 50%;
+  background: rgb(255 255 255 / 65%);
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.incident-state strong {
+  display: block;
+  font-size: 12px;
+}
+
+.incident-state p {
+  margin: 4px 0 0;
+  font-size: 10px;
+  line-height: 1.5;
+}
+
+.incident-summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  margin-top: 12px;
+  padding: 11px 15px;
+  border-radius: 9px;
+  background: var(--rdx-neutral-soft);
+  color: var(--rdx-text-muted);
+  font-size: 10px;
+}
+
+.incident-summary strong {
+  color: var(--rdx-text-muted);
+  font-size: 11px;
+}
+
+/* RESPONSIVE */
+
+@media (max-width: 1100px) {
+  .executive-kpis {
+    grid-template-columns:
+      repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 900px) {
+  .overview-grid,
+  .providers-grid,
+  .incidents-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 760px) {
+  .dashboard-header {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .header-meta {
+    align-items: flex-start;
+  }
+
+  .section-heading {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 7px;
+  }
+
+  .section-heading > p {
+    text-align: left;
+  }
+}
+
+@media (max-width: 560px) {
+  .dashboard {
+    gap: 34px;
+  }
+
+  .executive-kpis {
+    grid-template-columns: 1fr;
+  }
+
+  .status-list {
+    grid-template-columns: 1fr;
+  }
+
+  .top-plant {
+    flex-wrap: wrap;
+  }
+
+  .top-plant-info {
+    width: auto;
+    flex: 1 1 0;
+  }
+
+  .top-bar {
+    flex: 1 1 100%;
+    order: 4;
+  }
+
+  .top-energy {
+    width: auto;
+    flex: 0 0 auto;
+  }
+
+  .provider-chips {
+    grid-template-columns: 1fr 1fr;
+  }
+}
 </style>

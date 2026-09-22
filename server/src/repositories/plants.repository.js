@@ -28,32 +28,6 @@ export async function listActiveGrowattPlants() {
   return data;
 }
 
-export function deriveGrowattPlantStatus(devices) {
-  const statuses = devices.map(device => device.status);
-  if (statuses.includes('alarm')) return 'alarm';
-  if (statuses.includes('online')) return 'online';
-  if (statuses.length > 0 && statuses.every(status => status === 'offline')) return 'offline';
-  return 'unknown';
-}
-
-export async function updateGrowattPlantStatusesFromDevices() {
-  const [{ data: plants, error: plantsError }, { data: devices, error: devicesError }] = await Promise.all([
-    supabase.from('plants').select('id, name').eq('provider', 'growatt').eq('active', true),
-    supabase.from('devices').select('plant_id, status').eq('provider', 'growatt').eq('active', true),
-  ]);
-  if (plantsError || devicesError) throw new Error('No se pudieron calcular los estados de plantas Growatt');
-
-  const results = [];
-  for (const plant of plants) {
-    const status = deriveGrowattPlantStatus(devices.filter(device => device.plant_id === plant.id));
-    const { error } = await supabase.from('plants').update({ status })
-      .eq('id', plant.id).eq('provider', 'growatt');
-    if (error) throw new Error(`No se pudo actualizar el estado de la planta Growatt ${plant.id}`);
-    results.push({ id: plant.id, name: plant.name, status });
-  }
-  return results;
-}
-
 export async function updatePlantDetail(id, detail) {
   const { data, error } = await supabase.from('plants').update({
     plant_type: detail.plant_type,
@@ -149,13 +123,66 @@ export async function upsertGrowattPlant(plant, integrationAccountId, lastSynced
   return 'inserted';
 }
 
-export async function listStoredPlants() {
+export async function listGrowattPlantsByUser(userName) {
+  const { data, error } = await supabase.from('plants')
+    .select('id, external_plant_id, metadata')
+    .eq('provider', 'growatt').eq('active', true)
+    .eq('metadata->>c_user_name', userName)
+    .order('id', { ascending: true });
+  if (error) throw new Error('No se pudieron consultar las plantas Growatt del usuario');
+  return data ?? [];
+}
+
+export async function updateGrowattPlantMetadata(externalPlantId, metadata) {
+  const { data, error } = await supabase.from('plants').update({ metadata })
+    .eq('provider', 'growatt').eq('external_plant_id', externalPlantId).select('id').single();
+  if (error || !data) throw new Error('No se pudo actualizar la metadata de la planta Growatt');
+}
+
+export async function updateGrowattPlantDetail(externalPlantId, detail) {
+  const { data: existing, error: lookupError } = await supabase.from('plants')
+    .select('id, timezone, address, plant_type, metadata')
+    .eq('provider', 'growatt').eq('external_plant_id', externalPlantId)
+    .limit(1).maybeSingle();
+  if (lookupError) throw new Error(`No se pudo consultar la planta Growatt: ${lookupError.message}`);
+  if (!existing) return;
+
+  const values = {};
+  if (detail.timezone) values.timezone = detail.timezone;
+  if (detail.address) values.address = detail.address;
+  if (detail.plant_type) values.plant_type = detail.plant_type;
+
+  const metadata = { ...(existing.metadata ?? {}) };
+  if (detail.metadata?.city) metadata.city = detail.metadata.city;
+  if (detail.metadata?.country) metadata.country = detail.metadata.country;
+  if (detail.metadata?.create_date) metadata.create_date = detail.metadata.create_date;
+  if (JSON.stringify(metadata) !== JSON.stringify(existing.metadata ?? {})) values.metadata = metadata;
+
+  if (!Object.keys(values).length) return;
+  const { error } = await supabase.from('plants').update(values).eq('id', existing.id);
+  if (error) throw new Error(`No se pudo actualizar el detalle de la planta Growatt: ${error.message}`);
+}
+
+/**
+ * Lista las plantas almacenadas.
+ *
+ * @param {Set<string>|null} plantIds Alcance permitido. null = todas
+ *        (rdx_admin); un Set vacío = ninguna; un Set con ids = solo esas.
+ */
+export async function listStoredPlants(plantIds = null) {
   const plants = [];
   const pageSize = 1000;
+  let query = supabase.from('plants').select('*')
+    .order('name', { ascending: true }).order('id', { ascending: true });
+
+  if (plantIds !== null && plantIds !== undefined) {
+    query = plantIds.size === 0
+      ? query.eq('id', '00000000-0000-0000-0000-000000000000')
+      : query.in('id', [...plantIds]);
+  }
+
   for (let offset = 0; ; offset += pageSize) {
-    const { data, error } = await supabase.from('plants').select('*')
-      .order('name', { ascending: true }).order('id', { ascending: true })
-      .range(offset, offset + pageSize - 1);
+    const { data, error } = await query.range(offset, offset + pageSize - 1);
     if (error) throw new Error('No se pudieron consultar las plantas almacenadas');
     plants.push(...data);
     if (data.length < pageSize) return plants;

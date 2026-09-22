@@ -19,7 +19,7 @@ export async function listActiveGrowattDevices() {
   const pageSize = 1000;
   for (let offset = 0; ; offset += pageSize) {
     const { data, error } = await supabase.from('devices')
-      .select('id, serial_number, device_type, name, active')
+      .select('id, serial_number, device_type, name, active, plant:plants(timezone)')
       .eq('provider', 'growatt').eq('active', true)
       .order('id', { ascending: true }).range(offset, offset + pageSize - 1);
     if (error) throw new Error(`No se pudieron consultar los dispositivos Growatt: ${error.message}`);
@@ -90,15 +90,34 @@ export async function updateGrowattDeviceTelemetryState(id, deviceStatus, collec
   if (error || !data) throw new Error('No se pudo actualizar el estado del dispositivo Growatt');
 }
 
-export async function listStoredDevices() {
+export async function listStoredDevices(plantIds = null) {
+  if (plantIds !== null && plantIds.size === 0) return [];
+
   const devices = [];
   const pageSize = 1000;
+
   for (let offset = 0; ; offset += pageSize) {
-    const { data, error } = await supabase.from('devices').select('*, plant:plants(name)')
-      .order('name', { ascending: true }).order('id', { ascending: true })
-      .range(offset, offset + pageSize - 1);
-    if (error) throw new Error('No se pudieron consultar los dispositivos almacenados');
+    let query = supabase
+      .from('devices')
+      .select('*, plant:plants(name)')
+      .order('name', { ascending: true })
+      .order('id', { ascending: true });
+
+    if (plantIds !== null) {
+      query = query.in('plant_id', [...plantIds]);
+    }
+
+    const { data, error } = await query.range(
+      offset,
+      offset + pageSize - 1
+    );
+
+    if (error) {
+      throw new Error('No se pudieron consultar los dispositivos almacenados');
+    }
+
     devices.push(...data);
+
     if (data.length < pageSize) return devices;
   }
 }

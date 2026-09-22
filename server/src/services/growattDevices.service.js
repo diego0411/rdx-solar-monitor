@@ -3,6 +3,8 @@ import { linkGrowattDeviceToPlant } from '../repositories/devices.repository.js'
 import { listActiveGrowattPlants } from '../repositories/plants.repository.js';
 import { GrowattProvider } from '../providers/growatt/GrowattProvider.js';
 import { normalizeGrowattDevice } from '../providers/growatt/normalizeGrowattDevice.js';
+import { normalizeGrowattDeviceCheck } from '../providers/growatt/normalizeGrowattDeviceCheck.js';
+import { normalizeGrowattTlxDataInfo } from '../providers/growatt/normalizeGrowattTlxDataInfo.js';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 
 const provider = new GrowattProvider();
@@ -21,12 +23,50 @@ function readLinkProgress() {
 export async function syncGrowattDevices({ forceCached = false } = {}) {
   const devices = await provider.listDevices({ forceCached });
   const result = {
-    provider: 'growatt', fetched: devices.length, inserted: 0, updated: 0, failed: 0, errors: [],
+    provider: 'growatt', fetched: devices.length, inserted: 0, updated: 0,
+    enriched: 0, check_failed: 0, firmware_enriched: 0, firmware_failed: 0,
+    failed: 0, errors: [],
   };
 
   for (const device of devices) {
     try {
-      const action = await upsertGrowattDevice(normalizeGrowattDevice(device));
+      const normalized = normalizeGrowattDevice(device);
+      delete normalized.plant_id;
+      if (String(device?.deviceType ?? '').toLowerCase() === 'min') {
+        const deviceSn = device.deviceSn ?? device.device_sn;
+        try {
+          const check = normalizeGrowattDeviceCheck(await provider.checkDeviceBySn(deviceSn));
+          if (check.valid) {
+            if (check.model) normalized.model = check.model;
+            if (check.rated_power_w !== null) normalized.rated_power_w = check.rated_power_w;
+            if (Object.keys(check.metadata).length) {
+              normalized.metadata = { ...normalized.metadata, ...check.metadata };
+            }
+            result.enriched += 1;
+          } else {
+            result.check_failed += 1;
+          }
+        } catch {
+          result.check_failed += 1;
+        }
+        try {
+          const info = normalizeGrowattTlxDataInfo(await provider.deviceTlxDataInfo(deviceSn));
+          if (info.valid) {
+            if (info.software_version) normalized.software_version = info.software_version;
+            if (info.hwVersion) normalized.hardware_version = info.hwVersion;
+            if (!normalized.model && info.modelText) normalized.model = info.modelText;
+            if (Object.keys(info.metadata).length) {
+              normalized.metadata = { ...normalized.metadata, ...info.metadata };
+            }
+            result.firmware_enriched += 1;
+          } else {
+            result.firmware_failed += 1;
+          }
+        } catch {
+          result.firmware_failed += 1;
+        }
+      }
+      const action = await upsertGrowattDevice(normalized);
       result[action] += 1;
     } catch (error) {
       result.failed += 1;

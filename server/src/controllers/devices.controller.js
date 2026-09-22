@@ -10,6 +10,12 @@ export async function getDeviceDetail(req, res) {
   try {
     const detail = await findDeviceDetail(req.params.id);
     if (!detail) return res.status(404).json({ error: 'Dispositivo no encontrado' });
+    const plantIds = req.scope?.plantIds ?? null;
+    if (plantIds !== null && plantIds !== undefined) {
+      if (!plantIds.has(detail.device.plant_id)) {
+        return res.status(404).json({ error: 'Dispositivo no encontrado' });
+      }
+    }
     return res.json({ ...detail, ...telemetryFreshness(detail.device_latest_data?.collected_at ?? null) });
   } catch {
     return res.status(503).json({ error: 'No se pudo consultar el detalle del dispositivo' });
@@ -18,7 +24,7 @@ export async function getDeviceDetail(req, res) {
 
 export async function getDevicesLatestData(req, res) {
   try {
-    return res.json(await listDeviceLatestData());
+    return res.json(await listDeviceLatestData(req.scope?.plantIds ?? null));
   } catch {
     return res.status(503).json({ error: 'No se pudo consultar la última telemetría' });
   }
@@ -26,10 +32,27 @@ export async function getDevicesLatestData(req, res) {
 
 export async function getDevices(req, res) {
   try {
-    const devices = await listStoredDevices();
+    const plantIds = req.scope?.plantIds ?? null;
+    const devices = await listStoredDevices(plantIds);
+    const latestById = new Map(
+      (await listDeviceLatestData(plantIds)).map(row => [row.device_id, row]),
+    );
     const fields = ['id', 'provider', 'serial_number', 'name', 'model', 'device_type',
       'status', 'active', 'plant_id', 'last_data_at', 'last_synced_at'];
-    return res.json(devices.map(device => Object.fromEntries(fields.map(key => [key, device[key] ?? null]))));
+    return res.json(devices.map(device => {
+      const latest = latestById.get(device.id);
+      const collectedAt = latest?.collected_at ?? null;
+      return {
+        ...Object.fromEntries(fields.map(key => [key, device[key] ?? null])),
+        plant_name: device.plant?.name ?? null,
+        collected_at: collectedAt,
+        pv_power: latest?.pv_power ?? null,
+        ac_power: latest?.ac_power ?? null,
+        load_power: latest?.load_power ?? null,
+        battery_soc: latest?.battery_soc ?? null,
+        ...telemetryFreshness(collectedAt),
+      };
+    }));
   } catch {
     return res.status(503).json({ error: 'No se pudieron consultar los dispositivos almacenados' });
   }

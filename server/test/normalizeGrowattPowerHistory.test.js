@@ -8,7 +8,7 @@ test('normaliza métricas, conserva ceros y acepta lost=true', () => {
     pacToUserTotal: null, pacToGridTotal: '3.5', chargePowerOfBattery: 0,
     disChargePowerOfBattery: 'invalid',
   };
-  const [point] = normalizeGrowattPowerHistory({ data: { datas: [raw] } });
+  const [point] = normalizeGrowattPowerHistory({ data: { datas: [raw] } }, 'America/La_Paz');
 
   assert.deepEqual(point, {
     interval_start: '2026-09-14T14:05:00.000Z',

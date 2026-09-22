@@ -5,6 +5,7 @@ import PlantMapView from '../views/PlantMapView.vue';
 import PlantDetailView from '../views/PlantDetailView.vue';
 import LoginView from '../views/LoginView.vue';
 import DevicesView from '../views/DevicesView.vue';
+import AlarmsView from '../views/AlarmsView.vue';
 import DeviceDetailView from '../views/DeviceDetailView.vue';
 import { getSession, supabase } from '../services/supabase.js';
 
@@ -16,6 +17,7 @@ const router = createRouter({
     { path: '/plants', name: 'plants', component: PlantsView },
     { path: '/map', name: 'map', component: PlantMapView },
     { path: '/devices', name: 'devices', component: DevicesView },
+    { path: '/alarms', name: 'alarms', component: AlarmsView },
     { path: '/devices/:id', name: 'device-detail', component: DeviceDetailView },
     { path: '/plants/:id', name: 'plant-detail', component: PlantDetailView },
   ],

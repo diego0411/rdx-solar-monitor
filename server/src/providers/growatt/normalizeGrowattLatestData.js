@@ -1,43 +1,113 @@
+import {
+  parseGrowattTimestamp,
+  isGrowattFault,
+} from './growattStates.js';
+
 function value(data, ...keys) {
   for (const key of keys) {
-    if (data?.[key] !== undefined && data[key] !== null) return data[key];
+    if (data?.[key] !== undefined && data[key] !== null) {
+      return data[key];
+    }
   }
+
   return null;
 }
 
 function numeric(value) {
-  if (!['number', 'string'].includes(typeof value) || String(value).trim() === '') return null;
+  if (
+    !['number', 'string'].includes(typeof value) ||
+    String(value).trim() === ''
+  ) {
+    return null;
+  }
+
   const number = Number(value);
   return Number.isFinite(number) ? number : null;
 }
 
-export function parseGrowattTimestamp(value) {
-  if (typeof value !== 'string') return null;
-  const match = /^(\d{4}-\d{2}-\d{2}) (\d{2}:\d{2}:\d{2})$/.exec(value);
-  if (!match) return null;
-  const localTime = `${match[1]}T${match[2]}`;
-  const validation = new Date(`${localTime}Z`);
-  if (!Number.isFinite(validation.getTime())
-      || validation.toISOString().slice(0, 19) !== localTime) return null;
-  const date = new Date(`${localTime}-04:00`);
-  return date.getTime() <= Date.now() + 10 * 60 * 1000 ? date.toISOString() : null;
+function normalizeDeviceStatus(data) {
+  /*
+   * Growatt puede devolver simultáneamente:
+   *
+   * lost = true
+   * status = 1
+   * statusText = "Normal"
+   *
+   * "lost" no es fiable como señal de desconexión, por lo que no se usa
+   * como fuente de estado. Una incidencia confirmada (status 3/fault o
+   * códigos activos) tiene prioridad. Si además confluye un "lost",
+   * el estado pasa a unknown porque las señales son contradictorias.
+   */
+
+  if (isGrowattFault(data)) {
+    return 'alarm';
+  }
+
+  const status = numeric(value(data, 'status'));
+  const lost = value(data, 'lost');
+  const lostFlag = lost === true || String(lost).toLowerCase() === 'true';
+
+  if (status === 1 && !lostFlag) {
+    return 'online';
+  }
+
+  return 'unknown';
 }
 
-export function normalizeGrowattLatestData(data, deviceId) {
+export function normalizeGrowattLatestData(data, deviceId, plantTimezone) {
   return {
     device_id: deviceId,
     provider: 'growatt',
-    collected_at: parseGrowattTimestamp(value(data, 'time')),
-    pv_power: value(data, 'ppv'),
-    ac_power: value(data, 'pac'),
-    today_energy: value(data, 'eacToday'),
-    total_energy: value(data, 'eacTotal'),
-    load_power: numeric(value(data, 'pacToLocalLoad')),
-    grid_import_power: numeric(value(data, 'pacToUserTotal')),
-    grid_export_power: numeric(value(data, 'pacToGridTotal')),
-    battery_charge_power: value(data, 'chargePowerOfBattery'),
-    battery_discharge_power: value(data, 'disChargePowerOfBattery'),
-    device_status: Number(value(data, 'status')) === 1 ? 'online' : 'unknown',
+
+    collected_at: parseGrowattTimestamp(
+      value(data, 'time'),
+      plantTimezone,
+    ),
+
+    pv_power: value(
+      data,
+      'ppv'
+    ),
+
+    ac_power: value(
+      data,
+      'pac'
+    ),
+
+    today_energy: value(
+      data,
+      'eacToday'
+    ),
+
+    total_energy: value(
+      data,
+      'eacTotal'
+    ),
+
+    load_power: numeric(
+      value(data, 'pacToLocalLoad')
+    ),
+
+    grid_import_power: numeric(
+      value(data, 'pacToUserTotal')
+    ),
+
+    grid_export_power: numeric(
+      value(data, 'pacToGridTotal')
+    ),
+
+    battery_charge_power: value(
+      data,
+      'chargePowerOfBattery'
+    ),
+
+    battery_discharge_power: value(
+      data,
+      'disChargePowerOfBattery'
+    ),
+
+    device_status: normalizeDeviceStatus(data),
+
     raw_data: data,
   };
 }

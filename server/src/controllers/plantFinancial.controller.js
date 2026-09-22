@@ -1,5 +1,6 @@
 import { getStoredPlantById } from '../repositories/plants.repository.js';
 import { getPlantFinancialProfile, upsertPlantFinancialProfile } from '../repositories/plantFinancialProfiles.repository.js';
+import { plantInScope } from '../middleware/authorization.middleware.js';
 
 const plantIdPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const numericFields = ['baseline_monthly_bill', 'purchase_energy_rate', 'export_energy_rate', 'system_investment'];
@@ -26,6 +27,9 @@ function validProfile(body) {
 
 export async function getPlantFinancial(req, res) {
   if (!plantIdPattern.test(req.params.plantId)) return res.status(400).json({ error: 'plantId inválido' });
+  if (!plantInScope(req.scope, req.params.plantId.toLowerCase())) {
+    return res.status(404).json({ error: 'Planta no encontrada' });
+  }
   try {
     if (!await getStoredPlantById(req.params.plantId)) return res.status(404).json({ error: 'Planta no encontrada' });
     return res.json(await getPlantFinancialProfile(req.params.plantId) ?? emptyProfile());
@@ -37,6 +41,12 @@ export async function getPlantFinancial(req, res) {
 export async function putPlantFinancial(req, res) {
   if (!plantIdPattern.test(req.params.plantId)) return res.status(400).json({ error: 'plantId inválido' });
   if (!validProfile(req.body)) return res.status(400).json({ error: 'Perfil financiero inválido' });
+  if (!plantInScope(req.scope, req.params.plantId.toLowerCase())) {
+    return res.status(404).json({ error: 'Planta no encontrada' });
+  }
+  if (req.profile?.role !== 'rdx_admin' && req.profile?.role !== 'client_admin') {
+    return res.status(403).json({ error: 'Acceso denegado' });
+  }
   try {
     if (!await getStoredPlantById(req.params.plantId)) return res.status(404).json({ error: 'Planta no encontrada' });
     const values = Object.fromEntries(fields.map(field => [field, req.body[field] ?? null]));

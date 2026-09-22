@@ -55,9 +55,13 @@ export function createHyxiRecentAlarmsService({
   let cachedAt = 0;
   let filling = null;
 
-  async function fillCache() {
-    const plants = await listPlants();
+  async function fillCache(scopePlantIds = null) {
+    const allPlants = await listPlants();
+    const plants = scopePlantIds === null || scopePlantIds === undefined
+      ? allPlants
+      : allPlants.filter(plant => scopePlantIds.has(plant.id));
     const alarms = [];
+    const failures = [];
     let failedPlants = 0;
     for (const plant of plants) {
       try {
@@ -74,6 +78,15 @@ export function createHyxiRecentAlarmsService({
         }
       } catch (error) {
         failedPlants += 1;
+        if (process.env.NODE_ENV !== 'production') {
+          failures.push({
+            plant_id: plant.id,
+            external_plant_id: plant.external_plant_id,
+            http_status: error?.httpStatus ?? error?.statusCode ?? null,
+            provider_code: error?.providerCode ?? null,
+            provider_msg: sanitizedMessage(error),
+          });
+        }
         console.error('HYXi recent alarms plant failed:', {
           plant_id: plant.id,
           external_plant_id: plant.external_plant_id,
@@ -97,13 +110,31 @@ export function createHyxiRecentAlarmsService({
       partial: failedPlants > 0,
       checked_plants: plants.length,
       failed_plants: failedPlants,
+      ...(process.env.NODE_ENV !== 'production' ? { failures } : {}),
     };
-    cached = result;
-    cachedAt = now();
+    if (scopePlantIds === null || scopePlantIds === undefined) {
+      cached = result;
+      cachedAt = now();
+    }
     return result;
   }
 
-  return async function getRecentHyxiAlarms() {
+  function emptyResult() {
+    return {
+      alarms: [],
+      fetched_at: new Date(now()).toISOString(),
+      partial: false,
+      checked_plants: 0,
+      failed_plants: 0,
+      ...(process.env.NODE_ENV !== 'production' ? { failures: [] } : {}),
+    };
+  }
+
+  return async function getRecentHyxiAlarms(plantIds = null) {
+    if (plantIds !== null && plantIds !== undefined) {
+      if (plantIds.size === 0) return emptyResult();
+      return fillCache(plantIds);
+    }
     if (cached && now() - cachedAt < CACHE_TTL_MS) return cached;
     if (!filling) filling = fillCache().finally(() => { filling = null; });
     return filling;

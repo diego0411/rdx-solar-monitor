@@ -23,7 +23,7 @@ export function aggregateGrowattPowerHistory(plant, devices, pointsByDevice) {
       plant_id: plant.id,
       provider: 'growatt',
       interval_start: intervalStart,
-      timezone: plant.timezone ?? 'America/La_Paz',
+      timezone: plant.timezone ?? 'UTC',
       ...Object.fromEntries(metricFields.map(field => {
         const values = aligned.map(point => point?.[field]);
         return [field, values.every(value => typeof value === 'number' && Number.isFinite(value))
@@ -48,7 +48,7 @@ export async function syncGrowattPowerHistory(plant, date) {
   for (const device of devices) {
     try {
       const payload = await provider.queryHistoricalData(device.serial_number, date);
-      const points = normalizeGrowattPowerHistory(payload);
+      const points = normalizeGrowattPowerHistory(payload, plant.timezone);
       pointsByDevice.set(device.id, points);
       result.fetched += points.length;
     } catch (error) {

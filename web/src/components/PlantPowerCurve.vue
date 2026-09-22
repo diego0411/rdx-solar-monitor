@@ -5,13 +5,13 @@ import { LineChart } from 'echarts/charts';
 import { GridComponent, TooltipComponent, LegendComponent } from 'echarts/components';
 import { CanvasRenderer } from 'echarts/renderers';
 import { apiFetch } from '../services/api.js';
+import { rdxColor, CHART_SERIES_COLORS } from '../utils/rdxTokens.js';
 
 echarts.use([LineChart, GridComponent, TooltipComponent, LegendComponent, CanvasRenderer]);
 const props = defineProps({ plantId: { type: String, required: true }, timezone: String });
 const today = new Date();
 const selectedDate = ref(`${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`);
 const points = ref([]), loading = ref(false), error = ref(''), container = ref(null);
-const chartWidth = ref(0), chartHeight = ref(0), chartReady = ref(false);
 let chart, observer;
 const seriesFields = [
   ['generation_power_w', 'Generación'],
@@ -24,22 +24,14 @@ function dispose() {
   chart?.dispose();
   observer = null;
   chart = null;
-  chartReady.value = false;
 }
 function render() {
   if (!container.value || !points.value.length) return;
   if (!chart) {
     chart = echarts.init(container.value);
-    chartReady.value = true;
-    observer = new ResizeObserver(entries => {
-      chartWidth.value = Math.round(entries[0]?.contentRect.width ?? container.value?.clientWidth ?? 0);
-      chartHeight.value = Math.round(entries[0]?.contentRect.height ?? container.value?.clientHeight ?? 0);
-      chart?.resize();
-    });
+    observer = new ResizeObserver(() => chart?.resize());
     observer.observe(container.value);
   }
-  chartWidth.value = container.value.clientWidth;
-  chartHeight.value = container.value.clientHeight;
   let formatter;
   try {
     formatter = new Intl.DateTimeFormat('es-BO', { timeZone: props.timezone || undefined, hour: '2-digit', minute: '2-digit' });
@@ -47,12 +39,12 @@ function render() {
     formatter = new Intl.DateTimeFormat('es-BO', { hour: '2-digit', minute: '2-digit' });
   }
   chart.setOption({
-    color: ['#174d3c', '#d08a22', '#447bb1', '#9070ac'],
+    color: [rdxColor('--rdx-primary'), ...CHART_SERIES_COLORS],
     tooltip: { trigger: 'axis', renderMode: 'richText', valueFormatter: value => value == null ? 'Sin datos' : new Intl.NumberFormat('es-BO', { maximumFractionDigits: 2 }).format(value) + ' W' },
-    legend: { type: 'scroll', bottom: 0, textStyle: { color: '#52665b', fontSize: 12 }, itemGap: 20 },
+    legend: { type: 'scroll', bottom: 0, textStyle: { color: rdxColor('--rdx-text-muted'), fontSize: 12 }, itemGap: 20 },
     grid: { left: 64, right: 20, top: 45, bottom: 80 },
-    xAxis: { type: 'category', data: points.value.map(point => point.interval_start), axisLabel: { color: '#52665b', hideOverlap: true, formatter: value => formatter.format(new Date(value)) }, axisLine: { lineStyle: { color: '#d7e2da' } }, axisTick: { show: false } },
-    yAxis: { type: 'value', name: 'Potencia (W)', axisLabel: { color: '#52665b' }, splitLine: { lineStyle: { color: '#e8eee9', type: 'dashed' } } },
+    xAxis: { type: 'category', data: points.value.map(point => point.interval_start), axisLabel: { color: rdxColor('--rdx-text-muted'), hideOverlap: true, formatter: value => formatter.format(new Date(value)) }, axisLine: { lineStyle: { color: rdxColor('--rdx-border') } }, axisTick: { show: false } },
+    yAxis: { type: 'value', name: 'Potencia (W)', axisLabel: { color: rdxColor('--rdx-text-muted') }, splitLine: { lineStyle: { color: rdxColor('--rdx-border'), type: 'dashed' } } },
     series: seriesFields.map(([key, name]) => ({
       name, type: 'line', showSymbol: false, connectNulls: false,
       data: points.value.map(point => point[key] ?? null),
@@ -91,7 +83,6 @@ onBeforeUnmount(dispose);
       <h2 id="power-title">Curva de potencia</h2>
       <label>Fecha <input v-model="selectedDate" type="date" /></label>
     </div>
-    <p role="status">DEBUG points={{ points.length }} · container={{ chartWidth }}×{{ chartHeight }} · chart={{ chartReady ? 'sí' : 'no' }}</p>
     <p v-if="loading" role="status">Cargando curva de potencia…</p>
     <p v-else-if="error" role="alert">{{ error }}</p>
     <p v-else-if="!selectedDate">Selecciona una fecha.</p>
@@ -105,8 +96,7 @@ onBeforeUnmount(dispose);
 .power-header { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 16px; margin-bottom: 24px; }
 h2 { margin: 0; font-size: 21px; letter-spacing: -.02em; }
 label { display: flex; align-items: center; gap: 10px; font-size: 14px; }
-input { padding: 9px 12px; border: 1px solid #cad8ce; border-radius: 7px; color: #243b32; background: white; font: inherit; }
-input:focus-visible { outline: 2px solid #529b79; outline-offset: 2px; }
+input { width: auto; }
 .power-chart { width: 100%; height: 380px; }
 @media (max-width: 600px) {
   .power-section { padding: 20px 12px; }
