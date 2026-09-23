@@ -1,4 +1,3 @@
-import { randomBytes } from 'node:crypto';
 import { supabase } from '../config/supabase.js';
 import {
   listUserProfiles,
@@ -80,7 +79,11 @@ function cleanDisplayName(value) {
  * al único cliente activo (single-tenant Nexora).
  */
 export function resolveCreate(actor, body) {
-  const { email, display_name, role, client_id } = body ?? {};
+  if (!['rdx_admin', 'client_admin'].includes(actor?.role)) {
+    throw codedError(403, 'No tienes permiso para crear usuarios');
+  }
+  const { email, role, client_id } = body ?? {};
+  const display_name = body?.name ?? body?.display_name;
 
   if (!validEmail(email)) throw codedError(400, 'email inválido');
 
@@ -214,11 +217,9 @@ export async function listUsers(actor) {
 }
 
 function authConflict(error) {
-
   const message = String(error?.message ?? '').toLowerCase();
-  const status = error?.status;
-  return status === 422
-    || status === 409
+  return ['email_exists', 'user_already_exists'].includes(error?.code)
+    || error?.status === 409
     || message.includes('already been registered')
     || message.includes('already exists')
     || message.includes('duplicate');
@@ -240,6 +241,11 @@ export async function resolveSingleActiveClient() {
 
 export async function createUser(actor, body) {
   const resolved = resolveCreate(actor, body);
+  const password = body?.password;
+  // Supabase applies the project's current password policy as well.
+  if (typeof password !== 'string' || password.length < 6 || !password.trim()) {
+    throw codedError(400, 'La contraseña debe tener al menos 6 caracteres');
+  }
 
   if (resolved.client_id === undefined) {
     resolved.client_id = await resolveSingleActiveClient();
@@ -249,16 +255,20 @@ export async function createUser(actor, body) {
     throw codedError(400, 'client_id inexistente');
   }
 
-  const temporaryPassword = randomBytes(16).toString('hex');
-
   const { data, error } = await supabase.auth.admin.createUser({
     email: resolved.email,
-    password: temporaryPassword,
+    password,
     email_confirm: true,
     user_metadata: { display_name: resolved.display_name },
   });
 
   if (error || !data?.user) {
+    if (error?.code === 'weak_password'
+      || error?.name === 'AuthWeakPasswordError'
+      || (['validation_failed', 'bad_json'].includes(error?.code)
+        && /password/i.test(error?.message ?? ''))) {
+      throw codedError(400, 'La contraseña no cumple la política de seguridad');
+    }
     if (authConflict(error)) throw codedError(409, 'El email ya está registrado');
     throw codedError(503, 'No se pudo crear el usuario');
   }
@@ -270,9 +280,15 @@ export async function createUser(actor, body) {
       role: resolved.role,
       display_name: resolved.display_name,
     });
-    return { ...toPublicUser(profile, data.user.email ?? resolved.email), temporary_password: temporaryPassword };
-  } catch (profileError) {
-    await supabase.auth.admin.deleteUser(data.user.id).catch(() => {});
+    return toPublicUser(profile, data.user.email ?? resolved.email);
+  } catch {
+    try {
+      const { error: cleanupError } = await supabase.auth.admin.deleteUser(data.user.id);
+      if (cleanupError) throw cleanupError;
+    } catch {
+      // Never log provider errors: they may contain request data or credentials.
+      console.error('No se pudo revertir el alta Auth tras fallar el perfil; requiere revisión administrativa.');
+    }
     throw codedError(503, 'No se pudo crear el perfil de usuario');
   }
 }

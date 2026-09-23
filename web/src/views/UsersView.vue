@@ -21,8 +21,15 @@ const form = ref({ display_name: '', email: '', role: 'client_user' });
 const formError = ref('');
 const formSaving = ref(false);
 
-const created = ref(null);
-const copyState = ref('');
+const password = ref('');
+const confirmPassword = ref('');
+const showPassword = ref(false);
+
+function clearPassword() {
+  password.value = '';
+  confirmPassword.value = '';
+  showPassword.value = false;
+}
 
 const confirming = ref(null);
 const statusSaving = ref(false);
@@ -80,6 +87,7 @@ async function load() {
 }
 
 function openCreate() {
+  clearPassword();
   editing.value = null;
   form.value = { display_name: '', email: '', role: 'client_user' };
   formError.value = '';
@@ -87,6 +95,7 @@ function openCreate() {
 }
 
 function openEdit(user) {
+  clearPassword();
   editing.value = user;
   form.value = { display_name: user.display_name ?? '', email: user.email ?? '', role: user.role };
   formError.value = '';
@@ -94,6 +103,8 @@ function openEdit(user) {
 }
 
 function closeForm() {
+  if (formSaving.value) return;
+  clearPassword();
   showForm.value = false;
   editing.value = null;
   formError.value = '';
@@ -108,6 +119,16 @@ async function saveForm() {
     formError.value = 'El nombre es obligatorio.';
     return;
   }
+  if (!editing.value) {
+    if (password.value.length < 6 || !password.value.trim()) {
+      formError.value = 'La contraseña debe tener al menos 6 caracteres.';
+      return;
+    }
+    if (!confirmPassword.value || password.value !== confirmPassword.value) {
+      formError.value = 'Las contraseñas no coinciden.';
+      return;
+    }
+  }
   formSaving.value = true;
   try {
     if (editing.value) {
@@ -115,42 +136,24 @@ async function saveForm() {
       if (form.value.role !== editing.value.role) payload.role = form.value.role;
       const updated = await updateUser(editing.value.id, payload, { signal: controller.signal });
       users.value = users.value.map(user => (user.id === updated.id ? updated : user));
+      formSaving.value = false;
       closeForm();
     } else {
-      const payload = { display_name: displayName, email: form.value.email.trim(), role: form.value.role };
+      const payload = { name: displayName, email: form.value.email.trim(), role: form.value.role, password: password.value };
       const result = await createUser(payload, { signal: controller.signal });
-      users.value = [stripSecret(result), ...users.value];
+      users.value = [result, ...users.value];
+      formSaving.value = false;
       closeForm();
-      if (result?.temporary_password) {
-        created.value = { email: result.email, password: result.temporary_password };
-      }
     }
   } catch (failure) {
-    if (!controller.signal.aborted) formError.value = apiMessage(failure, 'No se pudo guardar el usuario.');
+    if (!controller.signal.aborted) {
+      formError.value = !editing.value && failure?.status === 400
+        ? 'Revisa el nombre y el correo. La contraseña debe cumplir la política de seguridad; prueba una más larga con mayúsculas, minúsculas, números y símbolos.'
+        : apiMessage(failure, 'No se pudo guardar el usuario.');
+    }
   } finally {
     formSaving.value = false;
   }
-}
-
-function stripSecret(result) {
-  if (!result || typeof result !== 'object') return result;
-  const { temporary_password, ...rest } = result;
-  return rest;
-}
-
-async function copyPassword() {
-  if (!created.value?.password) return;
-  try {
-    await navigator.clipboard.writeText(created.value.password);
-    copyState.value = 'Contraseña copiada.';
-  } catch {
-    copyState.value = 'No se pudo copiar automáticamente. Selecciónala manualmente.';
-  }
-}
-
-function closeCreated() {
-  created.value = null;
-  copyState.value = '';
 }
 
 function askStatus(user) {
@@ -178,7 +181,7 @@ async function applyStatus() {
 }
 
 onMounted(load);
-onUnmounted(() => controller.abort());
+onUnmounted(() => { controller.abort(); clearPassword(); });
 </script>
 
 <template>
@@ -276,6 +279,12 @@ onUnmounted(() => controller.abort());
         <template v-if="!editing">
           <label for="user-email">Correo</label>
           <input id="user-email" v-model="form.email" type="email" required :disabled="formSaving" />
+          <label for="user-password">Contraseña inicial</label>
+          <input id="user-password" v-model="password" :type="showPassword ? 'text' : 'password'" autocomplete="new-password" minlength="6" required :disabled="formSaving" aria-describedby="password-help" />
+          <label for="user-confirm-password">Confirmar contraseña</label>
+          <input id="user-confirm-password" v-model="confirmPassword" :type="showPassword ? 'text' : 'password'" autocomplete="new-password" minlength="6" required :disabled="formSaving" />
+          <button class="link-button" type="button" :aria-pressed="showPassword" aria-controls="user-password user-confirm-password" :disabled="formSaving" @click="showPassword = !showPassword">{{ showPassword ? 'Ocultar contraseña' : 'Mostrar contraseña' }}</button>
+          <p id="password-help" class="muted">Mínimo 6 caracteres. Se aplican también los requisitos de la política de seguridad.</p>
         </template>
         <label for="user-role">Rol</label>
         <select id="user-role" v-model="form.role" :disabled="formSaving">
@@ -294,20 +303,6 @@ onUnmounted(() => controller.abort());
           </button>
         </div>
       </form>
-    </section>
-  </div>
-
-  <div v-if="created" class="modal-backdrop" @click.self="closeCreated">
-    <section class="card modal" role="dialog" aria-modal="true" aria-label="Usuario creado">
-      <h2>Usuario creado</h2>
-      <p>Correo:<br /><strong>{{ created.email }}</strong></p>
-      <p>Contraseña temporal:<br /><strong class="temp-password">{{ created.password }}</strong></p>
-      <div class="modal-actions">
-        <button class="secondary-button" type="button" @click="closeCreated">Cerrar</button>
-        <button class="primary-button" type="button" @click="copyPassword">Copiar contraseña</button>
-      </div>
-      <p v-if="copyState" class="muted" role="status">{{ copyState }}</p>
-      <p class="muted">Guarda esta contraseña ahora. Por seguridad no volverá a mostrarse.</p>
     </section>
   </div>
 
@@ -350,14 +345,13 @@ h2 { margin: 0 0 12px; font-size: 18px; }
 .badge { display: inline-flex; align-items: center; gap: 7px; padding: 4px 10px; border-radius: 20px; font-weight: 600; font-size: 12px; }
 .badge::before { content: ''; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
 .modal-backdrop { position: fixed; inset: 0; display: grid; place-items: center; padding: 20px; background: rgb(0 0 0 / 0.45); z-index: 50; }
-.modal { width: 100%; max-width: 440px; }
+.modal { width: 100%; max-width: 440px; max-height: calc(100dvh - 40px); overflow-y: auto; }
 .modal form { display: grid; gap: 8px; }
 .modal label { font-size: 13px; font-weight: 600; }
 .modal input, .modal select { padding: 10px 12px; border-radius: 8px; font: inherit; }
 .modal-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 10px; }
 .form-error { color: var(--rdx-danger); font-size: 13px; }
 .muted { font-size: 13px; color: var(--rdx-text-muted); }
-.temp-password { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; overflow-wrap: anywhere; }
 @media (max-width: 720px) {
   .page-header { flex-direction: column; }
   .users-table th:nth-child(5), .users-table td:nth-child(5) { display: none; }
