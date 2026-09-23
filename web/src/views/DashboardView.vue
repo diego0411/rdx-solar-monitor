@@ -12,6 +12,8 @@ const error = ref('');
 const lastUpdatedAt = ref(null);
 const refreshError = ref('');
 const refreshInFlight = ref(false);
+const growattLoading = ref(false), hyxiLoading = ref(false);
+const growattError = ref(''), hyxiError = ref('');
 
 let refreshTimer = null;
 const REFRESH_INTERVAL_MS = 60 * 1000;
@@ -172,108 +174,58 @@ const providerCards = computed(() => {
   );
 });
 
-/*
- * Carga inicial o refresco periódico de los datos del
- * dashboard usando solo la API RDX existente.
- *
- * Nunca se dispara sync de fabricantes y nunca se recarga
- * la página: se reemplazan los valores en memoria.
- *
- * El guard refreshInFlight evita requests simultáneos si
- * un refresco anterior sigue activo.
- */
-async function fetchDashboard({ initial = false } = {}) {
-  if (refreshInFlight.value) {
-    return;
-  }
-
+// Each source updates independently and prevents overlapping requests of its own.
+async function fetchSummary() {
+  if (refreshInFlight.value) return;
   refreshInFlight.value = true;
-
-  if (initial) {
-    loading.value = true;
-  }
-
+  loading.value = !summary.value;
   error.value = '';
   refreshError.value = '';
-
   try {
-    const [
-      summaryResult,
-      growattResult,
-      hyxiResult,
-    ] = await Promise.allSettled([
-      apiFetch('/dashboard/summary', {
-        signal: controller.signal,
-      }),
-
-      apiFetch(
-        '/integrations/growatt/alarms/current',
-        {
-          signal: controller.signal,
-        },
-      ),
-
-      apiFetch(
-        '/integrations/hyxi/alarms/recent',
-        {
-          signal: controller.signal,
-        },
-      ),
-    ]);
-
-    if (summaryResult.status !== 'fulfilled') {
-      throw summaryResult.reason;
-    }
-
-    if (
-      !summaryResult.value
-      || typeof summaryResult.value !== 'object'
-      || Array.isArray(summaryResult.value)
-    ) {
-      throw new Error('Respuesta inválida');
-    }
-
-    summary.value = summaryResult.value;
+    const data = await apiFetch('/dashboard/summary', { signal: controller.signal });
+    if (!data || typeof data !== 'object' || Array.isArray(data)) throw new Error('Respuesta inválida');
+    if (controller.signal.aborted) return;
+    summary.value = data;
     lastUpdatedAt.value = Date.now();
-
-    /*
-     * Cada fuente se actualiza solo si respondió: así un
-     * fallo parcial no borra los últimos datos válidos.
-     */
-    if (growattResult.status === 'fulfilled') {
-      growattAlarms.value = growattResult.value;
-    }
-
-    if (hyxiResult.status === 'fulfilled') {
-      hyxiAlarms.value = hyxiResult.value;
-    }
-
-    error.value = '';
-    refreshError.value = '';
   } catch {
     if (!controller.signal.aborted) {
-      if (initial) {
-        error.value =
-          'No se pudo cargar el resumen ejecutivo. '
-          + 'Comprueba la conexión con el servidor '
-          + 'y vuelve a cargar la página.';
+      if (!summary.value) {
+        error.value = 'No se pudo cargar el resumen ejecutivo. Comprueba la conexión con el servidor y vuelve a cargar la página.';
       } else {
-        refreshError.value =
-          'No se pudo actualizar. Se conservan '
-          + 'los últimos datos.';
+        refreshError.value = 'No se pudo actualizar. Se conservan los últimos datos.';
       }
     }
   } finally {
     refreshInFlight.value = false;
-
-    if (initial) {
-      loading.value = false;
-    }
+    loading.value = false;
   }
 }
 
+async function fetchAlarms(path, target, pending, failure) {
+  if (pending.value) return;
+  pending.value = true;
+  failure.value = '';
+  try {
+    const data = await apiFetch(path, { signal: controller.signal });
+    if (!Array.isArray(data) && !Array.isArray(data?.alarms) && !Array.isArray(data?.items)) {
+      throw new Error('Respuesta inválida');
+    }
+    if (!controller.signal.aborted) target.value = data;
+  } catch {
+    if (!controller.signal.aborted) failure.value = 'No se pudieron actualizar las alarmas.';
+  } finally {
+    pending.value = false;
+  }
+}
+
+function fetchDashboard() {
+  void fetchSummary();
+  void fetchAlarms('/integrations/growatt/alarms/current', growattAlarms, growattLoading, growattError);
+  void fetchAlarms('/integrations/hyxi/alarms/recent', hyxiAlarms, hyxiLoading, hyxiError);
+}
+
 onMounted(() => {
-  void fetchDashboard({ initial: true });
+  fetchDashboard();
 
   refreshTimer = setInterval(() => {
     void fetchDashboard();
@@ -807,12 +759,14 @@ onUnmounted(() => {
               </div>
 
               <strong>
-                {{ growattAlarmItems.length }}
+                {{ growattAlarms === null ? '—' : growattAlarmItems.length }}
               </strong>
             </header>
 
+            <p v-if="growattLoading" class="incident-state unavailable" role="status">{{ growattAlarms === null ? 'Cargando alarmas Growatt…' : 'Actualizando alarmas Growatt…' }}</p>
+            <p v-if="growattError" class="incident-state unavailable" role="alert">{{ growattError }} {{ growattAlarms !== null ? 'Se conservan los últimos datos.' : '' }}</p>
             <div
-              v-if="growattAlarms === null"
+              v-if="!growattLoading && growattAlarms === null"
               class="incident-state unavailable"
             >
               <span class="incident-icon">
@@ -833,7 +787,7 @@ onUnmounted(() => {
 
             <div
               v-else-if="
-                growattAlarmItems.length === 0
+                growattAlarms !== null && growattAlarmItems.length === 0
               "
               class="incident-state ok"
             >
@@ -854,7 +808,7 @@ onUnmounted(() => {
             </div>
 
             <div
-              v-else
+              v-else-if="growattAlarms !== null"
               class="incident-state warning"
             >
               <span class="incident-icon">
@@ -911,8 +865,10 @@ onUnmounted(() => {
               </strong>
             </header>
 
+            <p v-if="hyxiLoading" class="incident-state unavailable" role="status">{{ hyxiAlarms === null ? 'Cargando alarmas HYXi…' : 'Actualizando alarmas HYXi…' }}</p>
+            <p v-if="hyxiError" class="incident-state unavailable" role="alert">{{ hyxiError }} {{ hyxiAlarms !== null ? 'Se conservan los últimos datos.' : '' }}</p>
             <div
-              v-if="hyxiUnavailable"
+              v-if="!hyxiLoading && hyxiUnavailable"
               class="incident-state unavailable"
             >
               <span class="incident-icon">
@@ -934,7 +890,7 @@ onUnmounted(() => {
 
             <div
               v-else-if="
-                hyxiAlarmItems.length === 0
+                !hyxiUnavailable && hyxiAlarmItems.length === 0
               "
               class="incident-state ok"
             >
@@ -955,7 +911,7 @@ onUnmounted(() => {
             </div>
 
             <div
-              v-else
+              v-else-if="!hyxiUnavailable"
               class="incident-state warning"
             >
               <span class="incident-icon">
@@ -984,9 +940,11 @@ onUnmounted(() => {
 
           <strong>
             {{
-              hyxiUnavailable
-                ? `${growattAlarmItems.length} + HYXi no disponible`
-                : currentIncidents
+              growattLoading || hyxiLoading
+                ? 'Actualizando alarmas…'
+                : growattError || hyxiError || growattAlarms === null || hyxiUnavailable
+                  ? 'Consulta parcial / no disponible'
+                  : currentIncidents
             }}
           </strong>
         </div>

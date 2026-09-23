@@ -144,6 +144,7 @@ watch(() => route.params.id, async (id, previous, onCleanup) => {
   error.value = '';
   notFound.value = false;
   detail.value = null;
+  historyResponse.value = null;
   try {
     const data = await apiFetch(`/plants/${encodeURIComponent(id)}/overview`, { signal: controller.signal });
     if (!data?.plant || !data.energy || !data.realtime || !Array.isArray(data.devices)) throw new Error('Respuesta inválida');
@@ -186,8 +187,8 @@ watch(() => route.params.id, async (id, previous, onCleanup) => {
     <div v-else-if="notFound" class="card" role="alert"><h2>Planta no encontrada</h2><p>No existe una planta con este identificador. Vuelve al listado para seleccionar otra.</p></div>
     <div v-else-if="error" class="card" role="alert">{{ error }}</div>
 
-    <div v-else-if="detail" class="sections">
-      <section class="kpi-grid" aria-label="Resumen principal">
+    <div class="sections">
+      <section v-if="detail" class="kpi-grid" aria-label="Resumen principal">
         <article class="card kpi">
           <span class="kpi-icon" aria-hidden="true">ϟ</span>
           <div><span class="kpi-label">Potencia actual</span>
@@ -210,7 +211,7 @@ watch(() => route.params.id, async (id, previous, onCleanup) => {
         </article>
       </section>
 
-      <section class="card section flow-section" aria-labelledby="flow-title">
+      <section v-if="detail" class="card section flow-section" aria-labelledby="flow-title">
         <div class="section-head">
           <h2 id="flow-title">Flujo energético</h2>
           <span class="badge" :class="`data-${realtime.data_status}`">{{ freshLabel }}</span>
@@ -220,7 +221,7 @@ watch(() => route.params.id, async (id, previous, onCleanup) => {
         <PlantEnergyFlow v-else :realtime="realtime" />
       </section>
 
-      <section class="card section status-section" aria-labelledby="status-title">
+      <section v-if="detail" class="card section status-section" aria-labelledby="status-title">
         <div class="section-head">
           <h2 id="status-title">Estado y datos</h2>
         </div>
@@ -234,7 +235,7 @@ watch(() => route.params.id, async (id, previous, onCleanup) => {
         </dl>
       </section>
 
-      <section class="card section performance-section" aria-labelledby="perf-title">
+      <section v-if="historyResponse" class="card section performance-section" aria-labelledby="perf-title">
         <div class="section-head">
           <div>
             <h2 id="perf-title">Rendimiento</h2>
@@ -257,10 +258,10 @@ watch(() => route.params.id, async (id, previous, onCleanup) => {
         </div>
       </section>
 
-      <PlantPowerCurve v-model:period="historyPeriod" v-model:selected-date="historyDate" :plant-id="String(route.params.id)" :timezone="detail.plant.timezone" />
-      <PlantEnergyHistory v-model:period="historyPeriod" v-model:selected-date="historyDate" :plant-id="String(route.params.id)" :timezone="detail.plant.timezone" @history-loaded="historyResponse = $event" />
+      <PlantPowerCurve v-model:period="historyPeriod" v-model:selected-date="historyDate" :plant-id="String(route.params.id)" :timezone="plant?.timezone" />
+      <PlantEnergyHistory v-model:period="historyPeriod" v-model:selected-date="historyDate" :plant-id="String(route.params.id)" :timezone="plant?.timezone" @history-loaded="historyResponse = $event" />
 
-      <section class="card section devices-section" aria-labelledby="devices-title">
+      <section v-if="detail" class="card section devices-section" aria-labelledby="devices-title">
         <div class="section-head">
           <h2 id="devices-title">Dispositivos</h2>
           <span class="count">{{ devices.length }}</span>
@@ -294,7 +295,7 @@ watch(() => route.params.id, async (id, previous, onCleanup) => {
         </ul>
       </section>
 
-      <section class="card section install-section" aria-labelledby="install-title">
+      <section v-if="detail" class="card section install-section" aria-labelledby="install-title">
         <div class="section-head">
           <h2 id="install-title">Información de instalación</h2>
         </div>

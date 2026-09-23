@@ -33,9 +33,12 @@ export async function getDevicesLatestData(req, res) {
 export async function getDevices(req, res) {
   try {
     const plantIds = req.scope?.plantIds ?? null;
-    const devices = await listStoredDevices(plantIds);
+    const [devices, latest] = await Promise.all([
+      listStoredDevices(plantIds),
+      listDeviceLatestData(plantIds),
+    ]);
     const latestById = new Map(
-      (await listDeviceLatestData(plantIds)).map(row => [row.device_id, row]),
+      latest.map(row => [row.device_id, row]),
     );
     const fields = ['id', 'provider', 'serial_number', 'name', 'model', 'device_type',
       'status', 'active', 'plant_id', 'last_data_at', 'last_synced_at'];

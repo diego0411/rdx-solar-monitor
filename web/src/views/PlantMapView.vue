@@ -206,7 +206,7 @@ const legendItems = computed(() => [
   ...(filteredAllPlants.value.some(plant => ['unknown', 'inactive'].includes(plant.status)) ? [['unknown', 'Desconocido']] : []),
 ]);
 
-function renderMarkers() {
+function renderMarkers({ fit = true } = {}) {
   if (!map) return;
 
   markerLayer.clearLayers();
@@ -227,6 +227,7 @@ function renderMarkers() {
     positions.push(position);
   }
 
+  if (!fit) return;
   if (positions.length > 1) {
     map.fitBounds(L.latLngBounds(positions), { padding: [32, 32], maxZoom: 12 });
   } else if (positions.length === 1) {
@@ -236,7 +237,36 @@ function renderMarkers() {
 
 onMounted(async () => {
   let stored = null;
-  let overview = [];
+  let overviewById = new Map();
+
+  function applyOverview() {
+    if (controller.signal.aborted || stored === null) return;
+    plants.value = stored.map(plant => {
+      const info = overviewById.get(plant.id) ?? {};
+      return {
+        ...plant,
+        latitude: coordinate(plant.latitude, -90, 90),
+        longitude: coordinate(plant.longitude, -180, 180),
+        data_status: info.data_status ?? 'no_data',
+        data_age_minutes: info.data_age_minutes ?? null,
+        current_power_w: info.current_power_w ?? null,
+        today_generation_kwh: info.today_generation_kwh ?? null,
+      };
+    });
+    renderMarkers({ fit: false });
+  }
+
+  // Attach the error handler immediately; neither request waits for the other.
+  void apiFetch('/plants/overview', { signal: controller.signal })
+    .then(data => {
+      overviewById = new Map((Array.isArray(data) ? data : []).map(plant => [plant.id, plant]));
+      applyOverview();
+    })
+    .catch(failure => {
+      if (!controller.signal.aborted) {
+        console.error('Mapa: fallo al cargar /plants/overview (modo degradado)', failure);
+      }
+    });
 
   try {
     const data = await apiFetch('/plants', { signal: controller.signal });
@@ -244,17 +274,6 @@ onMounted(async () => {
   } catch (failure) {
     if (!controller.signal.aborted) {
       console.error('Mapa: fallo al cargar /plants', failure);
-    }
-  }
-
-  if (!controller.signal.aborted && stored !== null) {
-    try {
-      const data = await apiFetch('/plants/overview', { signal: controller.signal });
-      overview = Array.isArray(data) ? data : [];
-    } catch (failure) {
-      if (!controller.signal.aborted) {
-        console.error('Mapa: fallo al cargar /plants/overview (modo degradado)', failure);
-      }
     }
   }
 
@@ -269,19 +288,7 @@ onMounted(async () => {
     return;
   }
 
-  const overviewById = new Map(overview.map(plant => [plant.id, plant]));
-  plants.value = stored.map(plant => {
-    const info = overviewById.get(plant.id) ?? {};
-    return {
-      ...plant,
-      latitude: coordinate(plant.latitude, -90, 90),
-      longitude: coordinate(plant.longitude, -180, 180),
-      data_status: info.data_status ?? 'no_data',
-      data_age_minutes: info.data_age_minutes ?? null,
-      current_power_w: info.current_power_w ?? null,
-      today_generation_kwh: info.today_generation_kwh ?? null,
-    };
-  });
+  applyOverview();
   loading.value = false;
 
   if (!plantsWithCoords.value.length) return;
