@@ -48,3 +48,21 @@ export async function listEnergyIntervals(plantId, timeType, startTime) {
     if (data.length < 1000) return rows;
   }
 }
+
+export async function listEnergyIntervalsRange(plantId, timeType, startDate, endDate) {
+  const lower = new Date(Date.parse(`${startDate}T00:00:00.000Z`) - 86400000).toISOString();
+  const upper = new Date(Date.parse(`${endDate}T00:00:00.000Z`) + 86400000).toISOString();
+  const rows = [];
+  for (let offset = 0; ; offset += 1000) {
+    const { data, error } = await supabase.from('energy_intervals').select('*')
+      .eq('plant_id', plantId).eq('interval_type', timeType)
+      .gte('interval_start', lower).lt('interval_start', upper)
+      .order('interval_start', { ascending: true }).range(offset, offset + 999);
+    if (error) throw new Error('No se pudo consultar el histórico energético');
+    for (const row of data) {
+      const date = localDateKey(row.interval_start, row.timezone);
+      if (date !== null && date >= startDate && date < endDate) rows.push(row);
+    }
+    if (data.length < 1000) return rows;
+  }
+}

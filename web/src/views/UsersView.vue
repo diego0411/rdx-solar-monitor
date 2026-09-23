@@ -2,7 +2,6 @@
 import { computed, onMounted, onUnmounted, ref } from 'vue';
 import { getMyProfile } from '../services/api.js';
 import { listUsers, createUser, updateUser, setUserStatus } from '../services/users.js';
-import { listClients } from '../services/clients.js';
 
 const roleNames = { client_admin: 'Administrador', client_user: 'Usuario' };
 
@@ -18,12 +17,9 @@ const roleFilter = ref('all');
 
 const showForm = ref(false);
 const editing = ref(null);
-const form = ref({ display_name: '', email: '', role: 'client_user', client_id: '' });
+const form = ref({ display_name: '', email: '', role: 'client_user' });
 const formError = ref('');
 const formSaving = ref(false);
-const clients = ref([]);
-const clientsLoading = ref(false);
-const clientsError = ref('');
 
 const created = ref(null);
 const copyState = ref('');
@@ -83,23 +79,11 @@ async function load() {
   }
 }
 
-async function openCreate() {
+function openCreate() {
   editing.value = null;
-  form.value = { display_name: '', email: '', role: 'client_user', client_id: '' };
+  form.value = { display_name: '', email: '', role: 'client_user' };
   formError.value = '';
   showForm.value = true;
-  if (canManageRoles.value) {
-    clientsLoading.value = true;
-    clientsError.value = '';
-    try {
-      const data = await listClients({ signal: controller.signal });
-      clients.value = Array.isArray(data) ? data : [];
-    } catch (failure) {
-      if (!controller.signal.aborted) clientsError.value = 'No se pudieron cargar los clientes.';
-    } finally {
-      clientsLoading.value = false;
-    }
-  }
 }
 
 function openEdit(user) {
@@ -128,21 +112,12 @@ async function saveForm() {
   try {
     if (editing.value) {
       const payload = { display_name: displayName };
-      if (canManageRoles.value && form.value.role !== editing.value.role) payload.role = form.value.role;
+      if (form.value.role !== editing.value.role) payload.role = form.value.role;
       const updated = await updateUser(editing.value.id, payload, { signal: controller.signal });
       users.value = users.value.map(user => (user.id === updated.id ? updated : user));
       closeForm();
     } else {
-      const payload = { display_name: displayName, email: form.value.email.trim() };
-      if (canManageRoles.value) {
-        payload.role = form.value.role;
-        if (!form.value.client_id) {
-          formError.value = 'Selecciona un cliente.';
-          formSaving.value = false;
-          return;
-        }
-        payload.client_id = form.value.client_id;
-      }
+      const payload = { display_name: displayName, email: form.value.email.trim(), role: form.value.role };
       const result = await createUser(payload, { signal: controller.signal });
       users.value = [stripSecret(result), ...users.value];
       closeForm();
@@ -302,31 +277,18 @@ onUnmounted(() => controller.abort());
           <label for="user-email">Correo</label>
           <input id="user-email" v-model="form.email" type="email" required :disabled="formSaving" />
         </template>
-        <template v-if="canManageRoles">
-          <label for="user-role">Rol</label>
-          <select id="user-role" v-model="form.role" :disabled="formSaving">
-            <option value="client_user">Usuario</option>
-            <option value="client_admin">Administrador</option>
-          </select>
-        </template>
-        <p v-else class="muted">Rol fijo: Usuario</p>
-        <template v-if="canManageRoles && !editing">
-          <label for="user-client">Cliente</label>
-          <select id="user-client" v-model="form.client_id" required :disabled="formSaving || clientsLoading">
-            <option value="" disabled>Selecciona un cliente</option>
-            <option v-for="client in clients" :key="client.id" :value="client.id">{{ client.name }}</option>
-          </select>
-          <p v-if="clientsLoading" class="muted" role="status">Cargando clientes…</p>
-          <p v-else-if="clientsError" class="form-error" role="alert">{{ clientsError }}</p>
-          <p v-else-if="!clients.length" class="muted">No hay clientes activos disponibles.</p>
-        </template>
+        <label for="user-role">Rol</label>
+        <select id="user-role" v-model="form.role" :disabled="formSaving">
+          <option value="client_user">Usuario</option>
+          <option value="client_admin">Administrador</option>
+        </select>
         <p v-if="formError" class="form-error" role="alert">{{ formError }}</p>
         <div class="modal-actions">
           <button class="secondary-button" type="button" :disabled="formSaving" @click="closeForm">Cancelar</button>
           <button
             class="primary-button"
             type="submit"
-            :disabled="formSaving || (canManageRoles && !editing && (clientsLoading || !!clientsError || !clients.length))"
+            :disabled="formSaving"
           >
             {{ formSaving ? 'Guardando…' : editing ? 'Guardar' : 'Crear' }}
           </button>

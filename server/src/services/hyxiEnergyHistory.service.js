@@ -1,6 +1,7 @@
 import { HyxiProvider } from '../providers/hyxi/HyxiProvider.js';
 import { resolveHyxiPlant, upsertEnergyIntervals } from '../repositories/energyIntervals.repository.js';
 import { listPlantPowerIntervals } from '../repositories/plantPowerIntervals.repository.js';
+import { hyxiHistoryStartTime } from './historyPeriods.js';
 
 const provider = new HyxiProvider();
 
@@ -47,7 +48,8 @@ async function deriveFromPowerHistory(plantId, startTime) {
 
 export async function syncHyxiEnergyHistory(externalPlantId, timeType, startTime) {
   const plantId = await resolveHyxiPlant(externalPlantId);
-  const history = await provider.getPlantEnergyHistory(externalPlantId, timeType, startTime);
+  const providerStartTime = hyxiHistoryStartTime(timeType, startTime);
+  const history = await provider.getPlantEnergyHistory(externalPlantId, timeType, providerStartTime);
   const hasEnergy = history.points.some(point => [
     point.generation_kwh,
     point.consumption_kwh,

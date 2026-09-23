@@ -131,16 +131,37 @@ const topPlants = computed(() =>
     ...plant,
     width: topMaxValue.value > 0
       ? `${Math.max(
-        4,
+        0,
         Math.min(
           100,
           Number(plant.today_generation_kwh) * 100
             / topMaxValue.value,
         ),
       )}%`
-      : '4%',
+      : '0%',
   })),
 );
+
+// SVG geometry only: preserve source counts and leave missing data unpainted.
+const plantStateRing = computed(() => {
+  const values = [
+    ['online', summary.value?.online_plants],
+    ['offline', summary.value?.offline_plants],
+    ['alarm', summary.value?.alarm_plants],
+    ['unknown', summary.value?.unknown_plants],
+  ];
+  const total = summary.value?.total_plants;
+  if (!available(total) || total <= 0) return [];
+  const known = values.filter(([, value]) => available(value) && value >= 0);
+  if (known.reduce((sum, [, value]) => sum + value, 0) > total) return [];
+  let offset = 0;
+  return known.map(([state, value]) => {
+    const length = value / total * 100;
+    const segment = { state, length, offset };
+    offset += length;
+    return segment;
+  });
+});
 
 const providerCards = computed(() => {
   return (summary.value?.providers ?? []).map(
@@ -271,31 +292,18 @@ onUnmounted(() => {
 
 <template>
   <div class="dashboard-view">
-    <header class="dashboard-header">
+    <header class="page-header dashboard-header">
       <div>
-        <p class="eyebrow">
-          RDX Solar Monitor
-        </p>
-
         <h1>
-          Vista ejecutiva
+          Dashboard
         </h1>
 
         <p class="header-description">
-          Supervisión unificada del parque fotovoltaico
-          administrado por RDX Technology.
+          Estado y producción del parque fotovoltaico.
         </p>
       </div>
 
       <div class="header-meta">
-        <span>
-          Monitoreo multi-marca
-        </span>
-
-        <strong>
-          HYXi + Growatt
-        </strong>
-
         <span
           v-if="summary && lastUpdatedAt"
           class="update-note"
@@ -320,7 +328,7 @@ onUnmounted(() => {
       role="status"
       aria-live="polite"
     >
-      Cargando vista ejecutiva…
+      Cargando resumen del parque…
     </div>
 
     <div
@@ -337,37 +345,17 @@ onUnmounted(() => {
       </p>
     </div>
 
-    <main
+    <div
       v-else-if="summary"
       class="dashboard"
     >
       <!-- RESUMEN DEL PARQUE -->
 
-      <section>
-        <div class="section-heading">
-          <div>
-            <p class="section-kicker">
-              Portafolio
-            </p>
-
-            <h2>
-              Resumen del parque
-            </h2>
-          </div>
-
-          <p>
-            Indicadores consolidados de las instalaciones
-            fotovoltaicas registradas.
-          </p>
-        </div>
-
+      <section class="summary-section" aria-label="Indicadores principales">
         <div class="executive-kpis">
           <article class="executive-kpi">
-            <span class="kpi-icon">
-              01
-            </span>
-
-            <div>
+            <span class="kpi-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 21V11m0 4C5 16 3 11 3 5c6 0 9 3 9 8m0-3c0-5 4-7 9-7 0 6-3 9-9 9"/></svg></span>
+            <div class="kpi-content">
               <p>
                 Plantas
               </p>
@@ -377,47 +365,38 @@ onUnmounted(() => {
               </strong>
 
               <small>
-                instalaciones activas
+                instalaciones registradas
               </small>
             </div>
           </article>
 
           <article class="executive-kpi">
-            <span class="kpi-icon">
-              02
-            </span>
-
-            <div>
+            <span class="kpi-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="m13 2-8 12h6l-1 8 9-13h-6l1-7Z"/></svg></span>
+            <div class="kpi-content">
               <p>
-                Capacidad instalada
+                Potencia actual
               </p>
 
               <strong>
                 {{
-                  formatValue(
-                    summary.total_capacity_kwp,
-                  )
+                  formatPower(
+                    summary.current_generation_power_w,
+                  ).split(' ')[0]
                 }}
-
-                <em>
-                  kWp
-                </em>
+                <em>{{ formatPower(summary.current_generation_power_w).split(' ')[1] }}</em>
               </strong>
 
               <small>
-                potencia fotovoltaica instalada
+                solo telemetría vigente
               </small>
             </div>
           </article>
 
           <article class="executive-kpi featured-kpi">
-            <span class="kpi-icon">
-              03
-            </span>
-
-            <div>
+            <span class="kpi-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4 14h4v7H4zm6-6h4v13h-4zm6-5h4v18h-4"/></svg></span>
+            <div class="kpi-content">
               <p>
-                Generación de hoy
+                Energía hoy
               </p>
 
               <strong>
@@ -439,26 +418,14 @@ onUnmounted(() => {
           </article>
 
           <article class="executive-kpi">
-            <span class="kpi-icon">
-              04
-            </span>
-
-            <div>
-              <p>
-                Generación actual
-              </p>
-
+            <span class="kpi-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M3 5v14c0 4 18 4 18 0V5M3 10c0 4 18 4 18 0M3 15c0 4 18 4 18 0"/></svg></span>
+            <div class="kpi-content">
+              <p>Energía total</p>
               <strong>
-                {{
-                  formatPower(
-                    summary.current_generation_power_w,
-                  )
-                }}
+                {{ formatEnergy(summary.total_generation_kwh).split(' ')[0] }}
+                <em>{{ formatEnergy(summary.total_generation_kwh).split(' ')[1] }}</em>
               </strong>
-
-              <small>
-                solo telemetría vigente
-              </small>
+              <small>histórico registrado · cobertura parcial</small>
             </div>
           </article>
         </div>
@@ -467,25 +434,103 @@ onUnmounted(() => {
       <!-- OPERACIÓN Y PRODUCCIÓN -->
 
       <section class="overview-grid">
-        <article class="executive-panel">
+        <article class="executive-panel production-panel">
           <header class="panel-header">
             <div>
-              <p class="section-kicker">
-                Operación
-              </p>
+              <h2>
+                Producción de energía
+              </h2>
+            </div>
 
+            <span class="production-current">
+              {{ formatValue(summary.total_capacity_kwp) }} kWp
+              <small>capacidad instalada</small>
+            </span>
+          </header>
+
+          <dl class="production-list">
+            <div class="production-main">
+              <dt>
+                Hoy
+              </dt>
+
+              <dd>
+                <span>{{ formatEnergy(summary.today_generation_kwh).split(' ')[0] }}</span>
+                <em>{{ formatEnergy(summary.today_generation_kwh).split(' ')[1] }}</em>
+              </dd>
+            </div>
+
+            <div>
+              <dt>
+                Mes
+              </dt>
+
+              <dd>
+                <span>{{ formatEnergy(summary.month_generation_kwh).split(' ')[0] }}</span>
+                <em>{{ formatEnergy(summary.month_generation_kwh).split(' ')[1] }}</em>
+              </dd>
+            </div>
+
+            <div>
+              <dt>
+                Año
+              </dt>
+
+              <dd>
+                <span>{{ formatEnergy(summary.year_generation_kwh).split(' ')[0] }}</span>
+                <em>{{ formatEnergy(summary.year_generation_kwh).split(' ')[1] }}</em>
+              </dd>
+            </div>
+
+            <div>
+              <dt>
+                Histórico registrado
+              </dt>
+
+              <dd>
+                <span>{{ formatEnergy(summary.total_generation_kwh).split(' ')[0] }}</span>
+                <em>{{ formatEnergy(summary.total_generation_kwh).split(' ')[1] }}</em>
+              </dd>
+            </div>
+          </dl>
+
+          <div class="data-warning">
+            <strong>
+              Cobertura parcial de acumulados
+            </strong>
+
+            <span>
+              Los acumulados mensual, anual e histórico
+              todavía no cuentan con la misma cobertura
+              de datos para HYXi y Growatt.
+            </span>
+          </div>
+        </article>
+
+        <article class="executive-panel operation-panel">
+          <header class="panel-header">
+            <div>
               <h2>
                 Estado del parque
               </h2>
             </div>
 
-            <span class="panel-total">
-              {{ formatValue(summary.total_plants) }}
-              plantas
-            </span>
+
           </header>
 
-          <div class="state-group">
+          <div class="park-overview">
+            <div class="state-donut">
+              <svg viewBox="0 0 120 120" aria-hidden="true">
+                <circle class="ring-track" cx="60" cy="60" r="49" />
+                <circle v-for="segment in plantStateRing" :key="segment.state"
+                  cx="60" cy="60" r="49" pathLength="100"
+                  :class="'ring-' + segment.state"
+                  :stroke-dasharray="segment.length + ' ' + (100 - segment.length)"
+                  :stroke-dashoffset="-segment.offset" />
+              </svg>
+              <div class="donut-total"><strong>{{ formatValue(summary.total_plants) }}</strong><span>plantas</span></div>
+            </div>
+          <div class="state-group plant-legend">
             <p class="group-label">
               Plantas
             </p>
@@ -570,16 +615,21 @@ onUnmounted(() => {
             </div>
           </div>
 
-          <div class="state-group">
+          <p class="context-note">
+            El estado de planta corresponde a la condición
+            reportada por cada plataforma; la telemetría
+            refleja la vigencia de los últimos datos.
+          </p>
+          </div>
+
+          <div class="state-group telemetry-group">
             <p class="group-label">
               Telemetría
             </p>
 
             <div class="status-list telemetry-list">
               <div class="status-row">
-                <span
-                  class="status-indicator status-online"
-                ></span>
+                <span class="telemetry-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M3 8a15 15 0 0 1 18 0M6 12a10 10 0 0 1 12 0M9 16a5 5 0 0 1 6 0"/><circle cx="12" cy="20" r="1"/></svg></span>
 
                 <div>
                   <strong>
@@ -589,15 +639,13 @@ onUnmounted(() => {
                   </strong>
 
                   <span>
-                    Actual
+                    Telemetría actual
                   </span>
                 </div>
               </div>
 
               <div class="status-row">
-                <span
-                  class="status-indicator status-stale"
-                ></span>
+                <span class="telemetry-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 6v6l4 2"/></svg></span>
 
                 <div>
                   <strong>
@@ -613,9 +661,7 @@ onUnmounted(() => {
               </div>
 
               <div class="status-row">
-                <span
-                  class="status-indicator status-unknown"
-                ></span>
+                <span class="telemetry-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="5" y="3" width="14" height="18" rx="2"/><path d="M9 8h6M9 12h6M9 16h3"/></svg></span>
 
                 <div>
                   <strong>
@@ -632,115 +678,15 @@ onUnmounted(() => {
             </div>
           </div>
 
-          <p class="context-note">
-            El estado de planta corresponde a la condición
-            reportada por cada plataforma; la telemetría
-            refleja la vigencia de los últimos datos.
-          </p>
-        </article>
 
-        <article class="executive-panel">
-          <header class="panel-header">
-            <div>
-              <p class="section-kicker">
-                Energía
-              </p>
-
-              <h2>
-                Producción acumulada
-              </h2>
-            </div>
-
-            <span class="production-current">
-              {{
-                formatPower(
-                  summary.current_generation_power_w,
-                )
-              }}
-            </span>
-          </header>
-
-          <dl class="production-list">
-            <div class="production-main">
-              <dt>
-                Hoy
-              </dt>
-
-              <dd>
-                {{
-                  formatEnergy(
-                    summary.today_generation_kwh,
-                  )
-                }}
-              </dd>
-            </div>
-
-            <div>
-              <dt>
-                Mes
-              </dt>
-
-              <dd>
-                {{
-                  formatEnergy(
-                    summary.month_generation_kwh,
-                  )
-                }}
-              </dd>
-            </div>
-
-            <div>
-              <dt>
-                Año
-              </dt>
-
-              <dd>
-                {{
-                  formatEnergy(
-                    summary.year_generation_kwh,
-                  )
-                }}
-              </dd>
-            </div>
-
-            <div>
-              <dt>
-                Histórico registrado
-              </dt>
-
-              <dd>
-                {{
-                  formatEnergy(
-                    summary.total_generation_kwh,
-                  )
-                }}
-              </dd>
-            </div>
-          </dl>
-
-          <div class="data-warning">
-            <strong>
-              Cobertura parcial de acumulados
-            </strong>
-
-            <span>
-              Los acumulados mensual, anual e histórico
-              todavía no cuentan con la misma cobertura
-              de datos para HYXi y Growatt.
-            </span>
-          </div>
         </article>
       </section>
 
       <!-- PRODUCCIÓN POR PLANTA -->
 
-      <section>
+      <section class="ranking-section">
         <div class="section-heading">
           <div>
-            <p class="section-kicker">
-              Desempeño
-            </p>
-
             <h2>
               Producción por planta
             </h2>
@@ -750,7 +696,7 @@ onUnmounted(() => {
             class="text-link"
             to="/plants"
           >
-            Ver todas las plantas
+            Ver todas las plantas →
           </RouterLink>
         </div>
 
@@ -760,7 +706,7 @@ onUnmounted(() => {
         >
           <ol class="top-plants-list">
             <li
-              v-for="(plant, index) in topPlants"
+              v-for="(plant, index) in topPlants.slice(0, 5)"
               :key="plant.plant_id"
               class="top-plant"
             >
@@ -782,13 +728,9 @@ onUnmounted(() => {
               </span>
 
               <div class="top-plant-info">
-                <strong>
+                <strong :title="plant.name">
                   {{ plant.name }}
                 </strong>
-
-                <span>
-                  {{ providerLabel(plant.provider) }}
-                </span>
               </div>
 
               <div class="top-bar">
@@ -825,15 +767,236 @@ onUnmounted(() => {
         </div>
       </section>
 
-      <!-- PROVEEDORES -->
+      <!-- INCIDENCIAS -->
 
-      <section>
+      <section class="incidents-section">
         <div class="section-heading">
           <div>
-            <p class="section-kicker">
-              Integraciones
-            </p>
+            <h2>
+              Incidencias
+            </h2>
+          </div>
 
+          <p>
+            Estado de eventos disponible desde
+            las plataformas integradas.
+          </p>
+        </div>
+
+        <div class="incidents-grid">
+          <!-- GROWATT -->
+
+          <article class="incident-card">
+            <header>
+              <div>
+                <span
+                  class="provider-logo provider-growatt"
+                >
+                  GW
+                </span>
+
+                <div>
+                  <h3>
+                    Growatt
+                  </h3>
+
+                  <p>
+                    Diagnóstico actual
+                  </p>
+                </div>
+              </div>
+
+              <strong>
+                {{ growattAlarmItems.length }}
+              </strong>
+            </header>
+
+            <div
+              v-if="growattAlarms === null"
+              class="incident-state unavailable"
+            >
+              <span class="incident-icon">
+                !
+              </span>
+
+              <div>
+                <strong>
+                  Consulta no disponible
+                </strong>
+
+                <p>
+                  No fue posible consultar el diagnóstico
+                  actual de Growatt.
+                </p>
+              </div>
+            </div>
+
+            <div
+              v-else-if="
+                growattAlarmItems.length === 0
+              "
+              class="incident-state ok"
+            >
+              <span class="incident-icon">
+                ✓
+              </span>
+
+              <div>
+                <strong>
+                  Sin incidencias actuales
+                </strong>
+
+                <p>
+                  No se detectaron fallas o advertencias
+                  actuales en los dispositivos Growatt.
+                </p>
+              </div>
+            </div>
+
+            <div
+              v-else
+              class="incident-state warning"
+            >
+              <span class="incident-icon">
+                !
+              </span>
+
+              <div>
+                <strong>
+                  {{ growattAlarmItems.length }}
+                  incidencia(s) actual(es)
+                </strong>
+
+                <p>
+                  Consulta el módulo de Alarmas
+                  para revisar el detalle.
+                </p>
+              </div>
+            </div>
+          </article>
+
+          <!-- HYXI -->
+
+          <article class="incident-card">
+            <header>
+              <div>
+                <span
+                  class="provider-logo provider-hyxi"
+                >
+                  HX
+                </span>
+
+                <div>
+                  <h3>
+                    HYXi
+                  </h3>
+
+                  <p>
+                    Eventos de alarma
+                  </p>
+                </div>
+              </div>
+
+              <strong
+                v-if="!hyxiUnavailable"
+              >
+                {{ hyxiAlarmItems.length }}
+              </strong>
+
+              <strong
+                v-else
+                class="unavailable-symbol"
+              >
+                —
+              </strong>
+            </header>
+
+            <div
+              v-if="hyxiUnavailable"
+              class="incident-state unavailable"
+            >
+              <span class="incident-icon">
+                !
+              </span>
+
+              <div>
+                <strong>
+                  Consulta temporalmente no disponible
+                </strong>
+
+                <p>
+                  Los datos de las plantas HYXi continúan
+                  disponibles, pero actualmente no es
+                  posible consultar sus eventos de alarma.
+                </p>
+              </div>
+            </div>
+
+            <div
+              v-else-if="
+                hyxiAlarmItems.length === 0
+              "
+              class="incident-state ok"
+            >
+              <span class="incident-icon">
+                ✓
+              </span>
+
+              <div>
+                <strong>
+                  Sin alarmas reportadas
+                </strong>
+
+                <p>
+                  La consulta de eventos HYXi se completó
+                  correctamente.
+                </p>
+              </div>
+            </div>
+
+            <div
+              v-else
+              class="incident-state warning"
+            >
+              <span class="incident-icon">
+                !
+              </span>
+
+              <div>
+                <strong>
+                  {{ hyxiAlarmItems.length }}
+                  alarma(s)
+                </strong>
+
+                <p>
+                  Consulta el módulo de Alarmas
+                  para revisar el detalle.
+                </p>
+              </div>
+            </div>
+          </article>
+        </div>
+
+        <div class="incident-summary">
+          <span>
+            Incidencias visibles actualmente
+          </span>
+
+          <strong>
+            {{
+              hyxiUnavailable
+                ? `${growattAlarmItems.length} + HYXi no disponible`
+                : currentIncidents
+            }}
+          </strong>
+        </div>
+      </section>
+
+      <!-- PROVEEDORES -->
+
+      <section class="providers-section">
+        <div class="section-heading">
+          <div>
             <h2>
               Plataformas conectadas
             </h2>
@@ -1060,1055 +1223,204 @@ onUnmounted(() => {
         </div>
       </section>
 
-      <!-- INCIDENCIAS -->
-
-      <section>
-        <div class="section-heading">
-          <div>
-            <p class="section-kicker">
-              Supervisión
-            </p>
-
-            <h2>
-              Incidencias
-            </h2>
-          </div>
-
-          <p>
-            Estado de eventos disponible desde
-            las plataformas integradas.
-          </p>
-        </div>
-
-        <div class="incidents-grid">
-          <!-- GROWATT -->
-
-          <article class="incident-card">
-            <header>
-              <div>
-                <span
-                  class="provider-logo provider-growatt"
-                >
-                  GW
-                </span>
-
-                <div>
-                  <h3>
-                    Growatt
-                  </h3>
-
-                  <p>
-                    Diagnóstico actual
-                  </p>
-                </div>
-              </div>
-
-              <strong>
-                {{ growattAlarmItems.length }}
-              </strong>
-            </header>
-
-            <div
-              v-if="growattAlarms === null"
-              class="incident-state unavailable"
-            >
-              <span class="incident-icon">
-                !
-              </span>
-
-              <div>
-                <strong>
-                  Consulta no disponible
-                </strong>
-
-                <p>
-                  No fue posible consultar el diagnóstico
-                  actual de Growatt.
-                </p>
-              </div>
-            </div>
-
-            <div
-              v-else-if="
-                growattAlarmItems.length === 0
-              "
-              class="incident-state ok"
-            >
-              <span class="incident-icon">
-                ✓
-              </span>
-
-              <div>
-                <strong>
-                  Sin incidencias actuales
-                </strong>
-
-                <p>
-                  No se detectaron fallas o advertencias
-                  actuales en los dispositivos Growatt.
-                </p>
-              </div>
-            </div>
-
-            <div
-              v-else
-              class="incident-state warning"
-            >
-              <span class="incident-icon">
-                !
-              </span>
-
-              <div>
-                <strong>
-                  {{ growattAlarmItems.length }}
-                  incidencia(s) actual(es)
-                </strong>
-
-                <p>
-                  Consulta el módulo de Alarmas
-                  para revisar el detalle.
-                </p>
-              </div>
-            </div>
-          </article>
-
-          <!-- HYXI -->
-
-          <article class="incident-card">
-            <header>
-              <div>
-                <span
-                  class="provider-logo provider-hyxi"
-                >
-                  HX
-                </span>
-
-                <div>
-                  <h3>
-                    HYXi
-                  </h3>
-
-                  <p>
-                    Eventos de alarma
-                  </p>
-                </div>
-              </div>
-
-              <strong
-                v-if="!hyxiUnavailable"
-              >
-                {{ hyxiAlarmItems.length }}
-              </strong>
-
-              <strong
-                v-else
-                class="unavailable-symbol"
-              >
-                —
-              </strong>
-            </header>
-
-            <div
-              v-if="hyxiUnavailable"
-              class="incident-state unavailable"
-            >
-              <span class="incident-icon">
-                !
-              </span>
-
-              <div>
-                <strong>
-                  Consulta temporalmente no disponible
-                </strong>
-
-                <p>
-                  Los datos de las plantas HYXi continúan
-                  disponibles, pero actualmente no es
-                  posible consultar sus eventos de alarma.
-                </p>
-              </div>
-            </div>
-
-            <div
-              v-else-if="
-                hyxiAlarmItems.length === 0
-              "
-              class="incident-state ok"
-            >
-              <span class="incident-icon">
-                ✓
-              </span>
-
-              <div>
-                <strong>
-                  Sin alarmas reportadas
-                </strong>
-
-                <p>
-                  La consulta de eventos HYXi se completó
-                  correctamente.
-                </p>
-              </div>
-            </div>
-
-            <div
-              v-else
-              class="incident-state warning"
-            >
-              <span class="incident-icon">
-                !
-              </span>
-
-              <div>
-                <strong>
-                  {{ hyxiAlarmItems.length }}
-                  alarma(s)
-                </strong>
-
-                <p>
-                  Consulta el módulo de Alarmas
-                  para revisar el detalle.
-                </p>
-              </div>
-            </div>
-          </article>
-        </div>
-
-        <div class="incident-summary">
-          <span>
-            Incidencias visibles actualmente
-          </span>
-
-          <strong>
-            {{
-              hyxiUnavailable
-                ? `${growattAlarmItems.length} + HYXi no disponible`
-                : currentIncidents
-            }}
-          </strong>
-        </div>
-      </section>
-    </main>
+    </div>
   </div>
 </template>
 
 <style scoped>
-.dashboard-view {
-  width: 100%;
-  min-width: 0;
-}
-
-:global(.main-content:has(.dashboard-view)) {
-  max-width: none;
-  min-width: 0;
-}
-
-/* HEADER */
-
-.dashboard-header {
-  display: flex;
-  align-items: flex-end;
-  justify-content: space-between;
-  gap: 32px;
-  margin-bottom: 32px;
-  padding-bottom: 28px;
-  border-bottom: 1px solid var(--rdx-border);
-}
-
-.eyebrow,
-.section-kicker {
-  margin: 0;
-  color: var(--rdx-accent);
-  font-size: 11px;
-  font-weight: 750;
-  letter-spacing: .12em;
-  text-transform: uppercase;
-}
-
-.dashboard-header h1 {
-  margin: 4px 0 8px;
-  color: var(--rdx-text-strong);
-  font-size: clamp(32px, 4vw, 46px);
-  letter-spacing: -.045em;
-}
-
-.header-description {
-  max-width: 680px;
-  margin: 0;
-  color: var(--rdx-text-muted);
-  font-size: 15px;
-}
-
-.header-meta {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-end;
-  gap: 3px;
-}
-
-.header-meta span {
-  color: var(--rdx-text-faint);
-  font-size: 11px;
-}
-
-.header-meta strong {
-  color: var(--rdx-text-muted);
-  font-size: 13px;
-}
-
-.update-note {
-  font-size: 10px;
-  color: var(--rdx-text-faint);
-}
-
-.update-note.update-error {
-  color: var(--rdx-danger);
-}
-
-/* GENERAL */
-
-.dashboard {
-  display: grid;
-  width: 100%;
-  min-width: 0;
-  gap: 42px;
-}
-
-.page-state {
-  padding: 28px;
-}
-
-.error-state {
-  border-color: var(--rdx-danger-soft);
-}
-
-.error-state h2 {
-  margin-top: 0;
-}
-
-.section-heading {
-  display: flex;
-  align-items: flex-end;
-  justify-content: space-between;
-  gap: 24px;
-  margin-bottom: 18px;
-}
-
-.section-heading h2,
-.panel-header h2 {
-  margin: 2px 0 0;
-  color: var(--rdx-text-strong);
-  font-size: 23px;
-  letter-spacing: -.025em;
-}
-
-.section-heading > p {
-  max-width: 470px;
-  margin: 0;
-  color: var(--rdx-text-muted);
-  font-size: 13px;
-  text-align: right;
-}
-
-/* KPIs */
-
-.executive-kpis {
-  display: grid;
-  grid-template-columns:
-    repeat(4, minmax(0, 1fr));
-  gap: 16px;
-}
-
-.executive-kpi {
-  display: flex;
-  align-items: flex-start;
-  gap: 16px;
-  min-width: 0;
-  min-height: 148px;
-  padding: 24px;
-  border: 1px solid var(--rdx-border);
-  border-radius: 15px;
-  background: var(--rdx-surface);
-  box-shadow:
-    0 6px 22px rgb(23 63 51 / 5%);
-}
-
-.executive-kpi.featured-kpi {
-  border-color: var(--rdx-success-soft);
-  background:
-    linear-gradient(
-      145deg,
-      var(--rdx-success-soft),
-      var(--rdx-surface)
-    );
-}
-
-.kpi-icon {
-  display: grid;
-  width: 34px;
-  height: 34px;
-  flex: 0 0 34px;
-  place-items: center;
-  border-radius: 9px;
-  background: var(--rdx-primary-soft);
-  color: var(--rdx-accent);
-  font-size: 10px;
-  font-weight: 800;
-}
-
-.executive-kpi p {
-  margin: 0 0 10px;
-  color: var(--rdx-text-muted);
-  font-size: 13px;
-  font-weight: 650;
-}
-
-.executive-kpi strong {
-  display: block;
-  color: var(--rdx-text-strong);
-  font-size: clamp(28px, 3vw, 40px);
-  line-height: 1;
-  font-variant-numeric: tabular-nums;
-}
-
-.executive-kpi strong em {
-  color: var(--rdx-text-muted);
-  font-size: 13px;
-  font-style: normal;
-  font-weight: 600;
-}
-
-.executive-kpi small {
-  display: block;
-  margin-top: 11px;
-  color: var(--rdx-text-faint);
-  font-size: 11px;
-}
-
-/* ESTADO + PRODUCCIÓN */
-
-.overview-grid {
-  display: grid;
-  grid-template-columns:
-    minmax(0, 1fr)
-    minmax(0, 1fr);
-  gap: 18px;
-}
-
-.executive-panel {
-  min-width: 0;
-  padding: 27px;
-  border: 1px solid var(--rdx-border);
-  border-radius: 15px;
-  background: var(--rdx-surface);
-  box-shadow:
-    0 5px 20px rgb(23 63 51 / 4%);
-}
-
-.panel-header {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 20px;
-  padding-bottom: 20px;
-  border-bottom: 1px solid var(--rdx-border);
-}
-
-.panel-total,
-.production-current {
-  color: var(--rdx-text-muted);
-  font-size: 12px;
-  font-weight: 650;
-}
-
-.state-group + .state-group {
-  margin-top: 4px;
-}
-
-.group-label {
-  margin: 0 0 10px;
-  color: var(--rdx-text-faint);
-  font-size: 10px;
-  font-weight: 750;
-  letter-spacing: .1em;
-  text-transform: uppercase;
-}
-
-.status-list {
-  display: grid;
-  grid-template-columns:
-    repeat(auto-fit, minmax(150px, 1fr));
-  gap: 12px;
-}
-
-.state-group + .state-group .status-list {
-  padding-top: 20px;
-  border-top: 1px solid var(--rdx-border);
-}
-
-.status-row {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-
-.status-indicator {
-  width: 10px;
-  height: 38px;
-  flex: 0 0 10px;
-  border-radius: 6px;
-}
-
-.status-online {
-  background: var(--rdx-success);
-}
-
-.status-offline {
-  background: var(--rdx-neutral);
-}
-
-.status-alarm {
-  background: var(--rdx-danger);
-}
-
-.status-stale {
-  background: var(--rdx-warning);
-}
-
-.status-unknown {
-  background: var(--rdx-neutral);
-}
-
-.status-row div {
-  display: flex;
-  flex-direction: column;
-}
-
-.status-row strong {
-  color: var(--rdx-text-strong);
-  font-size: 28px;
-  line-height: 1;
-}
-
-.status-row span:last-child {
-  margin-top: 5px;
-  color: var(--rdx-text-muted);
-  font-size: 11px;
-}
-
-.context-note {
-  margin: 18px 0 0;
-  color: var(--rdx-text-faint);
-  font-size: 11px;
-  line-height: 1.5;
-}
-
-/* PRODUCCIÓN */
-
-.production-list {
-  margin: 22px 0 0;
-}
-
-.production-list > div {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 20px;
-  padding: 13px 0;
-  border-bottom: 1px solid var(--rdx-border);
-}
-
-.production-list dt {
-  color: var(--rdx-text-muted);
-  font-size: 12px;
-}
-
-.production-list dd {
-  margin: 0;
-  color: var(--rdx-primary);
-  font-size: 19px;
-  font-weight: 750;
-  font-variant-numeric: tabular-nums;
-}
-
-.production-list .production-main dd {
-  font-size: 27px;
-}
-
-.data-warning {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  margin-top: 18px;
-  padding: 13px 15px;
-  border-radius: 9px;
-  background: var(--rdx-warning-soft);
-}
-
-.data-warning strong {
-  color: var(--rdx-warning);
-  font-size: 11px;
-}
-
-.data-warning span {
-  color: var(--rdx-text-muted);
-  font-size: 10px;
-  line-height: 1.45;
-}
-
-/* PROVEEDORES */
-
-.providers-grid {
-  display: grid;
-  grid-template-columns:
-    repeat(2, minmax(0, 1fr));
-  gap: 18px;
-}
-
-.provider-card {
-  min-width: 0;
-  padding: 26px;
-  border: 1px solid var(--rdx-border);
-  border-radius: 15px;
-  background: var(--rdx-surface);
-  box-shadow:
-    0 5px 20px rgb(23 63 51 / 4%);
-}
-
-.provider-card-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 20px;
-}
-
-.provider-title {
-  display: flex;
-  align-items: center;
-  gap: 13px;
-}
-
-.provider-logo {
-  display: grid;
-  width: 42px;
-  height: 42px;
-  flex: 0 0 42px;
-  place-items: center;
-  border-radius: 11px;
-  font-size: 11px;
-  font-weight: 850;
-  letter-spacing: .04em;
-}
-
-.provider-hyxi {
-  background: var(--rdx-success-soft);
-  color: var(--rdx-success);
-}
-
-.provider-growatt {
-  background: var(--rdx-neutral-soft);
-  color: var(--rdx-text-muted);
-}
-
-.provider-title h3,
-.incident-card h3 {
-  margin: 0;
-  color: var(--rdx-text-strong);
-  font-size: 19px;
-}
-
-.provider-title p,
-.incident-card header p {
-  margin: 4px 0 0;
-  color: var(--rdx-text-faint);
-  font-size: 11px;
-}
-
-.provider-count {
-  color: var(--rdx-text-strong);
-  font-size: 24px;
-  text-align: right;
-}
-
-.provider-count small {
-  display: block;
-  color: var(--rdx-text-faint);
-  font-size: 9px;
-  font-weight: 600;
-}
-
-.provider-groups {
-  display: flex;
-  flex-direction: column;
-  gap: 18px;
-  margin-top: 22px;
-}
-
-.provider-chips {
-  display: grid;
-  grid-template-columns:
-    repeat(auto-fit, minmax(120px, 1fr));
-  gap: 8px;
-}
-
-.provider-chip {
-  display: grid;
-  grid-template-columns: auto auto;
-  align-items: center;
-  justify-content: start;
-  column-gap: 7px;
-  padding: 11px 13px;
-  border: 1px solid var(--rdx-border);
-  border-radius: 10px;
-  background: var(--rdx-surface);
-}
-
-.provider-chip strong {
-  color: var(--rdx-text-strong);
-  font-size: 16px;
-}
-
-.provider-chip small {
-  grid-column: 1 / -1;
-  margin-top: 2px;
-  color: var(--rdx-text-faint);
-  font-size: 9px;
-}
-
-.mini-dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-}
-
-.dot-online {
-  background: var(--rdx-success);
-}
-
-.dot-offline {
-  background: var(--rdx-neutral);
-}
-
-.dot-alarm {
-  background: var(--rdx-danger);
-}
-
-.dot-stale {
-  background: var(--rdx-warning);
-}
-
-.dot-unknown {
-  background: var(--rdx-neutral);
-}
-
-.provider-footer {
-  display: flex;
-  justify-content: flex-start;
-  gap: 20px;
-  margin-top: 18px;
-  color: var(--rdx-text-muted);
-  font-size: 11px;
-}
-
-/* PRODUCCIÓN POR PLANTA */
-
-.text-link {
-  color: var(--rdx-primary);
-  font-size: 13px;
-  font-weight: 650;
-  text-decoration: none;
-}
-
-.text-link:hover {
-  text-decoration: underline;
-}
-
-.top-plants-card {
-  padding: 10px 26px 16px;
-  border: 1px solid var(--rdx-border);
-  border-radius: 15px;
-  background: var(--rdx-surface);
-  box-shadow:
-    0 5px 20px rgb(23 63 51 / 4%);
-}
-
-.top-plants-list {
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-
-.top-plant {
-  display: flex;
-  align-items: center;
-  gap: 14px;
-  padding: 15px 0;
-  border-bottom: 1px solid var(--rdx-border);
-}
-
-.top-plant:last-child {
-  border-bottom: 0;
-}
-
-.top-rank {
-  width: 22px;
-  flex: 0 0 22px;
-  color: var(--rdx-text-faint);
-  font-size: 12px;
-  font-weight: 800;
-  text-align: center;
-}
-
-.top-plant .provider-logo {
-  width: 34px;
-  height: 34px;
-  flex: 0 0 34px;
-  font-size: 10px;
-}
-
-.top-plant-info {
-  display: flex;
-  width: 220px;
-  min-width: 0;
-  flex: 0 0 220px;
-  flex-direction: column;
-  gap: 2px;
-}
-
-.top-plant-info strong {
-  overflow: hidden;
-  color: var(--rdx-text-strong);
-  font-size: 13px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.top-plant-info span {
-  color: var(--rdx-text-faint);
-  font-size: 10px;
-}
-
-.top-bar {
-  height: 9px;
-  min-width: 0;
-  flex: 1 1 auto;
-  overflow: hidden;
-  border-radius: 99px;
-  background: var(--rdx-neutral-soft);
-}
-
-.top-bar-fill {
-  display: block;
-  height: 100%;
-  border-radius: 99px;
-  background: linear-gradient(90deg, var(--rdx-success), var(--rdx-primary));
-}
-
-.top-energy {
-  display: flex;
-  width: 120px;
-  flex: 0 0 120px;
-  flex-direction: column;
-  align-items: flex-end;
-  gap: 2px;
-}
-
-.top-energy strong {
-  color: var(--rdx-primary);
-  font-size: 14px;
-  font-variant-numeric: tabular-nums;
-}
-
-.top-energy small {
-  color: var(--rdx-text-faint);
-  font-size: 10px;
-}
-
-.top-plants-empty {
-  text-align: center;
-  color: var(--rdx-text-muted);
-}
-
-/* INCIDENCIAS */
-
-.incidents-grid {
-  display: grid;
-  grid-template-columns:
-    repeat(2, minmax(0, 1fr));
-  gap: 18px;
-}
-
-.incident-card {
-  min-width: 0;
-  padding: 24px;
-  border: 1px solid var(--rdx-border);
-  border-radius: 14px;
-  background: var(--rdx-surface);
-  box-shadow:
-    0 5px 20px rgb(23 63 51 / 4%);
-}
-
-.incident-card header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 20px;
-  padding-bottom: 18px;
-  border-bottom: 1px solid var(--rdx-border);
-}
-
-.incident-card header > div {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-
-.incident-card header > strong {
-  color: var(--rdx-text-strong);
-  font-size: 27px;
-}
-
-.unavailable-symbol {
-  color: var(--rdx-text-faint) !important;
-}
-
-.incident-state {
-  display: flex;
-  align-items: flex-start;
-  gap: 12px;
-  margin-top: 18px;
-  padding: 15px;
-  border-radius: 10px;
-}
-
-.incident-state.ok {
-  background: var(--rdx-success-soft);
-  color: var(--rdx-success);
-}
-
-.incident-state.warning {
-  background: var(--rdx-warning-soft);
-  color: var(--rdx-warning);
-}
-
-.incident-state.unavailable {
-  background: var(--rdx-neutral-soft);
-  color: var(--rdx-text-muted);
-}
-
-.incident-icon {
-  display: grid;
-  width: 24px;
-  height: 24px;
-  flex: 0 0 24px;
-  place-items: center;
-  border-radius: 50%;
-  background: rgb(255 255 255 / 65%);
-  font-size: 12px;
-  font-weight: 900;
-}
-
-.incident-state strong {
-  display: block;
-  font-size: 12px;
-}
-
-.incident-state p {
-  margin: 4px 0 0;
-  font-size: 10px;
-  line-height: 1.5;
-}
-
-.incident-summary {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 20px;
-  margin-top: 12px;
-  padding: 11px 15px;
-  border-radius: 9px;
-  background: var(--rdx-neutral-soft);
-  color: var(--rdx-text-muted);
-  font-size: 10px;
-}
-
-.incident-summary strong {
-  color: var(--rdx-text-muted);
-  font-size: 11px;
-}
-
-/* RESPONSIVE */
-
-@media (max-width: 1100px) {
-  .executive-kpis {
-    grid-template-columns:
-      repeat(2, minmax(0, 1fr));
-  }
-}
-
-@media (max-width: 900px) {
-  .overview-grid,
-  .providers-grid,
-  .incidents-grid {
-    grid-template-columns: 1fr;
-  }
-}
-
-@media (max-width: 760px) {
-  .dashboard-header {
-    align-items: flex-start;
-    flex-direction: column;
-  }
-
-  .header-meta {
-    align-items: flex-start;
-  }
-
-  .section-heading {
-    align-items: flex-start;
-    flex-direction: column;
-    gap: 7px;
-  }
-
-  .section-heading > p {
-    text-align: left;
-  }
-}
-
-@media (max-width: 560px) {
-  .dashboard {
-    gap: 34px;
-  }
-
-  .executive-kpis {
-    grid-template-columns: 1fr;
-  }
-
-  .status-list {
-    grid-template-columns: 1fr;
-  }
-
-  .top-plant {
-    flex-wrap: wrap;
-  }
-
-  .top-plant-info {
-    width: auto;
-    flex: 1 1 0;
-  }
-
-  .top-bar {
-    flex: 1 1 100%;
-    order: 4;
-  }
-
-  .top-energy {
-    width: auto;
-    flex: 0 0 auto;
-  }
-
-  .provider-chips {
-    grid-template-columns: 1fr 1fr;
-  }
+:global(.app-shell:has(.dashboard-view) .main-content) { max-width: 1920px; padding: 18px 22px; }
+:global(.app-shell:has(.dashboard-view) .app-topbar) { display: none; }
+.dashboard-view { width: 100%; min-width: 0; line-height: 1.5; }
+.dashboard-header { display: flex; justify-content: space-between; align-items: center; gap: 20px; margin-bottom: 22px; }
+.dashboard-header h1 { margin: 0 0 4px; font-size: 32px; line-height: 1.2; }
+.header-description { margin: 0; font-size: 15px; line-height: 1.5; }
+.header-meta { display: grid; gap: 6px; text-align: right; color: var(--rdx-text-muted); font-size: 12px; }
+.update-error { color: var(--rdx-danger); max-width: 300px; }
+.dashboard { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.05fr); gap: 18px; }
+.dashboard > section { min-width: 0; }
+.summary-section, .overview-grid, .providers-section { grid-column: 1 / -1; }
+.executive-kpis { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 16px; }
+.executive-kpi, .executive-panel, .ranking-section, .incidents-section, .providers-section { background: var(--rdx-surface); border: 1px solid var(--rdx-neutral-soft); border-radius: var(--rdx-radius-lg); box-shadow: 0 2px 6px rgb(23 63 51 / 4%), 0 8px 24px rgb(23 63 51 / 2%); }
+.executive-kpi { display: flex; align-items: flex-start; gap: 16px; min-width: 0; padding: 22px 20px; }
+.kpi-icon { flex: 0 0 48px; height: 48px; display: grid; place-items: center; border-radius: 50%; background: var(--rdx-background); color: var(--rdx-primary); }
+.kpi-icon svg { width: 28px; height: 28px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.kpi-content { min-width: 0; }
+.executive-kpi p { margin: 0 0 8px; font-size: 14px; font-weight: 500; }
+.executive-kpi strong { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 6px; font-size: 34px; line-height: 1.15; letter-spacing: -.035em; font-weight: 600; color: var(--rdx-text-strong); overflow-wrap: anywhere; }
+.executive-kpi em { font-size: 15px; white-space: nowrap; font-style: normal; font-weight: 600; letter-spacing: normal; }
+.executive-kpi small { display: block; margin-top: 10px; font-size: 12px; line-height: 1.5; color: var(--rdx-text-muted); }
+.overview-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.05fr); gap: 18px; }
+.executive-panel, .ranking-section, .incidents-section, .providers-section { min-width: 0; padding: 22px; }
+.section-heading, .panel-header { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px 16px; margin-bottom: 18px; }
+.section-heading h2, .panel-header h2 { margin: 0; font-size: 18px; font-weight: 600; letter-spacing: -.025em; }
+.section-heading > p { margin: 0; font-size: 12px; color: var(--rdx-text-muted); }
+.production-current { font-size: 16px; font-weight: 600; text-align: right; color: var(--rdx-text-strong); }
+.production-current small { display: block; font-size: 12px; font-weight: 400; color: var(--rdx-text-muted); }
+.production-list { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 24px 20px; margin: 8px 0 24px; }
+.production-list .production-main { grid-column: 1 / -1; padding: 0 0 22px; border-bottom: 1px solid var(--rdx-border); }
+.production-list > div:not(.production-main) + div { border-left: 1px solid var(--rdx-neutral-soft); padding-left: 20px; }
+.production-list > div { min-width: 0; }
+.production-list dt { margin-bottom: 8px; font-size: 14px; color: var(--rdx-text-muted); }
+.production-list dd { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 6px; margin: 0; font-size: 23px; line-height: 1.2; font-weight: 600; color: var(--rdx-text-strong); overflow-wrap: anywhere; }
+.production-list dd em { font-size: 13px; font-style: normal; font-weight: 500; color: var(--rdx-text-muted); letter-spacing: normal; }
+.production-list .production-main dd em { font-size: 16px; }
+.production-list .production-main dd { color: var(--rdx-primary); font-size: 40px; letter-spacing: -.035em; line-height: 1.15; }
+.data-warning { display: grid; gap: 4px; padding: 12px 14px; background: var(--rdx-background); border-radius: var(--rdx-radius-sm); }
+.data-warning strong { color: var(--rdx-text); font-size: 12px; font-weight: 600; }
+.data-warning span { color: var(--rdx-text-muted); font-size: 12px; line-height: 1.5; }
+.park-overview { display: grid; grid-template-columns: 164px minmax(0, 1fr); align-items: center; gap: 24px; margin: 14px 0; }
+.state-donut { position: relative; width: 164px; height: 164px; }
+.state-donut svg { display: block; width: 100%; height: 100%; transform: rotate(-90deg); }
+.state-donut circle { fill: none; stroke-width: 19; }
+.ring-track { stroke: var(--rdx-neutral-soft); }
+.ring-online { stroke: var(--rdx-success); }
+.ring-offline { stroke: var(--rdx-warning); }
+.ring-alarm { stroke: var(--rdx-danger); }
+.ring-unknown { stroke: var(--rdx-neutral); }
+.donut-total { position: absolute; inset: 0; display: flex; flex-direction: column; justify-content: center; align-items: center; }
+.donut-total strong { font-size: 34px; font-weight: 600; color: var(--rdx-text-strong); }
+.donut-total span { font-size: 13px; color: var(--rdx-text-muted); }
+.plant-legend > .group-label { display: none; }
+.group-label { font-size: 12px; font-weight: 500; color: var(--rdx-text-muted); margin: 0 0 8px; }
+.status-list { display: grid; gap: 18px; }
+.status-row { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.status-row div { display: flex; flex: 1; align-items: center; justify-content: space-between; gap: 12px; }
+.status-row strong { order: 2; font-size: 18px; font-weight: 600; color: var(--rdx-text-strong); }
+.status-row span:last-child { font-size: 14px; color: var(--rdx-text); }
+.status-indicator, .mini-dot { width: 8px; height: 8px; border-radius: 50%; flex: 0 0 8px; }
+.status-online, .dot-online { background: var(--rdx-success); }
+.status-offline, .status-stale, .dot-offline, .dot-stale { background: var(--rdx-warning); }
+.status-alarm, .dot-alarm { background: var(--rdx-danger); }
+.status-unknown, .dot-unknown { background: var(--rdx-neutral); }
+.telemetry-group { padding-top: 22px; margin-top: 20px; border-top: 1px solid var(--rdx-neutral-soft); }
+.telemetry-list { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+.telemetry-list .status-row { align-items: center; gap: 10px; }
+.telemetry-list .status-row div { flex-direction: column; align-items: flex-start; gap: 0; }
+.telemetry-list .status-row strong { order: 0; font-size: 24px; line-height: 1.3; }
+.telemetry-list .status-row span:last-child { font-size: 12px; color: var(--rdx-text-muted); }
+.context-note { margin: 0; padding: 12px; border-radius: var(--rdx-radius-sm); background: var(--rdx-background); font-size: 12px; line-height: 1.5; color: var(--rdx-text-muted); }
+.text-link { color: var(--rdx-primary); font-size: 13px; font-weight: 500; transition: color var(--rdx-transition); text-underline-offset: 4px; }
+.text-link:hover { color: var(--rdx-primary-hover); text-decoration: underline; }
+.top-plants-list { margin: 0; padding: 0; list-style: none; }
+.top-plant { display: grid; grid-template-columns: 20px 38px minmax(0, 1.2fr) minmax(65px, 1fr) auto; gap: 10px; align-items: center; padding: 14px 0; border-bottom: 1px solid var(--rdx-neutral-soft); }
+.top-plant:last-child { border: 0; }
+.top-rank { font-size: 12px; color: var(--rdx-text-muted); text-align: center; }
+.provider-logo { display: grid; place-items: center; width: 48px; height: 48px; flex: 0 0 48px; border-radius: 50%; background: var(--rdx-background); font-size: 12px; font-weight: 600; color: var(--rdx-primary); }
+.top-plant .provider-logo { width: 38px; height: 26px; border-radius: 5px; font-size: 12px; }
+.top-plant-info { min-width: 0; }
+.top-plant-info strong { display: block; font-size: 14px; font-weight: 500; color: var(--rdx-text-strong); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.top-bar { height: 10px; border-radius: 8px; overflow: hidden; background: var(--rdx-neutral-soft); }
+.top-bar-fill { display: block; height: 100%; border-radius: inherit; background: var(--rdx-primary); }
+.top-energy { display: flex; align-items: baseline; justify-content: flex-end; gap: 6px; text-align: right; }
+.top-energy strong { color: var(--rdx-text-strong); font-size: 14px; font-weight: 600; }
+.top-energy small { font-size: 12px; color: var(--rdx-text-muted); }
+.top-plants-empty { border: 0; box-shadow: none; padding: 20px 0; font-size: 13px; }
+.incident-card { position: relative; padding: 10px 38px 10px 0; border-bottom: 1px solid var(--rdx-neutral-soft); }
+.incident-card:first-child { padding-top: 0; }
+.incident-card:last-child { border: 0; }
+.incident-card header, .incident-card header > div { display: flex; align-items: center; gap: 10px; }
+.incident-card header > strong { position: absolute; right: 0; top: 16px; font-size: 24px; font-weight: 600; color: var(--rdx-text-strong); }
+.incident-card:first-child header > strong { top: 0; }
+.incident-card h3 { margin: 0; font-size: 15px; font-weight: 600; }
+.incident-card header p { margin: 0; font-size: 12px; color: var(--rdx-text-muted); }
+.incident-state { display: flex; gap: 10px; margin-top: 10px; font-size: 14px; }
+.incident-state.ok { color: var(--rdx-success); }
+.incident-state.warning { color: var(--rdx-warning); }
+.incident-state.unavailable { color: var(--rdx-text-muted); }
+.incident-icon { display: grid; place-items: center; width: 20px; height: 20px; flex: 0 0 20px; border-radius: 50%; background: var(--rdx-neutral-soft); font-size: 12px; }
+.ok .incident-icon { background: var(--rdx-success-soft); }
+.warning .incident-icon { background: var(--rdx-warning-soft); }
+.incident-state strong { font-weight: 500; }
+.incident-state p { margin: 5px 0 0; font-size: 13px; line-height: 1.5; }
+.incident-summary { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; padding: 8px 10px; margin-top: 8px; border-radius: var(--rdx-radius-sm); background: var(--rdx-background); color: var(--rdx-text-muted); font-size: 12px; }
+.incident-summary strong { font-weight: 600; }
+.providers-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+.provider-card { min-width: 0; padding: 20px; border: 1px solid var(--rdx-neutral-soft); border-radius: var(--rdx-radius-md); }
+.provider-card-header, .provider-title { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.provider-title { justify-content: flex-start; }
+.provider-title h3 { margin: 0; font-size: 16px; font-weight: 600; }
+.provider-title p { margin: 4px 0 0; color: var(--rdx-text-muted); font-size: 13px; }
+.provider-count { font-size: 30px; font-weight: 600; line-height: 1.2; text-align: right; color: var(--rdx-text-strong); }
+.provider-count small { display: block; color: var(--rdx-text-muted); font-size: 12px; font-weight: 400; }
+.provider-groups { display: grid; gap: 12px; margin-top: 20px; }
+.provider-group { display: flex; flex-wrap: wrap; gap: 6px 12px; }
+.provider-group .group-label { margin: 0; min-width: 66px; }
+.provider-chips { display: flex; flex-wrap: wrap; gap: 6px 14px; }
+.provider-chip { display: flex; align-items: center; gap: 6px; font-size: 14px; }
+.provider-chip strong { color: var(--rdx-text-strong); font-weight: 500; }
+.provider-chip small { font-size: 13px; color: var(--rdx-text-muted); }
+.provider-footer { margin-top: 14px; font-size: 12px; color: var(--rdx-text-muted); }
+.page-state { color: var(--rdx-text-muted); }
+.error-state h2 { margin-top: 0; font-size: 18px; }
+.error-state { border-color: var(--rdx-danger-soft); }
+.telemetry-group > .group-label { display: none; }
+.telemetry-icon { display: grid; place-items: center; width: 44px; height: 44px; flex: 0 0 44px; border-radius: 50%; background: var(--rdx-background); color: var(--rdx-primary); }
+.telemetry-icon svg { width: 23px; height: 23px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+.park-overview .context-note { grid-column: 1 / -1; }
+@media (min-width: 1200px) {
+  .top-plant { min-height: 58px; }
+  .incident-card { display: grid; grid-template-columns: 150px minmax(0, 1fr); align-items: center; column-gap: 18px; padding-block: 20px; }
+  .incident-state { margin-top: 0; }
+  .park-overview { grid-template-columns: 164px minmax(0, 1fr); gap: 24px; }
+  .park-overview .context-note { grid-column: 1 / -1; }
+  .telemetry-list .status-row span:last-child { font-size: 12px; }
+  .production-panel { display: flex; flex-direction: column; }
+  .production-list { flex: 1; align-content: center; }
+  .executive-kpi { min-height: 144px; }
+
+}
+@media (min-width: 1600px) {
+  .executive-kpi { padding: 24px; }
+  .park-overview { grid-template-columns: 164px minmax(0, 1fr) minmax(160px, .8fr); gap: 24px; }
+  .park-overview .context-note { grid-column: auto; }
+}
+@media (min-width: 1200px) and (max-width: 1399px) {
+  .executive-kpi { padding: 20px 16px; gap: 10px; }
+  .executive-kpi strong { font-size: 32px; }
+  .kpi-icon { flex-basis: 40px; height: 40px; }
+  .kpi-icon svg { width: 25px; height: 25px; }
+  .park-overview { grid-template-columns: 148px minmax(0, 1fr); }
+  .state-donut { width: 148px; height: 148px; }
+  .park-overview .context-note { grid-column: 1 / -1; padding: 8px 10px; }
+  .telemetry-icon { width: 38px; height: 38px; flex-basis: 38px; }
+}
+@media (max-width: 1199px) {
+  .executive-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .dashboard, .overview-grid { grid-template-columns: minmax(0, 1fr); }
+  .park-overview { grid-template-columns: 148px minmax(0, 1fr); }
+}
+@media (min-width: 768px) and (max-width: 1000px) {
+  .executive-kpi { flex-direction: column; gap: 12px; }
+}
+@media (max-width: 1399px) {
+  .production-list { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .production-list > div:last-child { grid-column: 1 / -1; }
+  .production-list > div:not(.production-main) + div { border-left: 0; padding-left: 0; }
+  .production-list > div:last-child { border-top: 1px solid var(--rdx-neutral-soft); padding-top: 16px; }
+}
+@media (max-width: 767px) {
+  :global(.app-shell:has(.dashboard-view) .main-content) { padding: 20px 16px; }
+  .executive-kpis, .providers-grid { grid-template-columns: minmax(0, 1fr); }
+  .dashboard-header { align-items: flex-start; flex-direction: column; gap: 12px; }
+  .header-meta { text-align: left; }
+  .executive-kpi { padding: 18px; }
+  .executive-panel, .ranking-section, .incidents-section, .providers-section { padding: 16px; }
+  .park-overview { grid-template-columns: 116px minmax(0, 1fr); gap: 16px; }
+  .state-donut { width: 116px; height: 116px; }
+  .status-row div { gap: 6px; }
+  .status-row span:last-child { font-size: 12px; }
+  .production-list { gap: 20px 12px; }
+  .top-plant { grid-template-columns: 16px 30px minmax(0, 1fr) auto; gap: 4px 8px; }
+  .top-energy { grid-column: 4; grid-row: 1; }
+  .top-plant .provider-logo { width: 30px; }
+  .production-list .production-main dd { font-size: 34px; }
+  .production-list dd { font-size: 21px; }
+  .top-energy { flex-direction: column; align-items: flex-end; gap: 0; }
+  .top-plant-info strong { white-space: normal; overflow-wrap: anywhere; }
+  .top-bar { grid-column: 3 / -1; grid-row: 2; height: 6px; }
+  .provider-group { display: grid; }
+  .telemetry-icon { width: 28px; height: 28px; flex-basis: 28px; }
+  .telemetry-list { gap: 8px; }
+  .telemetry-list .status-row { gap: 6px; }
 }
 </style>

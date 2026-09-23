@@ -1,8 +1,10 @@
 import { syncHyxiEnergyHistory } from '../services/hyxiEnergyHistory.service.js';
-import { syncGrowattEnergyHistory } from '../services/growattEnergyHistory.service.js';
-import { listEnergyIntervals } from '../repositories/energyIntervals.repository.js';
+import { syncGrowattEnergyHistory, syncGrowattEnergyRollups } from '../services/growattEnergyHistory.service.js';
+import { listEnergyIntervals, listEnergyIntervalsRange } from '../repositories/energyIntervals.repository.js';
 import { getStoredPlantById } from '../repositories/plants.repository.js';
 import { plantInScope } from '../middleware/authorization.middleware.js';
+import { localDateKey } from '../utils/timezone.js';
+import { aggregateHistory, energyTimeType, periodRange } from '../services/historyPeriods.js';
 
 function validQuery({ timeType, startTime }) {
   return typeof timeType === 'string' && /^[123]$/.test(timeType)
@@ -32,7 +34,8 @@ export async function postHyxiSyncEnergyHistory(req, res) {
 }
 
 export async function getStoredEnergyHistory(req, res) {
-  if (!validQuery(req.query)
+  const period = req.query.period ?? null;
+  if (!validQuery(req.query) || (period !== null && !['day', 'week', 'month', 'year'].includes(period))
       || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(req.params.plantId)) {
     return res.status(400).json({ error: 'plantId, timeType o startTime inválidos' });
   }
@@ -40,18 +43,32 @@ export async function getStoredEnergyHistory(req, res) {
     return res.status(404).json({ error: 'Planta no encontrada' });
   }
   try {
-    const timeType = Number(req.query.timeType);
+    const expectedType = energyTimeType(period);
+    const timeType = period ? expectedType : Number(req.query.timeType);
     let rows = await listEnergyIntervals(req.params.plantId, timeType, req.query.startTime);
-    if (!hasEnergyValues(rows) && timeType === 1) {
+    if (!hasEnergyValues(rows)) {
       const plant = await getStoredPlantById(req.params.plantId);
       if (plant?.provider === 'hyxi' && plant.active && plant.external_plant_id) {
-        await syncHyxiEnergyHistory(plant.external_plant_id, 1, req.query.startTime);
+        await syncHyxiEnergyHistory(plant.external_plant_id, timeType, req.query.startTime);
       } else if (plant?.provider === 'growatt' && plant.active) {
-        await syncGrowattEnergyHistory(plant, req.query.startTime);
+        if (timeType === 1) await syncGrowattEnergyHistory(plant, req.query.startTime);
+        else await syncGrowattEnergyRollups(plant, period, req.query.startTime);
       }
-      rows = await listEnergyIntervals(req.params.plantId, 1, req.query.startTime);
+      rows = await listEnergyIntervals(req.params.plantId, timeType, req.query.startTime);
     }
-    return res.json(rows);
+    if (!period) return res.json(rows);
+    if (period === 'day') {
+      return res.json({
+        period, start: req.query.startTime, end: periodRange('day', req.query.startTime).end,
+        bucket: 'intraday', buckets: rows,
+      });
+    }
+    const range = periodRange(period, req.query.startTime);
+    rows = await listEnergyIntervalsRange(req.params.plantId, timeType, range.start, range.end);
+    return res.json(aggregateHistory(rows, {
+      period, selectedDate: req.query.startTime, kind: 'energy',
+      localDate: row => localDateKey(row.interval_start, row.timezone),
+    }));
   } catch (error) {
     if (error?.frequentAccess) return res.status(503).json({ error: 'FREQUENTLY_ACCESS' });
     return res.status(503).json({ error: 'No se pudo consultar el histórico energético' });

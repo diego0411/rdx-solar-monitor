@@ -7,6 +7,7 @@ import {
   updateUserProfile,
   clientExists,
 } from '../repositories/userProfiles.repository.js';
+import { listActiveClients } from '../repositories/clients.repository.js';
 
 const MANAGED_ROLES = ['client_admin', 'client_user'];
 const PATCH_FIELDS = ['display_name', 'role'];
@@ -75,6 +76,8 @@ function cleanDisplayName(value) {
 /*
  * Decide role/client_id efectivos de creación.
  * client_admin NUNCA puede salir de su propio client_id.
+ * rdx_admin puede omitir client_id: se resuelve server-side
+ * al único cliente activo (single-tenant Nexora).
  */
 export function resolveCreate(actor, body) {
   const { email, display_name, role, client_id } = body ?? {};
@@ -85,25 +88,33 @@ export function resolveCreate(actor, body) {
     if (!MANAGED_ROLES.includes(role)) {
       throw codedError(403, 'No se puede crear ese rol');
     }
-    if (typeof client_id !== 'string' || client_id.trim() === '') {
-      throw codedError(400, 'client_id inválido');
+    if (client_id !== undefined && client_id !== null) {
+      if (typeof client_id !== 'string' || client_id.trim() === '') {
+        throw codedError(400, 'client_id inválido');
+      }
+      return {
+        email: email.trim(),
+        display_name: cleanDisplayName(display_name),
+        role,
+        client_id: client_id.trim(),
+      };
     }
     return {
       email: email.trim(),
       display_name: cleanDisplayName(display_name),
       role,
-      client_id: client_id.trim(),
+      client_id: undefined,
     };
   }
 
-  if (role !== undefined && role !== 'client_user') {
+  if (role !== undefined && !MANAGED_ROLES.includes(role)) {
     throw codedError(403, 'No se puede crear ese rol');
   }
 
   return {
     email: email.trim(),
     display_name: cleanDisplayName(display_name),
-    role: 'client_user',
+    role: role ?? 'client_user',
     client_id: actor.client_id,
   };
 }
@@ -131,13 +142,10 @@ export function resolvePatch(actor, target, body) {
   if (body.role !== undefined) {
     if (body.role === target.role) {
       // Sin cambio: se permite como no-op.
-    } else if (actor.role === 'rdx_admin') {
-      if (!MANAGED_ROLES.includes(body.role)) {
-        throw codedError(403, 'No se puede asignar ese rol');
-      }
-      values.role = body.role;
+    } else if (!MANAGED_ROLES.includes(body.role)) {
+      throw codedError(403, 'No se puede asignar ese rol');
     } else {
-      throw codedError(403, 'No se puede cambiar el rol');
+      values.role = body.role;
     }
   }
 
@@ -206,6 +214,7 @@ export async function listUsers(actor) {
 }
 
 function authConflict(error) {
+
   const message = String(error?.message ?? '').toLowerCase();
   const status = error?.status;
   return status === 422
@@ -215,8 +224,26 @@ function authConflict(error) {
     || message.includes('duplicate');
 }
 
+/*
+ * Resuelve server-side el único cliente activo (single-tenant Nexora).
+ * Falla si no hay exactamente uno: nunca se adivina ni se usa frontend.
+ */
+export async function resolveSingleActiveClient() {
+  const clients = await listActiveClients();
+
+  if (clients.length !== 1) {
+    throw codedError(400, 'No se pudo resolver el cliente');
+  }
+
+  return clients[0].id;
+}
+
 export async function createUser(actor, body) {
   const resolved = resolveCreate(actor, body);
+
+  if (resolved.client_id === undefined) {
+    resolved.client_id = await resolveSingleActiveClient();
+  }
 
   if (!(await clientExists(resolved.client_id))) {
     throw codedError(400, 'client_id inexistente');

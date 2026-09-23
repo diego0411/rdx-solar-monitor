@@ -1,8 +1,10 @@
 import { syncHyxiPowerHistory } from '../services/hyxiPowerHistory.service.js';
-import { listPlantPowerIntervals } from '../repositories/plantPowerIntervals.repository.js';
+import { listPlantPowerIntervals, listPlantPowerIntervalsRange } from '../repositories/plantPowerIntervals.repository.js';
 import { getStoredPlantById } from '../repositories/plants.repository.js';
 import { syncGrowattPowerHistory } from '../services/growattPowerHistory.service.js';
 import { plantInScope } from '../middleware/authorization.middleware.js';
+import { localDateKey } from '../utils/timezone.js';
+import { aggregateHistory, periodRange } from '../services/historyPeriods.js';
 
 const powerFields = [
   'generation_power_w', 'consumption_power_w', 'grid_import_power_w',
@@ -30,7 +32,8 @@ export async function postHyxiSyncPowerHistory(req, res) {
 }
 
 export async function getStoredPowerHistory(req, res) {
-  if (!validDate(req.query.startTime)
+  const period = req.query.period ?? null;
+  if (!validDate(req.query.startTime) || (period !== null && !['day', 'week', 'month', 'year'].includes(period))
       || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(req.params.plantId)) {
     return res.status(400).json({ error: 'plantId o startTime inválidos' });
   }
@@ -38,6 +41,14 @@ export async function getStoredPowerHistory(req, res) {
     return res.status(404).json({ error: 'Planta no encontrada' });
   }
   try {
+    if (period && period !== 'day') {
+      const range = periodRange(period, req.query.startTime);
+      const rows = await listPlantPowerIntervalsRange(req.params.plantId, range.start, range.end);
+      return res.json(aggregateHistory(rows, {
+        period, selectedDate: req.query.startTime, kind: 'power',
+        localDate: row => localDateKey(row.interval_start, row.timezone),
+      }));
+    }
     let rows = await listPlantPowerIntervals(req.params.plantId, req.query.startTime);
     if (!hasPowerValues(rows)) {
       const plant = await getStoredPlantById(req.params.plantId);
@@ -48,7 +59,9 @@ export async function getStoredPowerHistory(req, res) {
       }
       rows = await listPlantPowerIntervals(req.params.plantId, req.query.startTime);
     }
-    return res.json(rows);
+    return res.json(period === 'day'
+      ? { period, start: req.query.startTime, end: periodRange('day', req.query.startTime).end, bucket: 'intraday', buckets: rows }
+      : rows);
   } catch (error) {
     if (error?.frequentAccess) return res.status(503).json({ error: 'FREQUENTLY_ACCESS' });
     return res.status(503).json({ error: 'No se pudo consultar la curva de potencia' });

@@ -40,3 +40,20 @@ export async function listPlantPowerIntervals(plantId, startTime) {
     if (data.length < 1000) return rows;
   }
 }
+
+export async function listPlantPowerIntervalsRange(plantId, startDate, endDate) {
+  const lower = new Date(Date.parse(`${startDate}T00:00:00.000Z`) - 86400000).toISOString();
+  const upper = new Date(Date.parse(`${endDate}T00:00:00.000Z`) + 86400000).toISOString();
+  const rows = [];
+  for (let offset = 0; ; offset += 1000) {
+    const { data, error } = await supabase.from('plant_power_intervals').select('*')
+      .eq('plant_id', plantId).gte('interval_start', lower).lt('interval_start', upper)
+      .order('interval_start', { ascending: true }).range(offset, offset + 999);
+    if (error) throw new Error('No se pudo consultar la curva de potencia');
+    for (const row of data) {
+      const date = localDateKey(row.interval_start, row.timezone);
+      if (date !== null && date >= startDate && date < endDate) rows.push(row);
+    }
+    if (data.length < 1000) return rows;
+  }
+}

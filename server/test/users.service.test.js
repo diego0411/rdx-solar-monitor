@@ -49,35 +49,44 @@ test('rdx_admin crea client_admin y client_user con client_id válido', () => {
 test('rdx_admin no crea rdx_admin y rechaza email/client_id inválidos', () => {
   assert.equal(statusOf(() => resolveCreate(ADMIN, { email: 'r@x.com', role: 'rdx_admin', client_id: 'A' })), 403);
   assert.equal(statusOf(() => resolveCreate(ADMIN, { email: 'mal', role: 'client_user', client_id: 'A' })), 400);
-  assert.equal(statusOf(() => resolveCreate(ADMIN, { email: 'u@x.com', role: 'client_user' })), 400);
+  assert.equal(statusOf(() => resolveCreate(ADMIN, { email: 'u@x.com', role: 'client_user', client_id: '' })), 400);
 });
 
-test('client_admin crea client_user solo en su cliente aunque body pida B', () => {
+test('rdx_admin sin client_id delega resolución server-side', () => {
+  const resolved = resolveCreate(ADMIN, { email: 'u@x.com', role: 'client_user' });
+  assert.equal(resolved.client_id, undefined);
+});
+
+test('client_admin crea client_admin y client_user solo en su cliente aunque body pida B', () => {
   const created = resolveCreate(CA_A, { email: 'n@x.com', role: 'client_user', client_id: 'B' });
   assert.equal(created.client_id, 'A');
   assert.equal(created.role, 'client_user');
+  const admin = resolveCreate(CA_A, { email: 'a@x.com', role: 'client_admin', client_id: 'B' });
+  assert.equal(admin.client_id, 'A');
+  assert.equal(admin.role, 'client_admin');
   const forced = resolveCreate(CA_A, { email: 'n@x.com' });
   assert.equal(forced.client_id, 'A');
+  assert.equal(forced.role, 'client_user');
 });
 
-test('client_admin no crea client_admin ni rdx_admin', () => {
-  assert.equal(statusOf(() => resolveCreate(CA_A, { email: 'a@x.com', role: 'client_admin' })), 403);
+test('client_admin no crea rdx_admin', () => {
   assert.equal(statusOf(() => resolveCreate(CA_A, { email: 'a@x.com', role: 'rdx_admin' })), 403);
 });
 
-test('resolveTarget: ajeno y rdx devuelven 404', () => {
+test('resolveTarget: ajeno y rdx devuelven 404; propio sí', () => {
   assert.equal(statusOf(() => resolveTarget(CU_B, CA_A)), 404);
-  assert.equal(statusOf(() => resolveTarget(CA_B, CA_A)), 404);
   assert.equal(statusOf(() => resolveTarget(RDX2, ADMIN)), 404);
   assert.equal(statusOf(() => resolveTarget(null, ADMIN)), 404);
   assert.doesNotThrow(() => resolveTarget(CU_A, CA_A));
+  assert.doesNotThrow(() => resolveTarget(CA_A, CA_A));
   assert.doesNotThrow(() => resolveTarget(CU_A, ADMIN));
 });
 
-test('client_admin modifica client_user propio, no roles ni ajenos', () => {
+test('client_admin modifica usuarios propios incluyendo cambio de rol entre gestionables', () => {
   assert.deepEqual(resolvePatch(CA_A, CU_A, { display_name: 'Nuevo' }), { display_name: 'Nuevo' });
   assert.deepEqual(resolvePatch(CA_A, CU_A, { role: 'client_user' }), {});
-  assert.equal(statusOf(() => resolvePatch(CA_A, CU_A, { role: 'client_admin' })), 403);
+  assert.deepEqual(resolvePatch(CA_A, CU_A, { role: 'client_admin' }), { role: 'client_admin' });
+  assert.deepEqual(resolvePatch(CA_A, CA_A, { display_name: 'Yo' }), { display_name: 'Yo' });
   assert.equal(statusOf(() => resolvePatch(CA_A, CU_A, { role: 'rdx_admin' })), 403);
   assert.equal(statusOf(() => resolvePatch(CA_A, CU_A, { client_id: 'B' })), 400);
   assert.equal(statusOf(() => resolvePatch(CA_A, CU_A, { active: false })), 400);

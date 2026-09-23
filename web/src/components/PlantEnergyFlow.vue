@@ -114,7 +114,7 @@ const statusLabels = { fresh: 'Actual', stale: 'Atrasada', no_data: 'Sin datos' 
 </template>
 
 <style scoped>
-.energy-flow { margin: 20px 0 24px; padding: 20px; border: 1px solid var(--rdx-border); border-radius: 14px; background: var(--rdx-neutral-soft); }
+.energy-flow { margin: 20px 0 24px; padding: 20px; border: 1px solid var(--rdx-border); border-radius: var(--rdx-radius-lg); background: var(--rdx-background); }
 .flow-header { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 18px; }
 .flow-header h3 { margin: 0; color: var(--rdx-primary); font-size: 16px; }
 .flow-status { display: inline-flex; align-items: center; gap: 7px; color: var(--rdx-text-muted); font-size: 12px; }
@@ -122,17 +122,16 @@ const statusLabels = { fresh: 'Actual', stale: 'Atrasada', no_data: 'Sin datos' 
 .flow-stale .flow-status i { background: var(--rdx-warning); }
 .flow-no_data .flow-status i { background: var(--rdx-neutral); }
 
-.flow-diagram { display: grid; grid-template-columns: minmax(130px, 1fr) minmax(92px, .65fr) minmax(150px, 1fr) minmax(96px, .7fr) minmax(130px, 1fr); grid-template-rows: auto auto auto; align-items: center; gap: 14px 12px; min-width: 0; max-width: 100%; }
-.solar-node { grid-column: 1; grid-row: 1; }
-.link-sol { grid-column: 2; grid-row: 1; }
-.inverter-node { grid-column: 3; grid-row: 1; }
-.link-ld { grid-column: 3; grid-row: 2; }
-.load-node { grid-column: 3; grid-row: 3; }
-.grid-links { grid-column: 4; grid-row: 1; }
-.grid-node { grid-column: 5; grid-row: 1; align-self: center; }
-.battery-links { grid-column: 4; grid-row: 2; }
-.battery-node { grid-column: 5; grid-row: 2; }
-.mode-ongrid .grid-node { grid-row: 1 / 3; }
+.flow-diagram { display: grid; grid-template-columns: minmax(120px, 1fr) minmax(68px, .55fr) minmax(140px, 1fr) minmax(72px, .6fr) minmax(120px, 1fr); grid-template-rows: auto 52px auto; align-items: center; gap: 8px; min-width: 0; max-width: 100%; }
+.solar-node { grid-column: 3; grid-row: 1; }
+.link-sol { grid-column: 3; grid-row: 2; }
+.inverter-node { grid-column: 3; grid-row: 3; }
+.link-ld { grid-column: 2; grid-row: 3; }
+.load-node { grid-column: 1; grid-row: 3; }
+.grid-links { grid-column: 4; grid-row: 3; }
+.grid-node { grid-column: 5; grid-row: 3; align-self: center; }
+.battery-links { grid-column: 4; grid-row: 1; }
+.battery-node { grid-column: 5; grid-row: 1; }
 
 .flow-node { display: flex; align-items: center; gap: 12px; min-width: 0; min-height: 92px; padding: 16px; border: 1px solid var(--rdx-border); border-radius: 12px; border-top-width: 3px; background: var(--rdx-surface); }
 .node-icon { display: grid; place-items: center; width: 40px; height: 40px; flex: 0 0 auto; border-radius: 12px; }
@@ -142,12 +141,12 @@ const statusLabels = { fresh: 'Actual', stale: 'Atrasada', no_data: 'Sin datos' 
 .node-text span { color: var(--rdx-text-muted); font-size: 12px; overflow-wrap: anywhere; font-variant-numeric: tabular-nums; }
 .solar-node { border-top-color: var(--rdx-success); }
 .solar-node .node-icon { background: var(--rdx-success-soft); color: var(--rdx-success); }
-.inverter-node { border-top-color: #3e6d83; }
-.inverter-node .node-icon { background: #e8f0f3; color: #3e6d83; }
+.inverter-node { border-top-color: var(--rdx-primary); }
+.inverter-node .node-icon { background: var(--rdx-primary-soft); color: var(--rdx-primary); }
 .load-node { border-top-color: var(--rdx-warning); }
 .load-node .node-icon { background: var(--rdx-warning-soft); color: var(--rdx-warning); }
-.grid-node { border-top-color: #3f7fb6; }
-.grid-node .node-icon { background: #e6eef8; color: #3f7fb6; }
+.grid-node { border-top-color: var(--rdx-accent); }
+.grid-node .node-icon { background: var(--rdx-primary-soft); color: var(--rdx-accent); }
 .battery-node { border-top-color: var(--rdx-success); }
 .battery-node .node-icon { background: var(--rdx-success-soft); color: var(--rdx-success); }
 
@@ -156,17 +155,19 @@ const statusLabels = { fresh: 'Actual', stale: 'Atrasada', no_data: 'Sin datos' 
 .flow-link .ln { position: relative; display: block; width: 100%; height: 2px; background: currentColor; border-radius: 2px; }
 .flow-link .ln::after { content: ''; position: absolute; width: 7px; height: 7px; border-top: 2px solid; border-right: 2px solid; }
 .flow-link.active { color: var(--rdx-success); font-weight: 600; }
-.link-imp.active, .link-exp.active { color: #3f7fb6; }
+.link-imp.active, .link-exp.active { color: var(--rdx-accent); }
 .link-ld.active { color: var(--rdx-warning); }
 .link-chg.active, .link-dch.active { color: var(--rdx-success); }
 .flow-link.zero { color: var(--rdx-text-faint); opacity: .6; }
 .flow-link.link-neutral { color: var(--rdx-text-faint); }
 .link-neutral .ln::after { display: none; }
 
-.link-sol .ln::after, .link-exp .ln::after, .link-chg .ln::after { right: -1px; left: auto; top: -3px; bottom: auto; transform: rotate(45deg); }
+.link-exp .ln::after, .link-chg .ln::after { right: -1px; left: auto; top: -3px; bottom: auto; transform: rotate(45deg); }
 .link-imp .ln::after, .link-dch .ln::after { left: -1px; right: auto; top: -3px; bottom: auto; transform: rotate(-135deg); }
-.link-ld .ln { width: 2px; height: 30px; }
-.link-ld .ln::after { left: -3px; right: auto; top: auto; bottom: -1px; transform: rotate(135deg); }
+.link-sol .ln { width: 2px; height: 30px; }
+.link-sol .ln::after { left: -3px; right: auto; top: auto; bottom: -1px; transform: rotate(135deg); }
+.link-ld { flex-direction: column-reverse; }
+.link-ld .ln::after { left: -1px; right: auto; top: -3px; bottom: auto; transform: rotate(-135deg); }
 
 .flow-stale .flow-diagram { opacity: .78; }
 .flow-no_data .flow-diagram { opacity: .55; }
@@ -178,7 +179,7 @@ const statusLabels = { fresh: 'Actual', stale: 'Atrasada', no_data: 'Sin datos' 
   .node-icon svg { width: 19px; height: 19px; }
 }
 
-@media (max-width: 700px) {
+@media (max-width: 900px) {
   .flow-diagram { grid-template-columns: minmax(0, 260px); grid-template-rows: auto; gap: 6px; justify-content: center; margin: 0 auto; }
   .flow-diagram > * { grid-column: 1; grid-row: auto; }
   .flow-node { max-width: 100%; justify-self: stretch; }

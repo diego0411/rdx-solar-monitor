@@ -1,7 +1,9 @@
 import { listActiveGrowattMinDevicesByPlant } from '../repositories/devices.repository.js';
-import { upsertEnergyIntervals } from '../repositories/energyIntervals.repository.js';
+import { listEnergyIntervalsRange, upsertEnergyIntervals } from '../repositories/energyIntervals.repository.js';
 import { listPlantPowerIntervals } from '../repositories/plantPowerIntervals.repository.js';
 import { syncGrowattPowerHistory } from './growattPowerHistory.service.js';
+import { localDateKey } from '../utils/timezone.js';
+import { aggregateHistory, periodRange } from './historyPeriods.js';
 
 const cumulativeFields = {
   eacToday: 'generation_kwh',
@@ -91,4 +93,33 @@ export async function syncGrowattEnergyHistory(plant, date) {
     provider: 'growatt', devices: devices.length, fetched: powerRows.length,
     upserted: rows.length, failed: 0, power_history_synced: powerHistorySynced,
   };
+}
+
+export async function syncGrowattEnergyRollups(plant, period, selectedDate) {
+  if (!['month', 'year'].includes(period)) throw new Error('Periodo de rollup Growatt inválido');
+  const sourceType = period === 'month' ? 1 : 2;
+  const targetType = period === 'month' ? 2 : 3;
+  const range = periodRange(period, selectedDate);
+  const sourceRows = await listEnergyIntervalsRange(plant.id, sourceType, range.start, range.end);
+  const result = aggregateHistory(sourceRows, {
+    period, selectedDate, kind: 'energy',
+    localDate: row => localDateKey(row.interval_start, row.timezone),
+  });
+  const rows = result.buckets.filter(bucket => bucket.coverage !== 'none').map(bucket => ({
+    plant_id: plant.id,
+    provider: 'growatt',
+    interval_type: targetType,
+    interval_start: bucket.interval_start,
+    timezone: 'UTC',
+    generation_kwh: bucket.generation_kwh,
+    consumption_kwh: bucket.consumption_kwh,
+    grid_import_kwh: bucket.grid_import_kwh,
+    grid_export_kwh: bucket.grid_export_kwh,
+    battery_charge_kwh: null,
+    battery_discharge_kwh: null,
+    raw_data: { derived_from: `energy_intervals.type_${sourceType}`, coverage: bucket.coverage, sample_count: bucket.sample_count },
+    updated_at: new Date().toISOString(),
+  }));
+  await upsertEnergyIntervals(rows);
+  return { provider: 'growatt', period, fetched: sourceRows.length, upserted: rows.length, failed: 0 };
 }
