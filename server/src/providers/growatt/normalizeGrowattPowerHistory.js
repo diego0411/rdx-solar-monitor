@@ -1,7 +1,7 @@
 import { parseGrowattTimestamp } from './growattStates.js';
 
 const fields = {
-  ppv: 'generation_power_w',
+  pac: 'generation_power_w',
   pacToLocalLoad: 'consumption_power_w',
   pacToUserTotal: 'grid_import_power_w',
   pacToGridTotal: 'grid_export_power_w',

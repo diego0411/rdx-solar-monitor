@@ -38,19 +38,64 @@ function render() {
     observer = new ResizeObserver(() => chart?.resize());
     observer.observe(container.value);
   }
-  let formatter;
+  let timeFormatter;
+  let dateTimeFormatter;
   try {
-    formatter = new Intl.DateTimeFormat('es-BO', { timeZone: props.timezone || undefined, hour: '2-digit', minute: '2-digit' });
+    timeFormatter = new Intl.DateTimeFormat('es-BO', {
+      timeZone: props.timezone || undefined,
+      hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
+    });
+    dateTimeFormatter = new Intl.DateTimeFormat('es-BO', {
+      timeZone: props.timezone || undefined,
+      day: '2-digit', month: '2-digit', year: 'numeric',
+      hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
+    });
   } catch {
-    formatter = new Intl.DateTimeFormat('es-BO', { hour: '2-digit', minute: '2-digit' });
+    timeFormatter = new Intl.DateTimeFormat('es-BO', {
+      hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
+    });
+    dateTimeFormatter = new Intl.DateTimeFormat('es-BO', {
+      day: '2-digit', month: '2-digit', year: 'numeric',
+      hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
+    });
   }
+  const wattsNumber = new Intl.NumberFormat('es-BO', { maximumFractionDigits: 0 });
+  const kilowattsNumber = new Intl.NumberFormat('es-BO', {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
+  const axisKilowattsNumber = new Intl.NumberFormat('es-BO', { maximumFractionDigits: 2 });
+  const formatPower = value => Math.abs(Number(value)) >= 1000
+    ? `${kilowattsNumber.format(Number(value) / 1000)} kW`
+    : `${wattsNumber.format(Number(value))} W`;
+  const bucketFormatter = new Intl.DateTimeFormat('es-BO', period.value === 'year'
+    ? { month: 'short', timeZone: 'UTC' }
+    : { day: '2-digit', month: 'short', timeZone: 'UTC' });
+  const axisTime = value => period.value === 'day'
+    ? timeFormatter.format(new Date(value))
+    : bucketFormatter.format(new Date(value));
+  const tooltipTime = value => period.value === 'day'
+    ? dateTimeFormatter.format(new Date(value))
+    : bucketFormatter.format(new Date(value));
   chart.setOption({
     color: [rdxColor('--rdx-primary'), ...CHART_SERIES_COLORS],
-    tooltip: { trigger: 'axis', renderMode: 'richText', backgroundColor: rdxColor('--rdx-surface'), borderColor: rdxColor('--rdx-border'), textStyle: { color: rdxColor('--rdx-text'), fontSize: 12 }, valueFormatter: value => value == null ? 'Sin datos' : new Intl.NumberFormat('es-BO', { maximumFractionDigits: 2 }).format(value) + ' W' },
+    tooltip: {
+      trigger: 'axis',
+      renderMode: 'richText',
+      backgroundColor: rdxColor('--rdx-surface'),
+      borderColor: rdxColor('--rdx-border'),
+      textStyle: { color: rdxColor('--rdx-text'), fontSize: 12 },
+      formatter: params => {
+        const items = Array.isArray(params) ? params : [params];
+        const header = items[0]?.axisValue == null ? '' : tooltipTime(items[0].axisValue);
+        const values = items.map(item => `${item.seriesName}: ${item.data == null ? 'Sin datos' : formatPower(item.data)}`);
+        return [header, ...values].filter(Boolean).join('\n');
+      },
+    },
     legend: { type: 'scroll', bottom: 0, icon: 'circle', textStyle: { color: rdxColor('--rdx-text-muted'), fontSize: 12 }, itemGap: 24 },
     grid: { left: 60, right: 16, top: 26, bottom: 64 },
-    xAxis: { type: 'category', data: points.value.map(point => point.interval_start), axisLabel: { color: rdxColor('--rdx-text-muted'), hideOverlap: true, formatter: value => period.value === 'day' ? formatter.format(new Date(value)) : new Intl.DateTimeFormat('es-BO', period.value === 'year' ? { month: 'short', timeZone: 'UTC' } : { day: '2-digit', month: 'short', timeZone: 'UTC' }).format(new Date(value)) }, axisLine: { lineStyle: { color: rdxColor('--rdx-border') } }, axisTick: { show: false } },
-    yAxis: { type: 'value', name: 'Potencia (W)', axisLabel: { color: rdxColor('--rdx-text-muted') }, splitLine: { lineStyle: { color: rdxColor('--rdx-border'), type: 'dashed' } } },
+    xAxis: { type: 'category', data: points.value.map(point => point.interval_start), axisLabel: { color: rdxColor('--rdx-text-muted'), hideOverlap: true, formatter: axisTime }, axisLine: { lineStyle: { color: rdxColor('--rdx-border') } }, axisTick: { show: false } },
+    yAxis: { type: 'value', name: 'Potencia (kW)', axisLabel: { color: rdxColor('--rdx-text-muted'), formatter: value => axisKilowattsNumber.format(Number(value) / 1000) }, splitLine: { lineStyle: { color: rdxColor('--rdx-border'), type: 'dashed' } } },
     series: seriesFields.map(([key, name]) => ({
       name, type: 'line', showSymbol: false, connectNulls: false, smooth: .18, lineStyle: { width: 2 },
       data: points.value.map(point => point[key] ?? null),

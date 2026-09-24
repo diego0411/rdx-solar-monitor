@@ -16,6 +16,10 @@ function hasPowerValues(rows) {
     && row[field] !== undefined && Number.isFinite(Number(row[field]))));
 }
 
+export function shouldSyncHyxiPowerHistory(rows) {
+  return rows.length === 0;
+}
+
 function validDate(value) {
   return typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value)
     && Number.isFinite(Date.parse(value)) && new Date(value).toISOString().slice(0, 10) === value;
@@ -53,7 +57,9 @@ export async function getStoredPowerHistory(req, res) {
     if (!hasPowerValues(rows)) {
       const plant = await getStoredPlantById(req.params.plantId);
       if (plant?.provider === 'hyxi' && plant.active && plant.external_plant_id) {
-        if (!rows.length) await syncHyxiPowerHistory(plant.external_plant_id, req.query.startTime);
+        if (shouldSyncHyxiPowerHistory(rows)) {
+          await syncHyxiPowerHistory(plant.external_plant_id, req.query.startTime);
+        }
       } else if (plant?.provider === 'growatt' && plant.active) {
         await syncGrowattPowerHistory(plant, req.query.startTime);
       }

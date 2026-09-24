@@ -9,17 +9,17 @@ import { syncHyxiDevices } from './services/hyxiDevices.service.js';
 import { syncHyxiRealtime } from './services/hyxiRealtime.service.js';
 import { syncHyxiEnergySummary } from './services/hyxiEnergySummary.service.js';
 import { createScheduledSync } from './services/scheduledSync.js';
-import { syncHyxiPowerHistory } from './services/hyxiPowerHistory.service.js';
+import { localDateForTimezone, syncHyxiPowerHistoryWindow } from './services/hyxiPowerHistory.service.js';
 import { syncHyxiEnergyHistory } from './services/hyxiEnergyHistory.service.js';
 import { listActiveGrowattPlants, listActiveHyxiPlants } from './repositories/plants.repository.js';
 
 const HYXI_SYNC_INTERVAL_MS = 5 * 60 * 1000;
 const HYXI_TASK_TIMEOUT_MS = 60 * 1000;
+const HYXI_HISTORY_TASK_TIMEOUT_MS = 9 * 60 * 1000;
 const HYXI_HISTORY_SYNC_INTERVAL_MS = 10 * 60 * 1000;
 const GROWATT_LATEST_INTERVAL_MS = 5 * 60 * 1000;
 const GROWATT_HISTORY_SYNC_INTERVAL_MS = 30 * 60 * 1000;
 const HISTORY_ROLLUP_INTERVAL_MS = 6 * 60 * 60 * 1000;
-let hyxiHistorySyncRunning = false;
 let growattLatestSyncRunning = false;
 let growattHistorySyncRunning = false;
 
@@ -80,31 +80,30 @@ function currentBoliviaDate() {
   return new Date(Date.now() - 4 * 60 * 60 * 1000).toISOString().slice(0, 10);
 }
 
-async function runHyxiHistorySync() {
-  if (hyxiHistorySyncRunning) return;
-  hyxiHistorySyncRunning = true;
-  try {
-    const plants = await listActiveHyxiPlants();
-    const startTime = currentBoliviaDate();
-    for (const plant of plants) {
-      for (const [name, sync] of [
-        ['power-history', () => syncHyxiPowerHistory(plant.external_plant_id, startTime)],
-        ['energy-history', () => syncHyxiEnergyHistory(plant.external_plant_id, 1, startTime)],
-      ]) {
-        try {
-          const result = await sync();
-          if (result.failed > 0) console.error(`HYXi automatic ${name} sync failed:`, result);
-        } catch (error) {
-          console.error(`HYXi automatic ${name} sync failed for ${plant.external_plant_id}:`, error);
-        }
-      }
+async function syncHyxiHistoryCycle() {
+  const plants = await listActiveHyxiPlants();
+  for (const plant of plants) {
+    const powerResult = await syncHyxiPowerHistoryWindow(plant);
+    for (const failure of powerResult.errors) {
+      console.error(`HYXi automatic power-history ${failure.period} failed for ${plant.external_plant_id}:`, failure.error);
     }
-  } catch (error) {
-    console.error('HYXi automatic history sync failed:', error);
-  } finally {
-    hyxiHistorySyncRunning = false;
+    for (const result of [powerResult.current, powerResult.closure]) {
+      if (result?.failed > 0) console.error('HYXi automatic power-history sync failed:', result);
+    }
+
+    try {
+      const startTime = localDateForTimezone(new Date(), plant.timezone);
+      const result = await syncHyxiEnergyHistory(plant.external_plant_id, 1, startTime);
+      if (result.failed > 0) console.error('HYXi automatic energy-history sync failed:', result);
+    } catch (error) {
+      console.error(`HYXi automatic energy-history sync failed for ${plant.external_plant_id}:`, error);
+    }
   }
 }
+
+const runHyxiHistorySync = createScheduledSync({
+  name: 'history', sync: syncHyxiHistoryCycle, timeoutMs: HYXI_HISTORY_TASK_TIMEOUT_MS,
+});
 
 async function syncHistoricalRollups() {
   const startTime = currentBoliviaDate();
