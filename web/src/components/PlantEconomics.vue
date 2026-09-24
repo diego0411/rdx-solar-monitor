@@ -19,6 +19,16 @@ const canManage = ref(false);
 const showConfiguration = ref(false);
 const editingId = ref(null);
 const form = ref(emptyForm());
+const distributors = ['CRE R.L.', 'DELAPAZ', 'ELFEC', 'ELFEO', 'ENDE DELBENI'];
+const distributorChoice = ref('');
+const categoryChoice = ref('none');
+const hasEndDate = ref(false);
+let originalPayload = null;
+const currency = computed({
+  get: () => distributors.includes(distributorChoice.value) ? 'BOB' : form.value.currency,
+  set: value => { form.value.currency = value; },
+});
+const rateUnit = computed(() => `${currency.value === 'BOB' ? 'Bs' : currency.value}/kWh`);
 
 const periodNames = { day: 'Día', week: 'Semana', month: 'Mes', year: 'Año' };
 const compensationNames = {
@@ -112,6 +122,10 @@ async function loadTariffs() {
 function newTariff() {
   editingId.value = null;
   form.value = { ...emptyForm(), effective_from: props.selectedDate };
+  distributorChoice.value = '';
+  categoryChoice.value = 'none';
+  hasEndDate.value = false;
+  originalPayload = null;
   showConfiguration.value = true;
 }
 
@@ -127,22 +141,47 @@ function editTariff(tariff) {
     effective_from: tariff.effective_from,
     effective_to: tariff.effective_to ?? '',
   };
+  // Preserve legacy names/currencies without silently changing historical data.
+  distributorChoice.value = distributors.includes(tariff.distributor) && form.value.currency === 'BOB'
+    ? tariff.distributor : tariff.distributor ? 'other' : '';
+  categoryChoice.value = tariff.tariff_category ? 'other' : 'none';
+  hasEndDate.value = !!tariff.effective_to;
+  originalPayload = tariffPayload();
   showConfiguration.value = true;
 }
 
-async function saveTariff() {
-  saving.value = true;
-  tariffError.value = '';
-  const payload = {
-    distributor: form.value.distributor.trim() || null,
-    tariff_category: form.value.tariff_category.trim() || null,
-    currency: form.value.currency.trim().toUpperCase(),
+function tariffPayload() {
+  return {
+    distributor: (distributorChoice.value === 'other' ? form.value.distributor.trim() : distributorChoice.value) || null,
+    tariff_category: categoryChoice.value === 'other' ? form.value.tariff_category.trim() || null : null,
+    currency: currency.value.trim().toUpperCase(),
     purchase_energy_rate: form.value.purchase_energy_rate === '' ? null : Number(form.value.purchase_energy_rate),
     export_compensation_type: form.value.export_compensation_type,
-    export_energy_rate: form.value.export_energy_rate === '' ? null : Number(form.value.export_energy_rate),
+    export_energy_rate: form.value.export_compensation_type === 'none' || form.value.export_energy_rate === ''
+      ? null : Number(form.value.export_energy_rate),
     effective_from: form.value.effective_from,
-    effective_to: form.value.effective_to || null,
+    effective_to: hasEndDate.value ? form.value.effective_to || null : null,
   };
+}
+
+async function saveTariff() {
+  if (saving.value) return;
+  tariffError.value = '';
+  if ((distributorChoice.value === 'other' && !form.value.distributor.trim())
+    || (categoryChoice.value === 'other' && !form.value.tariff_category.trim())) {
+    tariffError.value = 'Completa los campos personalizados.';
+    return;
+  }
+  const values = tariffPayload();
+  // PATCH only changed fields, so closing a historical tariff preserves its data.
+  const payload = editingId.value
+    ? Object.fromEntries(Object.entries(values).filter(([key, value]) => value !== originalPayload[key]))
+    : values;
+  if (editingId.value && !Object.keys(payload).length) {
+    showConfiguration.value = false;
+    return;
+  }
+  saving.value = true;
   try {
     const path = editingId.value
       ? `/plants/${encodeURIComponent(props.plantId)}/energy-tariffs/${encodeURIComponent(editingId.value)}`
@@ -240,20 +279,45 @@ onMounted(async () => {
         <button type="button" class="close-button" aria-label="Cerrar" @click="showConfiguration = false">×</button>
       </div>
       <div class="form-grid">
-        <label>Distribuidor<input v-model="form.distributor" maxlength="120" placeholder="Ej. CRE R.L." /></label>
-        <label>Categoría tarifaria<input v-model="form.tariff_category" maxlength="120" /></label>
-        <label>Moneda<input v-model="form.currency" maxlength="8" required /></label>
-        <label>Tarifa compra (por kWh)<input v-model="form.purchase_energy_rate" type="number" min="0" step="0.0001" required /></label>
+        <label>Distribuidor
+          <select v-model="distributorChoice" :required="!editingId">
+            <option value="" :disabled="!editingId">{{ editingId ? 'No especificado' : 'Selecciona un distribuidor' }}</option>
+            <option v-for="distributor in distributors" :key="distributor" :value="distributor">{{ distributor }}</option>
+            <option value="other">Otro</option>
+          </select>
+        </label>
+        <label>Categoría tarifaria
+          <select v-model="categoryChoice">
+            <option value="none">No especificada</option>
+            <option value="other">Otra categoría</option>
+          </select>
+        </label>
+        <label v-if="distributorChoice === 'other'">Nombre del distribuidor<input v-model="form.distributor" maxlength="120" required /></label>
+        <label v-if="categoryChoice === 'other'">Nombre de la categoría<input v-model="form.tariff_category" maxlength="120" required /></label>
+        <label>Moneda
+          <select v-model="currency" :disabled="distributorChoice !== 'other'" required>
+            <option value="BOB">BOB — Boliviano</option>
+            <option value="USD">USD — Dólar estadounidense</option>
+            <option value="EUR">EUR — Euro</option>
+            <option v-if="editingId && !['BOB', 'USD', 'EUR'].includes(currency)" :value="currency">{{ currency }}</option>
+          </select>
+        </label>
         <label>Tipo de compensación
           <select v-model="form.export_compensation_type">
             <option value="none">Sin compensación</option>
             <option value="energy_credit">Crédito energético</option>
-            <option value="monetary">Monetaria</option>
+            <option value="monetary">Compensación monetaria</option>
           </select>
         </label>
-        <label>Tarifa exportación (por kWh)<input v-model="form.export_energy_rate" type="number" min="0" step="0.0001" :required="form.export_compensation_type === 'monetary'" /></label>
+        <label>Tarifa de compra de energía
+          <span class="rate-input"><input v-model="form.purchase_energy_rate" type="number" min="0" step="0.0001" required /><span>{{ rateUnit }}</span></span>
+        </label>
+        <label v-if="form.export_compensation_type !== 'none'">Tarifa de exportación{{ form.export_compensation_type === 'energy_credit' ? ' (opcional)' : '' }}
+          <span class="rate-input"><input v-model="form.export_energy_rate" type="number" min="0" step="0.0001" :required="form.export_compensation_type === 'monetary'" /><span>{{ rateUnit }}</span></span>
+        </label>
         <label>Inicio de vigencia<input v-model="form.effective_from" type="date" required /></label>
-        <label>Fin de vigencia (opcional)<input v-model="form.effective_to" type="date" /></label>
+        <label class="end-date-toggle"><input v-model="hasEndDate" type="checkbox" />Definir fecha de finalización</label>
+        <label v-if="hasEndDate">Fin de vigencia<input v-model="form.effective_to" type="date" :min="form.effective_from" required /></label>
       </div>
       <p v-if="tariffError" class="economics-state error" role="alert">{{ tariffError }}</p>
       <div class="form-actions">
@@ -299,6 +363,11 @@ h3 { font-size: 13px; }
 .close-button { font-size: 21px; line-height: 1; }
 .form-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin-top: 12px; }
 .form-grid label { display: grid; gap: 5px; color: var(--rdx-text-muted); font-size: 10px; font-weight: 600; }
+.form-grid > * { min-width: 0; }
+.rate-input { display: flex; align-items: center; gap: 8px; }
+.rate-input input { width: 100%; flex: 1; }
+.rate-input > span { flex-shrink: 0; }
+.form-grid .end-date-toggle { display: flex; align-items: center; grid-column: 1 / -1; gap: 8px; }
 .form-grid input, .form-grid select { min-width: 0; height: 36px; padding: 0 9px; border: 1px solid var(--rdx-border); border-radius: var(--rdx-radius-sm); background: var(--rdx-surface); color: var(--rdx-text); font: inherit; font-size: 12px; }
 .form-actions { justify-content: flex-end; margin-top: 12px; }
 @media (max-width: 767px) {
