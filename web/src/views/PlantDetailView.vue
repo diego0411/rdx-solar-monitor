@@ -6,6 +6,7 @@ import { deviceDisplayName } from '../utils/deviceDisplay.js';
 import PlantPowerCurve from '../components/PlantPowerCurve.vue';
 import PlantEnergyHistory from '../components/PlantEnergyHistory.vue';
 import PlantEnergyFlow from '../components/PlantEnergyFlow.vue';
+import PlantEconomics from '../components/PlantEconomics.vue';
 
 const route = useRoute();
 const detail = ref(null), loading = ref(true), error = ref(''), notFound = ref(false);
@@ -260,6 +261,12 @@ watch(() => route.params.id, async (id, previous, onCleanup) => {
 
       <PlantPowerCurve v-model:period="historyPeriod" v-model:selected-date="historyDate" :plant-id="String(route.params.id)" :timezone="plant?.timezone" />
       <PlantEnergyHistory v-model:period="historyPeriod" v-model:selected-date="historyDate" :plant-id="String(route.params.id)" :timezone="plant?.timezone" @history-loaded="historyResponse = $event" />
+      <PlantEconomics
+        v-if="detail"
+        :plant-id="String(route.params.id)"
+        :period="historyPeriod"
+        :selected-date="historyDate"
+      />
 
       <section v-if="detail" class="card section devices-section" aria-labelledby="devices-title">
         <div class="section-head">
