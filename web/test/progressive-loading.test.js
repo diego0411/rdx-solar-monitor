@@ -132,7 +132,8 @@ test('overview may arrive first or fail without blocking basic map data', async 
 
 test('detail mounts both history sections while overview is pending and keeps them after completion', async t => {
   const h = setup('PlantDetailView', { useRoute: () => ({ params: { id: 'p' } }),
-    deviceDisplayName: () => '', PlantPowerCurve: {}, PlantEnergyHistory: {}, PlantEnergyFlow: {} });
+    deviceDisplayName: () => '', PlantPowerCurve: {}, PlantEnergyHistory: {}, PlantEnergyFlow: {},
+    PlantEconomics: {}, PlantInstallationDetails: {} });
   t.after(h.stop);
   function types(node, result = []) {
     if (node?.type) result.push(node.type);

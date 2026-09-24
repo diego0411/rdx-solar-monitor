@@ -30,7 +30,7 @@ function emptyForm() {
 }
 
 function toForm(value = {}) {
-  return Object.fromEntries(Object.keys(emptyForm()).map(key => [key, value[key] ?? '']));
+  return Object.fromEntries(Object.keys(emptyForm()).map(key => [key, value?.[key] ?? '']));
 }
 
 function numeric(value) {
@@ -84,9 +84,13 @@ const theoreticalCapacity = computed(() => theoreticalPanelCapacityKwp(
 
 async function load() {
   loading.value = true;
+  details.value = null;
+  editing.value = false;
   error.value = '';
   try {
-    details.value = await apiFetch(`/plants/${encodeURIComponent(props.plantId)}/installation-details`);
+    const data = await apiFetch(`/plants/${encodeURIComponent(props.plantId)}/installation-details`);
+    if (data !== null && (typeof data !== 'object' || Array.isArray(data))) throw new Error('Respuesta inválida');
+    details.value = Object.fromEntries(Object.keys(emptyForm()).map(key => [key, data?.[key] ?? null]));
     form.value = toForm(details.value);
   } catch {
     details.value = null;
@@ -97,12 +101,13 @@ async function load() {
 }
 
 function startEditing() {
+  if (!canManage.value || loading.value || details.value === null) return;
   form.value = toForm(details.value);
   editing.value = true;
 }
 
 function cancelEditing() {
-  form.value = toForm(details.value);
+  form.value = details.value === null ? emptyForm() : toForm(details.value);
   editing.value = false;
   error.value = '';
 }
@@ -155,7 +160,7 @@ onMounted(async () => {
         <h2 id="installation-title">Información de instalación</h2>
         <p>Ficha técnica de la planta y configuración registrada.</p>
       </div>
-      <button v-if="canManage && !editing" type="button" class="secondary-button" @click="startEditing">Editar</button>
+      <button v-if="canManage && !editing" type="button" class="secondary-button" :disabled="loading || details === null" @click="startEditing">Editar</button>
     </div>
 
     <div class="installation-columns">
