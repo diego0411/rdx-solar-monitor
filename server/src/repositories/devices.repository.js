@@ -1,5 +1,13 @@
 import { supabase } from '../config/supabase.js';
 
+export function mergeHyxiMetadata(existing, incoming) {
+  const metadata = existing
+    ? { ...existing, ...incoming, detail: existing.detail }
+    : incoming;
+  if (metadata?.detail === undefined) delete metadata.detail;
+  return metadata;
+}
+
 export async function listActiveHyxiDevices() {
   const devices = [];
   const pageSize = 1000;
@@ -35,7 +43,14 @@ export async function updateDeviceInfo(id, detail) {
 }
 
 export async function upsertDevice(device) {
-  const { error } = await supabase.from('devices').upsert(device, {
+  const { data: existing, error: lookupError } = await supabase.from('devices')
+    .select('metadata').eq('plant_id', device.plant_id)
+    .eq('serial_number', device.serial_number).maybeSingle();
+  if (lookupError) throw new Error('No se pudo consultar el dispositivo HYXi existente');
+
+  const metadata = mergeHyxiMetadata(existing?.metadata, device.metadata);
+
+  const { error } = await supabase.from('devices').upsert({ ...device, metadata }, {
     onConflict: 'plant_id,serial_number',
   });
   if (error) throw new Error('No se pudo guardar el dispositivo en Supabase');

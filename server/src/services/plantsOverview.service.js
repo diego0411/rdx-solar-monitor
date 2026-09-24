@@ -304,6 +304,11 @@ export async function getPlantOverview(plantId) {
 
       last_data_at:
         lastDataAt,
+
+      platform_created_at:
+        plant.provider === 'growatt'
+          ? plant.metadata?.create_date ?? null
+          : null,
     },
 
     energy: {
@@ -432,6 +437,7 @@ export async function getPlantOverview(plantId) {
               'device_type',
               'status',
               'software_version',
+              'hardware_version',
             ].map(
               key =>
                 [key, device[key] ?? null],

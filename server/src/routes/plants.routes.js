@@ -10,11 +10,17 @@ import {
   postPlantEnergyTariff,
 } from '../controllers/plantEconomics.controller.js';
 import { requireRoles } from '../middleware/authorization.middleware.js';
+import {
+  getInstallationDetails,
+  putInstallationDetails,
+} from '../controllers/plantInstallationDetails.controller.js';
 
 const router = Router();
 router.get('/', getPlants);
 router.get('/overview', getOverview);
 router.get('/:plantId/overview', getPlantDetailOverview);
+router.get('/:plantId/installation-details', getInstallationDetails);
+router.put('/:plantId/installation-details', requireRoles('rdx_admin', 'client_admin'), putInstallationDetails);
 router.get('/:plantId/financial', getPlantFinancial);
 router.put('/:plantId/financial', putPlantFinancial);
 router.get('/:plantId/energy-tariffs', getPlantEnergyTariffs);

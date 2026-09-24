@@ -7,6 +7,7 @@ import PlantPowerCurve from '../components/PlantPowerCurve.vue';
 import PlantEnergyHistory from '../components/PlantEnergyHistory.vue';
 import PlantEnergyFlow from '../components/PlantEnergyFlow.vue';
 import PlantEconomics from '../components/PlantEconomics.vue';
+import PlantInstallationDetails from '../components/PlantInstallationDetails.vue';
 
 const route = useRoute();
 const detail = ref(null), loading = ref(true), error = ref(''), notFound = ref(false);
@@ -24,9 +25,6 @@ const deviceTypeLabels = {
   STRING_INVERTER: 'Inversor',
   HYBRID_INVERTER: 'Inversor híbrido',
   COLLECTOR: 'Comunicador',
-};
-const growattPlantTypes = {
-  residential: 'Residencial', commercial: 'Comercial', ground_mounted: 'Suelo',
 };
 const flowKeys = [
   'pv_power', 'ac_power', 'load_power',
@@ -47,13 +45,6 @@ const providerName = computed(() =>
   plant.value
     ? (providerNames[plant.value.provider] ?? plant.value.provider ?? '—')
     : '');
-const plantTypeLabel = computed(() => {
-  const type = plant.value?.plant_type;
-  if (plant.value?.provider === 'growatt' && type) {
-    return growattPlantTypes[type] ?? null;
-  }
-  return null;
-});
 const lastRead = computed(() => {
   const minutes = realtime.value.data_age_minutes;
   if (minutes != null && Number.isFinite(minutes)) {
@@ -268,6 +259,13 @@ watch(() => route.params.id, async (id, previous, onCleanup) => {
         :selected-date="historyDate"
       />
 
+      <PlantInstallationDetails
+        v-if="detail"
+        :plant-id="String(route.params.id)"
+        :plant="plant"
+        :devices="sortedDevices"
+      />
+
       <section v-if="detail" class="card section devices-section" aria-labelledby="devices-title">
         <div class="section-head">
           <h2 id="devices-title">Dispositivos</h2>
@@ -302,20 +300,6 @@ watch(() => route.params.id, async (id, previous, onCleanup) => {
         </ul>
       </section>
 
-      <section v-if="detail" class="card section install-section" aria-labelledby="install-title">
-        <div class="section-head">
-          <h2 id="install-title">Información de instalación</h2>
-        </div>
-        <dl class="install-grid">
-          <div><dt>Proveedor</dt><dd>{{ providerName || '—' }}</dd></div>
-          <div><dt>Capacidad</dt><dd>{{ number(plant?.capacity_kwp, 'kWp') }}</dd></div>
-          <div><dt>Zona horaria</dt><dd>{{ plant?.timezone ?? '—' }}</dd></div>
-          <div v-if="plantTypeLabel"><dt>Tipo de planta</dt><dd>{{ plantTypeLabel }}</dd></div>
-          <div class="install-address"><dt>Dirección</dt><dd>{{ plant?.address ?? '—' }}</dd></div>
-          <div><dt>Latitud</dt><dd>{{ number(plant?.latitude, '', 5) }}</dd></div>
-          <div><dt>Longitud</dt><dd>{{ number(plant?.longitude, '', 5) }}</dd></div>
-        </dl>
-      </section>
     </div>
   </div>
 </template>
@@ -355,7 +339,6 @@ dd { margin: 3px 0 0; overflow-wrap: anywhere; color: var(--rdx-text-strong); fo
 .sections :deep(.power-section) { grid-column: 1; grid-row: 3; padding: 16px; }
 .sections :deep(.energy-section) { grid-column: 1 / -1; padding: 16px; }
 .devices-section { grid-column: 1; }
-.install-section { grid-column: 2; }
 .flow-section :deep(.energy-flow) { margin: 0; padding: 10px 4px 2px; border: 0; background: transparent; }
 .flow-section :deep(.flow-header) { display: none; }
 .flow-section :deep(.flow-node) { min-height: 76px; padding: 12px; border-top-width: 1px; box-shadow: var(--rdx-shadow-sm); }
@@ -391,14 +374,10 @@ dd { margin: 3px 0 0; overflow-wrap: anywhere; color: var(--rdx-text-strong); fo
 .device-meta dt { font-size: 10px; }
 .device-meta dd { font-size: 11px; }
 .device-meta .badge { padding: 2px 7px; font-size: 10px; }
-.install-grid { display: grid; gap: 0; margin: 0; }
-.install-grid > div { display: grid; grid-template-columns: minmax(110px, 1fr) minmax(0, 1.2fr); gap: 12px; padding: 9px 0; border-bottom: 1px solid var(--rdx-neutral-soft); }
-.install-grid > div:last-child { border-bottom: 0; }
-.install-grid dt, .install-grid dd { font-size: 11px; }
 .empty-note { padding: 18px; }
 @media (max-width: 1199px) {
   .sections { grid-template-columns: minmax(0, 1fr); }
-  .kpi-grid, .flow-section, .status-section, .performance-section, .sections :deep(.power-section), .sections :deep(.energy-section), .devices-section, .install-section { grid-column: 1; grid-row: auto; }
+  .kpi-grid, .flow-section, .status-section, .performance-section, .sections :deep(.power-section), .sections :deep(.energy-section), .devices-section { grid-column: 1; grid-row: auto; }
   .kpi-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 @media (max-width: 900px) {
@@ -415,7 +394,7 @@ dd { margin: 3px 0 0; overflow-wrap: anywhere; color: var(--rdx-text-strong); fo
   .kpi-grid { grid-template-columns: 1fr; }
   .kpi { min-height: 82px; }
   .section.card, .sections :deep(.power-section), .sections :deep(.energy-section) { padding: 14px; }
-  .status-data > div, .install-grid > div { grid-template-columns: 1fr; gap: 2px; }
+  .status-data > div { grid-template-columns: 1fr; gap: 2px; }
   .device-meta { grid-template-columns: 1fr; }
 }
 </style>

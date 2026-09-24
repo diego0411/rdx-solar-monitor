@@ -44,7 +44,6 @@ const deviceInfoStates = new Map([[1, 'online'], [2, 'offline'], [3, 'alarm'], [
 
 export function normalizeHyxiDeviceInfo(data, timezone, metadata = {}) {
   const detail = deviceInfoToObject(data);
-  const batteryCapacity = numeric(detail.batCap);
   return {
     name: detail.deviceName ?? null,
     model: detail.model ?? null,
@@ -54,7 +53,6 @@ export function normalizeHyxiDeviceInfo(data, timezone, metadata = {}) {
     software_version: detail.swVerSys ?? null,
     parent_serial_number: detail.parentSn ?? null,
     pv_strings: numeric(detail.pvNum),
-    battery_capacity_kwh: batteryCapacity > 0 ? batteryCapacity : null,
     last_data_at: deviceInfoTimestamp(detail.lastUpdateTime, timezone),
     status: deviceInfoStates.get(numeric(detail.deviceState)) ?? 'unknown',
     last_synced_at: new Date().toISOString(),
