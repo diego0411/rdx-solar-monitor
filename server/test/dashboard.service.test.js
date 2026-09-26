@@ -26,11 +26,11 @@ const devices = [
 ];
 
 const latest = [
-  { device_id: 'd1', pv_power: 1000, collected_at: new Date(now - 1 * min).toISOString(), updated_at: new Date(now).toISOString(), today_energy: 5 },
-  { device_id: 'd2', pv_power: 0, collected_at: new Date(now - 120 * min).toISOString(), updated_at: new Date(now - 120 * min).toISOString(), today_energy: 2 },
-  { device_id: 'd3', pv_power: 300, collected_at: null, updated_at: new Date(now).toISOString(), today_energy: 1 },
-  { device_id: 'd5', pv_power: 500, collected_at: new Date(now - 2 * min).toISOString(), updated_at: new Date(now).toISOString(), today_energy: 7 },
-  { device_id: 'd6', pv_power: 0, collected_at: new Date(now - 200 * min).toISOString(), updated_at: new Date(now - 200 * min).toISOString(), today_energy: 0 },
+  { device_id: 'd1', pv_power: 1000, ac_power: 950, collected_at: new Date(now - 1 * min).toISOString(), updated_at: new Date(now).toISOString(), today_energy: 5 },
+  { device_id: 'd2', pv_power: 0, ac_power: 0, collected_at: new Date(now - 120 * min).toISOString(), updated_at: new Date(now - 120 * min).toISOString(), today_energy: 2 },
+  { device_id: 'd3', pv_power: 300, ac_power: 280, collected_at: null, updated_at: new Date(now).toISOString(), today_energy: 1 },
+  { device_id: 'd5', pv_power: 500, ac_power: 460, collected_at: new Date(now - 2 * min).toISOString(), updated_at: new Date(now).toISOString(), today_energy: 7 },
+  { device_id: 'd6', pv_power: 0, ac_power: 0, collected_at: new Date(now - 200 * min).toISOString(), updated_at: new Date(now - 200 * min).toISOString(), today_energy: 0 },
 ];
 
 const energy = [
@@ -120,3 +120,11 @@ test('top 5 plantas ordenadas por generación de hoy con datos reales', { skip: 
 function sumToFixed(value) {
   return Number(value.toFixed(2));
 }
+
+test('generación actual suma ac_power (pac), no pv_power (ppv)', { skip: !supportsModuleMocks }, async () => {
+  const summary = await getDashboardSummary();
+
+  // Frescos por collected_at: d1 (950), d5 (460). d3 no tiene
+  // collected_at y queda fuera. Suma pv sería 1500.
+  assert.equal(summary.current_generation_power_w, 950 + 460);
+});

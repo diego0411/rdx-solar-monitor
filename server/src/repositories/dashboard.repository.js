@@ -75,6 +75,7 @@ export async function readDashboardData(plantIds = null) {
             [
               'device_id',
               'pv_power',
+              'ac_power',
               'collected_at',
               'updated_at',
               'load_power',

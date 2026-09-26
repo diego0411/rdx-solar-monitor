@@ -368,7 +368,7 @@ function summarize(
       ).length,
 
     current_generation_power_w:
-      sum(fresh, 'pv_power'),
+      sum(fresh, 'ac_power'),
 
     current_consumption_power_w:
       sum(fresh, 'load_power'),

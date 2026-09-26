@@ -112,23 +112,38 @@ test('communicationStatus usa columnas raw cuando raw_data no está disponible',
 });
 
 test('operationalStatus: producing/idle solo con telemetría fresca', () => {
-  assert.equal(operationalStatus(freshRow({ pv_power: 500 }), NOW), 'producing');
-  assert.equal(operationalStatus(freshRow({ pv_power: 0 }), NOW), 'idle');
-  assert.equal(operationalStatus(freshRow({ pv_power: 'x' }), NOW), 'unknown');
-  assert.equal(operationalStatus(freshRow({ collected_at: '2026-09-14T11:59:00.000Z', pv_power: 500 }), NOW), 'unknown');
-  assert.equal(operationalStatus({ pv_power: 500 }, NOW), 'unavailable');
+  assert.equal(operationalStatus(freshRow({ ac_power: 500 }), NOW), 'producing');
+  assert.equal(operationalStatus(freshRow({ ac_power: 0 }), NOW), 'idle');
+  assert.equal(operationalStatus(freshRow({ ac_power: 'x' }), NOW), 'unknown');
+  assert.equal(operationalStatus(freshRow({ collected_at: '2026-09-14T11:59:00.000Z', ac_power: 500 }), NOW), 'unknown');
+  assert.equal(operationalStatus({ ac_power: 500 }, NOW), 'unavailable');
+});
+
+test('operationalStatus: producing/idle se decide por ac_power (pac), no por pv_power (ppv)', () => {
+  assert.equal(
+    operationalStatus(freshRow({ pv_power: 5419.6, ac_power: 5193.79 }), NOW),
+    'producing',
+  );
+  assert.equal(
+    operationalStatus(freshRow({ pv_power: 5419.6, ac_power: 0 }), NOW),
+    'idle',
+  );
+  assert.equal(
+    operationalStatus(freshRow({ pv_power: 5419.6 }), NOW),
+    'unknown',
+  );
 });
 
 test('operationalStatus: incidencia confirmada prevalece sobre la producción', () => {
   assert.equal(
-    operationalStatus(freshRow({ pv_power: 500 }, { warnCode: 5 }), NOW),
+    operationalStatus(freshRow({ ac_power: 500 }, { warnCode: 5 }), NOW),
     'alarm',
   );
 });
 
 test('growattDeviceState prioriza alarm y clasifica online/offline/unknown', () => {
-  assert.equal(growattDeviceState(freshRow({ pv_power: 500 }, { warnCode: 5 }), NOW), 'alarm');
-  assert.equal(growattDeviceState(freshRow({ pv_power: 500 }), NOW), 'online');
+  assert.equal(growattDeviceState(freshRow({ ac_power: 500 }, { warnCode: 5 }), NOW), 'alarm');
+  assert.equal(growattDeviceState(freshRow({ ac_power: 500 }), NOW), 'online');
   assert.equal(growattDeviceState({ raw_data: { lost: true } }, NOW), 'offline');
   assert.equal(growattDeviceState(freshRow({}, { lost: true }), NOW), 'unknown');
   assert.equal(growattDeviceState(null, NOW), 'unknown');

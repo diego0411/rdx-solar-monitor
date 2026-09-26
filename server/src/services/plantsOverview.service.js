@@ -540,7 +540,7 @@ export async function getPlantsOverview(plantIds = null) {
       };
 
     const power =
-      Number(row.pv_power ?? 0);
+      Number(row.ac_power ?? 0);
 
     if (
       device.device_type !== 'COLLECTOR'

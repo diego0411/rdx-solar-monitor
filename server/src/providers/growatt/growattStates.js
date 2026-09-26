@@ -205,10 +205,10 @@ export function operationalStatus(row, now = Date.now()) {
   if (status === 'no_data') return 'unavailable';
   if (status !== 'fresh') return 'unknown';
 
-  const pv = Number(row?.pv_power);
+  const ac = Number(row?.ac_power);
 
-  if (Number.isFinite(pv) && pv > 0) return 'producing';
-  if (Number.isFinite(pv) && pv === 0) return 'idle';
+  if (Number.isFinite(ac) && ac > 0) return 'producing';
+  if (Number.isFinite(ac) && ac === 0) return 'idle';
   return 'unknown';
 }
 
