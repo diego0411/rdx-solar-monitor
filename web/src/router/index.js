@@ -8,6 +8,8 @@ import DevicesView from '../views/DevicesView.vue';
 import AlarmsView from '../views/AlarmsView.vue';
 import DeviceDetailView from '../views/DeviceDetailView.vue';
 import UsersView from '../views/UsersView.vue';
+import MaintenanceView from '../views/MaintenanceView.vue';
+import MaintenanceDetailView from '../views/MaintenanceDetailView.vue';
 import { getSession, supabase } from '../services/supabase.js';
 import { getMyProfile } from '../services/api.js';
 
@@ -23,6 +25,8 @@ const router = createRouter({
     { path: '/devices/:id', name: 'device-detail', component: DeviceDetailView },
     { path: '/plants/:id', name: 'plant-detail', component: PlantDetailView },
     { path: '/users', name: 'users', component: UsersView },
+    { path: '/maintenance', name: 'maintenance', component: MaintenanceView },
+    { path: '/maintenance/:id', name: 'maintenance-detail', component: MaintenanceDetailView },
   ],
 });
 

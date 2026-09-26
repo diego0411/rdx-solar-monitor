@@ -60,6 +60,10 @@ async function logout() {
           <svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M18 9a6 6 0 0 0-12 0c0 7-3 7-3 8h18c0-1-3-1-3-8ZM9.5 20h5" /></svg>
           <span>Alarmas</span>
         </RouterLink>
+        <RouterLink to="/maintenance" class="nav-link" active-class="is-active">
+          <svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M14.7 6.3a4.5 4.5 0 0 0-6 6L3 18l3 3 5.7-5.7a4.5 4.5 0 0 0 6-6L14 13l-3-3 3.7-3.7Z" /></svg>
+          <span>Mantenimiento</span>
+        </RouterLink>
         <template v-if="showUsers">
           <p class="nav-heading nav-heading-admin">Administración</p>
           <RouterLink to="/users" class="nav-link" active-class="is-active">
