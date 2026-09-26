@@ -1,7 +1,7 @@
 <script setup>
 import { computed, onMounted, ref, watch } from 'vue';
 import { apiFetch, getMyProfile } from '../services/api.js';
-import { shouldShowExportValue } from '../utils/economicPresentation.js';
+import { compensationValue, creditEstimatedValue } from '../utils/economicPresentation.js';
 
 const props = defineProps({
   plantId: { type: String, required: true },
@@ -91,9 +91,10 @@ const coverageLabel = computed(() => {
   return 'Datos disponibles; cobertura total no confirmada';
 });
 
-const showExportValue = computed(() => shouldShowExportValue(summary.value));
 const showCredit = computed(() => summary.value
   && ['energy_credit', 'mixed'].includes(summary.value.compensation_type));
+const compensation = computed(() => compensationValue(summary.value));
+const creditValue = computed(() => creditEstimatedValue(summary.value));
 
 async function loadSummary() {
   if (!props.plantId || !props.selectedDate) return;
@@ -233,24 +234,42 @@ onMounted(async () => {
       <p class="coverage-note" :class="`coverage-${summary.coverage?.status}`">{{ coverageLabel }}</p>
       <div class="economics-columns">
         <div>
-          <h3>Energía</h3>
+          <h3>Resumen energético</h3>
           <dl class="economics-list">
-            <div><dt>Producción FV</dt><dd>{{ energy(summary.generation_kwh) }}</dd></div>
+            <div><dt>Generación</dt><dd>{{ energy(summary.generation_kwh) }}</dd></div>
             <div><dt>Autoconsumo</dt><dd>{{ energy(summary.self_consumption_kwh) }}</dd></div>
-            <div><dt>Exportación</dt><dd>{{ energy(summary.grid_export_kwh) }}</dd></div>
             <div><dt>Importación</dt><dd>{{ energy(summary.grid_import_kwh) }}</dd></div>
+            <div><dt>Inyección a red</dt><dd>{{ energy(summary.grid_export_kwh) }}</dd></div>
           </dl>
         </div>
         <div>
-          <h3>Economía</h3>
+          <h3>Ahorro por autoconsumo</h3>
           <dl class="economics-list">
-            <div><dt>Valor de energía producida</dt><dd>{{ money(summary.production_value) }}</dd></div>
-            <div><dt>Ahorro por autoconsumo</dt><dd>{{ money(summary.self_consumption_savings) }}</dd></div>
-            <div v-if="showExportValue"><dt>Valor de exportación</dt><dd>{{ money(summary.export_value) }}</dd></div>
-            <div v-if="showCredit"><dt>Crédito energético</dt><dd>{{ energy(summary.export_credit_kwh) }}</dd></div>
-            <div class="benefit"><dt>Beneficio económico estimado</dt><dd>{{ money(summary.estimated_economic_benefit) }}</dd></div>
+            <div><dt>Autoconsumo</dt><dd>{{ energy(summary.self_consumption_kwh) }}</dd></div>
+            <div><dt>Tarifa compra</dt><dd>{{ rate(summary.purchase_energy_rate, summary.currency) }}</dd></div>
+            <div><dt>Ahorro</dt><dd>{{ money(summary.self_consumption_savings) }}</dd></div>
           </dl>
-          <p class="compensation-label">{{ compensationNames[summary.compensation_type] ?? 'Sin tarifa configurada' }}</p>
+          <h3>Compensación por inyección</h3>
+          <dl class="economics-list">
+            <div><dt>Inyección</dt><dd>{{ energy(summary.grid_export_kwh) }}</dd></div>
+            <div><dt>Modalidad</dt><dd>{{ compensationNames[summary.compensation_type] ?? 'Sin tarifa configurada' }}</dd></div>
+            <div v-if="summary.compensation_type === 'monetary'">
+              <dt>Tarifa compensación</dt><dd>{{ rate(summary.export_energy_rate, summary.currency) }}</dd>
+            </div>
+            <div v-if="summary.compensation_type === 'monetary'">
+              <dt>Compensación</dt><dd>{{ money(compensation) }}</dd>
+            </div>
+            <div v-if="showCredit"><dt>Crédito generado</dt><dd>{{ energy(summary.export_credit_kwh) }}</dd></div>
+            <div v-if="showCredit">
+              <dt>Valor económico estimado</dt>
+              <dd>{{ creditValue === null || creditValue === undefined ? 'No disponible' : money(creditValue) }}</dd>
+            </div>
+          </dl>
+          <h3>Beneficio económico total</h3>
+          <dl class="economics-list">
+            <div class="benefit"><dt>Total</dt><dd>{{ money(summary.estimated_economic_benefit) }}</dd></div>
+          </dl>
+          <p class="compensation-label">Ahorro por autoconsumo + compensación o valor estimado de inyección.</p>
         </div>
       </div>
       <p class="economics-disclaimer">El autoconsumo se estima como producción menos exportación. En plantas con batería puede no representar todos los flujos internos.</p>

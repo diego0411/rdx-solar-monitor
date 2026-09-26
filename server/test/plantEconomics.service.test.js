@@ -101,12 +101,12 @@ test('null conserva resultados desconocidos y marca cobertura parcial', () => {
   assert.equal(result.coverage.missing_energy_intervals, 1);
 });
 
-test('autoconsumo negativo se reporta como inconsistencia y nunca como valor negativo', () => {
+test('autoconsumo negativo se limita a cero pero conserva la inconsistencia en cobertura', () => {
   const result = calculatePlantEconomics([
     row('2026-09-23', { generation_kwh: 100, grid_export_kwh: 120 }),
   ], [tariff()], context);
-  assert.equal(result.self_consumption_kwh, null);
-  assert.equal(result.self_consumption_savings, null);
+  assert.equal(result.self_consumption_kwh, 0);
+  assert.equal(result.self_consumption_savings, 0);
   assert.equal(result.coverage.inconsistent_intervals, 1);
   assert.equal(result.coverage.status, 'partial');
 });
@@ -117,4 +117,101 @@ test('el cálculo no depende del proveedor HYXi o Growatt', () => {
     row('2026-09-23', { provider: 'growatt' }),
   ], [tariff()], context);
   assert.equal(growatt.estimated_economic_benefit, hyxi.estimated_economic_benefit);
+});
+
+const v1row = (overrides = {}) => row('2026-09-23', {
+  generation_kwh: 1000,
+  consumption_kwh: 1200,
+  grid_import_kwh: 500,
+  grid_export_kwh: 300,
+  ...overrides,
+});
+const v1tariff = (overrides = {}) => tariff({
+  purchase_energy_rate: 0.9,
+  export_energy_rate: 0.45,
+  ...overrides,
+});
+
+test('CASO 1: sin exportación, todo lo generado es autoconsumo', () => {
+  const result = calculatePlantEconomics([v1row({ grid_export_kwh: 0 })],
+    [v1tariff({ export_compensation_type: 'none', export_energy_rate: null })], context);
+  assert.equal(result.self_consumption_kwh, 1000);
+  assert.equal(result.self_consumption_savings, 900);
+});
+
+test('CASO 2: exportación sin compensación vale cero y no altera el total', () => {
+  const result = calculatePlantEconomics([v1row()],
+    [v1tariff({ export_compensation_type: 'none', export_energy_rate: null })], context);
+  assert.equal(result.self_consumption_kwh, 700);
+  assert.equal(result.self_consumption_savings, 630);
+  assert.equal(result.export_compensation_value, 0);
+  assert.equal(result.estimated_economic_benefit, 630);
+});
+
+test('CASO 3: compensación monetaria suma exportación valorada', () => {
+  const result = calculatePlantEconomics([v1row()], [v1tariff()], context);
+  assert.equal(result.self_consumption_kwh, 700);
+  assert.equal(result.self_consumption_savings, 630);
+  assert.equal(result.export_compensation_value, 135);
+  assert.equal(result.export_value, 135);
+  assert.equal(result.estimated_economic_benefit, 765);
+});
+
+test('CASO 4: crédito energético con tarifa estima su valor', () => {
+  const result = calculatePlantEconomics([v1row()],
+    [v1tariff({ export_compensation_type: 'energy_credit' })], context);
+  assert.equal(result.export_credit_kwh, 300);
+  assert.equal(result.export_credit_estimated_value, 135);
+  assert.equal(result.estimated_economic_benefit, 765);
+});
+
+test('CASO 5: crédito energético sin tarifa conserva kWh y deja el total desconocido', () => {
+  const result = calculatePlantEconomics([v1row()],
+    [v1tariff({ export_compensation_type: 'energy_credit', export_energy_rate: null })], context);
+  assert.equal(result.export_credit_kwh, 300);
+  assert.equal(result.export_credit_estimated_value, null);
+  assert.equal(result.estimated_economic_benefit, null);
+});
+
+test('CASO 6: exportación mayor que generación nunca da autoconsumo negativo', () => {
+  const result = calculatePlantEconomics(
+    [v1row({ generation_kwh: 100, grid_export_kwh: 300 })], [v1tariff()], context);
+  assert.ok(result.self_consumption_kwh >= 0);
+  assert.equal(result.self_consumption_kwh, 0);
+  assert.equal(result.self_consumption_savings, 0);
+});
+
+test('CASO 7: datos faltantes conservan null sin convertir a cero', () => {
+  const result = calculatePlantEconomics(
+    [v1row({ generation_kwh: null, grid_export_kwh: null })], [v1tariff()], context);
+  assert.equal(result.self_consumption_kwh, null);
+  assert.equal(result.self_consumption_savings, null);
+  assert.equal(result.export_credit_estimated_value, null);
+});
+
+test('CASO 8: monedas incompatibles no suman beneficios', () => {
+  const result = calculatePlantEconomics([
+    v1row(),
+    { ...v1row(), interval_start: '2026-09-24T16:00:00.000Z' },
+  ], [
+    v1tariff({ effective_from: '2026-01-01', effective_to: '2026-09-23', currency: 'BOB' }),
+    v1tariff({ effective_from: '2026-09-24', currency: 'USD' }),
+  ], context);
+  assert.equal(result.currency, 'mixed');
+  assert.equal(result.estimated_economic_benefit, null);
+  assert.equal(result.export_compensation_value, null);
+});
+
+test('contrato V1 expone tasas comunes y alias de compensación', () => {
+  const result = calculatePlantEconomics([v1row()], [v1tariff()], context);
+  assert.equal(result.purchase_energy_rate, 0.9);
+  assert.equal(result.export_energy_rate, 0.45);
+  const mixed = calculatePlantEconomics([
+    v1row(),
+    { ...v1row(), interval_start: '2026-09-24T16:00:00.000Z' },
+  ], [
+    v1tariff({ effective_from: '2026-01-01', effective_to: '2026-09-23' }),
+    v1tariff({ effective_from: '2026-09-24', purchase_energy_rate: 1.2 }),
+  ], context);
+  assert.equal(mixed.purchase_energy_rate, null);
 });

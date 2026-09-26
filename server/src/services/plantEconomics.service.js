@@ -44,11 +44,13 @@ export function calculatePlantEconomics(rows, tariffs, { period, start, end }) {
 
     // Initial economic model: onsite use = PV generation - grid export.
     // With storage this is an estimate; battery flows remain available in energy_intervals.
+    // Negative raw values are inconsistent measurements: self-consumption clamps to 0
+    // while the interval keeps its inconsistent flag for coverage reporting.
     const rawSelfConsumption = values.generation_kwh !== null && values.grid_export_kwh !== null
       ? values.generation_kwh - values.grid_export_kwh
       : null;
     const inconsistent = rawSelfConsumption !== null && rawSelfConsumption < 0;
-    const selfConsumption = inconsistent ? null : rawSelfConsumption;
+    const selfConsumption = rawSelfConsumption === null ? null : Math.max(rawSelfConsumption, 0);
     const productionValue = values.generation_kwh !== null && purchaseRate !== null
       ? values.generation_kwh * purchaseRate : null;
     const selfConsumptionSavings = selfConsumption !== null && purchaseRate !== null
@@ -66,6 +68,10 @@ export function calculatePlantEconomics(rows, tariffs, { period, start, end }) {
         exportValue = values.grid_export_kwh * exportRate;
       }
     }
+    // Semantic aliases for the V1 contract: export_value is kept untouched
+    // for backwards compatibility.
+    const exportCompensationValue = exportValue;
+    const exportCreditEstimatedValue = compensation === 'energy_credit' ? exportValue : null;
 
     return {
       ...values,
@@ -73,6 +79,8 @@ export function calculatePlantEconomics(rows, tariffs, { period, start, end }) {
       production_value: productionValue,
       self_consumption_savings: selfConsumptionSavings,
       export_value: exportValue,
+      export_compensation_value: exportCompensationValue,
+      export_credit_estimated_value: exportCreditEstimatedValue,
       export_credit_kwh: exportCredit,
       tariff,
       inconsistent,
@@ -88,13 +96,17 @@ export function calculatePlantEconomics(rows, tariffs, { period, start, end }) {
   const sourcePartialIntervals = intervalResults.filter(row => row.source_partial).length;
   const currency = commonValue(intervalResults.map(row => row.tariff?.currency ?? null));
   const mixedCurrency = currency === 'mixed';
+  const singleOrNull = value => (value === 'mixed' ? null : value);
   const productionValue = mixedCurrency ? null : total('production_value');
   const selfConsumptionSavings = mixedCurrency ? null : total('self_consumption_savings');
   const exportValue = mixedCurrency ? null : total('export_value');
+  const exportCompensationValue = mixedCurrency ? null : total('export_compensation_value');
   const creditIntervals = intervalResults.filter(row =>
     row.tariff?.export_compensation_type === 'energy_credit');
   const exportCredit = creditIntervals.length
     ? strictSum(creditIntervals.map(row => row.export_credit_kwh)) : null;
+  const exportCreditEstimatedValue = mixedCurrency || !creditIntervals.length
+    ? null : strictSum(creditIntervals.map(row => row.export_credit_estimated_value));
   const estimatedBenefit = selfConsumptionSavings !== null && exportValue !== null
     ? selfConsumptionSavings + exportValue : null;
   const status = !rows.length ? 'none'
@@ -114,9 +126,15 @@ export function calculatePlantEconomics(rows, tariffs, { period, start, end }) {
     production_value: productionValue,
     self_consumption_savings: selfConsumptionSavings,
     export_value: exportValue,
+    export_compensation_value: exportCompensationValue,
+    export_credit_estimated_value: exportCreditEstimatedValue,
     export_credit_kwh: exportCredit,
     estimated_economic_benefit: estimatedBenefit,
     currency,
+    purchase_energy_rate: singleOrNull(commonValue(intervalResults
+      .map(row => numeric(row.tariff?.purchase_energy_rate)))),
+    export_energy_rate: singleOrNull(commonValue(intervalResults
+      .map(row => numeric(row.tariff?.export_energy_rate)))),
     compensation_type: commonValue(intervalResults
       .map(row => row.tariff?.export_compensation_type ?? null)),
     coverage: {

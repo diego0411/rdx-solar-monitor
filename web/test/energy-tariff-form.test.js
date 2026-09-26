@@ -4,6 +4,7 @@ import { readFileSync } from 'node:fs';
 import { parse, compileScript } from '@vue/compiler-sfc';
 import { compile } from '@vue/compiler-dom';
 import * as Vue from 'vue';
+import { compensationValue, creditEstimatedValue, shouldShowExportValue } from '../src/utils/economicPresentation.js';
 
 const { descriptor } = parse(readFileSync(new URL('../src/components/PlantEconomics.vue', import.meta.url), 'utf8'));
 const script = compileScript(descriptor, { id: 'tariff-test' }).content
@@ -14,7 +15,8 @@ const render = new Function('Vue', compile(descriptor.template.content, { mode: 
 function setup() {
   const calls = [];
   const deps = { ref: Vue.ref, computed: Vue.computed, watch() {}, onMounted() {},
-    shouldShowExportValue: () => false, getMyProfile: async () => ({}),
+    compensationValue, creditEstimatedValue, shouldShowExportValue,
+    getMyProfile: async () => ({}),
     async apiFetch(path, options) { calls.push({ path, options }); return options ? {} : []; },
   };
   const component = new Function(...Object.keys(deps), script)(...Object.values(deps));
