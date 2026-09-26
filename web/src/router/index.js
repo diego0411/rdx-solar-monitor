@@ -1,15 +1,8 @@
 import { createRouter, createWebHistory } from 'vue-router';
 import DashboardView from '../views/DashboardView.vue';
 import PlantsView from '../views/PlantsView.vue';
-import PlantMapView from '../views/PlantMapView.vue';
-import PlantDetailView from '../views/PlantDetailView.vue';
 import LoginView from '../views/LoginView.vue';
-import DevicesView from '../views/DevicesView.vue';
-import AlarmsView from '../views/AlarmsView.vue';
 import DeviceDetailView from '../views/DeviceDetailView.vue';
-import UsersView from '../views/UsersView.vue';
-import MaintenanceView from '../views/MaintenanceView.vue';
-import MaintenanceDetailView from '../views/MaintenanceDetailView.vue';
 import { getSession, supabase } from '../services/supabase.js';
 import { getMyProfile } from '../services/api.js';
 
@@ -19,14 +12,14 @@ const router = createRouter({
     { path: '/login', name: 'login', component: LoginView },
     { path: '/', name: 'dashboard', component: DashboardView },
     { path: '/plants', name: 'plants', component: PlantsView },
-    { path: '/map', name: 'map', component: PlantMapView },
-    { path: '/devices', name: 'devices', component: DevicesView },
-    { path: '/alarms', name: 'alarms', component: AlarmsView },
+    { path: '/map', name: 'map', component: () => import('../views/PlantMapView.vue') },
+    { path: '/devices', name: 'devices', component: () => import('../views/DevicesView.vue') },
+    { path: '/alarms', name: 'alarms', component: () => import('../views/AlarmsView.vue') },
     { path: '/devices/:id', name: 'device-detail', component: DeviceDetailView },
-    { path: '/plants/:id', name: 'plant-detail', component: PlantDetailView },
-    { path: '/users', name: 'users', component: UsersView },
-    { path: '/maintenance', name: 'maintenance', component: MaintenanceView },
-    { path: '/maintenance/:id', name: 'maintenance-detail', component: MaintenanceDetailView },
+    { path: '/plants/:id', name: 'plant-detail', component: () => import('../views/PlantDetailView.vue') },
+    { path: '/users', name: 'users', component: () => import('../views/UsersView.vue') },
+    { path: '/maintenance', name: 'maintenance', component: () => import('../views/MaintenanceView.vue') },
+    { path: '/maintenance/:id', name: 'maintenance-detail', component: () => import('../views/MaintenanceDetailView.vue') },
   ],
 });
 
