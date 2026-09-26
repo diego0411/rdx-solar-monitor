@@ -12,17 +12,24 @@ import clientsRoutes from './routes/clients.routes.js';
 import maintenanceRoutes from './routes/maintenance.routes.js';
 import { requireAuth } from './middleware/auth.middleware.js';
 import { loadProfile } from './middleware/authorization.middleware.js';
+import { apiLimiter, sensitiveLimiter } from './middleware/rateLimit.middleware.js';
+import { corsOptions } from './config/cors.js';
 
 const app = express();
 
-app.use(cors());
+// Render corre detrás de un único proxy: necesario para que
+// req.ip (y el rate limiting) vea la IP real del cliente.
+app.set('trust proxy', 1);
+
+app.use(cors(corsOptions));
 app.use(express.json());
-app.use('/api/auth', authRoutes);
 app.use('/api/health', healthRoutes);
+app.use('/api/', apiLimiter);
+app.use('/api/auth', authRoutes);
 app.use('/api/plants', requireAuth, loadProfile, plantsRoutes);
 app.use('/api/devices', requireAuth, loadProfile, devicesRoutes);
 app.use('/api/dashboard', requireAuth, loadProfile, dashboardRoutes);
-app.use('/api/integrations', requireAuth, loadProfile);
+app.use('/api/integrations', sensitiveLimiter, requireAuth, loadProfile);
 app.use('/api/integrations/hyxi', hyxiRoutes);
 app.use('/api/integrations/growatt', growattRoutes);
 app.use('/api/users', usersRoutes);

@@ -1,10 +1,7 @@
 import { supabase } from '../config/supabase.js';
 
 export function getHealth(req, res) {
-  res.json({
-    status: 'ok',
-    service: 'rdx-solar-monitor-api',
-  });
+  res.json({ status: 'ok' });
 }
 
 export async function getDatabaseHealth(req, res) {
@@ -25,11 +22,6 @@ export async function getDatabaseHealth(req, res) {
     return res.json({
       status: 'ok',
       database: 'connected',
-      tables: {
-        integration_accounts: true,
-        plants: true,
-        devices: true,
-      },
     });
   } catch {
     return res.status(503).json({
