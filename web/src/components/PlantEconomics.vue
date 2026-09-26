@@ -22,6 +22,8 @@ const form = ref(emptyForm());
 const distributors = ['CRE R.L.', 'DELAPAZ', 'ELFEC', 'ELFEO', 'ENDE DELBENI'];
 const distributorChoice = ref('');
 const categoryChoice = ref('none');
+const catalogDistributors = ref([]);
+const catalogCategories = ref([]);
 const hasEndDate = ref(false);
 let originalPayload = null;
 const currency = computed({
@@ -29,6 +31,56 @@ const currency = computed({
   set: value => { form.value.currency = value; },
 });
 const rateUnit = computed(() => `${currency.value === 'BOB' ? 'Bs' : currency.value}/kWh`);
+
+// La categoría es solo clasificación: nunca modifica tarifas ni compensación.
+function isCatalogCategory(value) {
+  return typeof value === 'string' && value !== '' && value !== 'none' && value !== 'other';
+}
+
+const categoryOptions = computed(() => catalogCategories.value
+  .filter(category => typeof category?.code === 'string' && typeof category?.name === 'string')
+  .map(category => ({ code: category.code, label: `${category.code} — ${category.name}` })));
+
+async function ensureCatalogDistributors() {
+  if (catalogDistributors.value.length) return;
+  try {
+    const data = await apiFetch('/plants/catalog/energy-distributors');
+    catalogDistributors.value = Array.isArray(data) ? data : [];
+  } catch {
+    catalogDistributors.value = [];
+  }
+}
+
+async function loadCategoriesForDistributor() {
+  catalogCategories.value = [];
+  await ensureCatalogDistributors();
+  const distributor = catalogDistributors.value
+    .find(entry => entry?.name === distributorChoice.value) ?? null;
+  if (!distributor?.id) {
+    if (isCatalogCategory(categoryChoice.value)) categoryChoice.value = 'none';
+    return;
+  }
+  try {
+    const data = await apiFetch(
+      `/plants/catalog/energy-distributors/${encodeURIComponent(distributor.id)}/tariff-categories`);
+    catalogCategories.value = Array.isArray(data) ? data : [];
+  } catch {
+    catalogCategories.value = [];
+  }
+  if (isCatalogCategory(categoryChoice.value)
+    && !catalogCategories.value.some(category => category?.code === categoryChoice.value)) {
+    categoryChoice.value = 'none';
+  }
+}
+
+async function adoptCatalogCategory() {
+  await loadCategoriesForDistributor();
+  if (categoryChoice.value === 'other' && typeof form.value.tariff_category === 'string') {
+    const match = catalogCategories.value
+      .find(category => category?.code === form.value.tariff_category.trim());
+    if (match) categoryChoice.value = match.code;
+  }
+}
 
 const periodNames = { day: 'Día', week: 'Semana', month: 'Mes', year: 'Año' };
 const compensationNames = {
@@ -125,9 +177,11 @@ function newTariff() {
   form.value = { ...emptyForm(), effective_from: props.selectedDate };
   distributorChoice.value = '';
   categoryChoice.value = 'none';
+  catalogCategories.value = [];
   hasEndDate.value = false;
   originalPayload = null;
   showConfiguration.value = true;
+  void loadCategoriesForDistributor();
 }
 
 function editTariff(tariff) {
@@ -149,12 +203,14 @@ function editTariff(tariff) {
   hasEndDate.value = !!tariff.effective_to;
   originalPayload = tariffPayload();
   showConfiguration.value = true;
+  void adoptCatalogCategory();
 }
 
 function tariffPayload() {
   return {
     distributor: (distributorChoice.value === 'other' ? form.value.distributor.trim() : distributorChoice.value) || null,
-    tariff_category: categoryChoice.value === 'other' ? form.value.tariff_category.trim() || null : null,
+    tariff_category: categoryChoice.value === 'other' ? form.value.tariff_category.trim() || null
+      : isCatalogCategory(categoryChoice.value) ? categoryChoice.value : null,
     currency: currency.value.trim().toUpperCase(),
     purchase_energy_rate: form.value.purchase_energy_rate === '' ? null : Number(form.value.purchase_energy_rate),
     export_compensation_type: form.value.export_compensation_type,
@@ -205,6 +261,7 @@ async function saveTariff() {
 
 watch(() => [props.plantId, props.period, props.selectedDate], loadSummary, { immediate: true });
 watch(() => props.plantId, loadTariffs, { immediate: true });
+watch(distributorChoice, () => { void loadCategoriesForDistributor(); });
 
 onMounted(async () => {
   try {
@@ -308,6 +365,7 @@ onMounted(async () => {
         <label>Categoría tarifaria
           <select v-model="categoryChoice">
             <option value="none">No especificada</option>
+            <option v-for="category in categoryOptions" :key="category.code" :value="category.code">{{ category.label }}</option>
             <option value="other">Otra categoría</option>
           </select>
         </label>

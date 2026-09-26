@@ -9,6 +9,10 @@ import {
   patchPlantEnergyTariff,
   postPlantEnergyTariff,
 } from '../controllers/plantEconomics.controller.js';
+import {
+  getEnergyDistributors,
+  getTariffCategoriesByDistributor,
+} from '../controllers/energyCatalog.controller.js';
 import { requireRoles } from '../middleware/authorization.middleware.js';
 import {
   getInstallationDetails,
@@ -19,6 +23,8 @@ const router = Router();
 router.get('/', getPlants);
 router.get('/overview', getOverview);
 router.get('/:plantId/overview', getPlantDetailOverview);
+router.get('/catalog/energy-distributors', getEnergyDistributors);
+router.get('/catalog/energy-distributors/:distributorId/tariff-categories', getTariffCategoriesByDistributor);
 router.get('/:plantId/installation-details', getInstallationDetails);
 router.put('/:plantId/installation-details', requireRoles('rdx_admin', 'client_admin'), putInstallationDetails);
 router.get('/:plantId/financial', getPlantFinancial);
