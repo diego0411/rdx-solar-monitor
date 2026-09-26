@@ -29,7 +29,7 @@ function aliasOf(data) {
   return typeof data?.alias === 'string' && data.alias.trim() ? data.alias.trim() : null;
 }
 
-export async function syncGrowattLatest() {
+export async function syncGrowattLatest(now = Date.now()) {
   const devices = await listActiveGrowattDevices();
   const apiToken = env.GROWATT_API_TOKEN;
   const result = {
@@ -78,7 +78,7 @@ export async function syncGrowattLatest() {
         }
         try {
           const normalized = normalizeGrowattLatestData(
-            data, device.id, device.plant?.timezone,
+            data, device.id, device.plant?.timezone, now,
           );
           await upsertGrowattLatestData(normalized);
           await updateGrowattDeviceTelemetryState(

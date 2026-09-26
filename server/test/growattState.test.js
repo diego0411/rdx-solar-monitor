@@ -9,6 +9,9 @@ const supportsModuleMocks = typeof mock.module === 'function';
 const userPlantSheetData = { plant_id: '1001', name: 'Planta Granja', status: '1', peak_power: 5.5 };
 const lastDataSheet = { lost: true, status: 1, statusText: 'Normal' };
 const SPANISH_MORNING = '2026-09-15 10:00:00';
+const DAY_NOON_UTC = Date.parse('2026-09-15T12:00:00.000Z');
+const SYNC_DAY_UTC = Date.parse('2026-09-15T15:00:00.000Z');
+const NIGHT_BOLIVIA = Date.parse('2026-09-26T04:00:00.000Z');
 
 test('user_plant_list status=1 mapea la planta a online', () => {
   const plant = normalizeGrowattPlant(userPlantSheetData, { user_id: 'u1' });
@@ -29,7 +32,7 @@ test('status de planta desconocido queda unknown', () => {
 });
 
 test('queryLastData lost=true con status=1 queda unknown (señal contradictoria)', () => {
-  const device = normalizeGrowattLatestData({ ...lastDataSheet, time: SPANISH_MORNING }, 'd1');
+  const device = normalizeGrowattLatestData({ ...lastDataSheet, time: SPANISH_MORNING }, 'd1', undefined, DAY_NOON_UTC);
   assert.equal(device.device_status, 'unknown');
   assert.equal(device.device_id, 'd1');
 });
@@ -67,7 +70,7 @@ test('el campo time se interpreta con la timezone de la planta (GMT+4)', () => {
 
 test('flujo simultáneo: plant sigue online mientras el device queda unknown', () => {
   const plant = normalizeGrowattPlant(userPlantSheetData);
-  const device = normalizeGrowattLatestData({ ...lastDataSheet, time: SPANISH_MORNING }, 'd1');
+  const device = normalizeGrowattLatestData({ ...lastDataSheet, time: SPANISH_MORNING }, 'd1', undefined, DAY_NOON_UTC);
   assert.equal(plant.status, 'online');
   assert.equal(device.device_status, 'unknown');
 });
@@ -120,7 +123,7 @@ if (supportsModuleMocks) {
 }
 
 test('syncGrowattLatest marca el device unknown y nunca toca plant.status', { skip: !supportsModuleMocks }, async () => {
-  const result = await syncGrowattLatest();
+  const result = await syncGrowattLatest(SYNC_DAY_UTC);
 
   assert.equal(result.processed, 1);
   assert.equal(result.updated, 1);
@@ -136,4 +139,73 @@ test('syncGrowattLatest marca el device unknown y nunca toca plant.status', { sk
   }]);
 
   assert.deepEqual(plantWrites, []);
+});
+
+test('Growatt nocturno normal con status=1 y señal stale queda standby', () => {
+  const device = normalizeGrowattLatestData(
+    { status: 1, statusText: 'Normal', lost: true, faultType: 0, warnCode: 0, time: '2026-09-25 18:30:00' },
+    'd1',
+    'GMT-4',
+    NIGHT_BOLIVIA,
+  );
+  assert.equal(device.device_status, 'standby');
+  assert.equal(device.collected_at, '2026-09-25T22:30:00.000Z');
+});
+
+test('Growatt status=0 nocturno sin fallos queda standby', () => {
+  const device = normalizeGrowattLatestData(
+    { status: 0, lost: true, faultType: 0, warnCode: 0, time: '2026-09-25 18:30:00' },
+    'd1',
+    'America/La_Paz',
+    NIGHT_BOLIVIA,
+  );
+  assert.equal(device.device_status, 'standby');
+});
+
+test('stale diurno con status=1 sigue unknown (no se enmascara el día)', () => {
+  const device = normalizeGrowattLatestData(
+    { status: 1, statusText: 'Normal', lost: true, time: '2026-09-15 10:00:00' },
+    'd1',
+    'GMT-4',
+    SYNC_DAY_UTC,
+  );
+  assert.equal(device.device_status, 'unknown');
+  assert.equal(device.collected_at, '2026-09-15T14:00:00.000Z');
+});
+
+test('timezone inválida nocturna no lanza y queda unknown', () => {
+  const device = normalizeGrowattLatestData(
+    { status: 1, lost: true, faultType: 0, warnCode: 0, time: '2026-09-25 18:30:00' },
+    'd1',
+    'No/Existe',
+    NIGHT_BOLIVIA,
+  );
+  assert.equal(device.device_status, 'unknown');
+});
+
+test('fallo nocturno nunca se convierte en standby', () => {
+  assert.equal(
+    normalizeGrowattLatestData(
+      { status: 1, lost: true, faultType: 12, time: '2026-09-25 18:30:00' },
+      'd1', 'GMT-4', NIGHT_BOLIVIA,
+    ).device_status,
+    'alarm',
+  );
+  assert.equal(
+    normalizeGrowattLatestData(
+      { status: 3, lost: true, time: '2026-09-25 18:30:00' },
+      'd1', 'GMT-4', NIGHT_BOLIVIA,
+    ).device_status,
+    'alarm',
+  );
+});
+
+test('sin status conocido no hay standby aunque sea de noche', () => {
+  const device = normalizeGrowattLatestData(
+    { lost: true, time: '2026-09-25 18:30:00' },
+    'd1',
+    'GMT-4',
+    NIGHT_BOLIVIA,
+  );
+  assert.equal(device.device_status, 'unknown');
 });
