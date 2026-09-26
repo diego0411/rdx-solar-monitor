@@ -134,24 +134,30 @@ function summarizeHyxiDevices(
 }
 
 export async function getPlantOverview(plantId) {
-  const plant = (await listStoredPlants())
+  const normalizedId = plantId.toLowerCase();
+  // Scope BD a la planta solicitada (antes: flota completa + filtro Node).
+  // El .find conserva la coincidencia exacta original; los filtros
+  // posteriores quedan como red de seguridad sobre datos ya acotados.
+  const plant = (await listStoredPlants(new Set([normalizedId])))
     .find(
       row =>
-        row.id === plantId.toLowerCase(),
+        row.id === normalizedId,
     );
 
   if (!plant) {
     return null;
   }
 
+  const plantScope = new Set([plant.id]);
+
   const [
     allDevices,
     allLatest,
     summaries,
   ] = await Promise.all([
-    listStoredDevices(),
-    listDeviceLatestData(),
-    listPlantEnergySummaries(),
+    listStoredDevices(plantScope),
+    listDeviceLatestData(plantScope),
+    listPlantEnergySummaries(plantScope),
   ]);
 
   const devices = allDevices.filter(
