@@ -1,6 +1,14 @@
 import { supabase } from '../config/supabase.js';
 import { localDateKey } from '../utils/timezone.js';
 
+// Proyección explícita: los consumidores (hasEnergyValues, gráficos,
+// aggregateHistory) solo usan interval_start/timezone + 4 campos kWh.
+// raw_data/batería/metadatos no se consumen en esta ruta.
+const ENERGY_SERIES_COLUMNS = 'interval_start, timezone, generation_kwh, consumption_kwh, grid_import_kwh, grid_export_kwh';
+// Rango compartido con economía: calculatePlantEconomics además lee
+// row.raw_data?.coverage, por lo que raw_data debe conservarse aquí.
+const ENERGY_RANGE_COLUMNS = `${ENERGY_SERIES_COLUMNS}, raw_data`;
+
 export async function resolveHyxiPlant(externalPlantId) {
   const { data, error } = await supabase.from('plants').select('id')
     .eq('provider', 'hyxi').eq('external_plant_id', externalPlantId).limit(2);
@@ -36,7 +44,7 @@ export async function listEnergyIntervals(plantId, timeType, startTime) {
   const prefix = startTime.slice(0, prefixLength);
   const rows = [];
   for (let offset = 0; ; offset += 1000) {
-    const { data, error } = await supabase.from('energy_intervals').select('*')
+    const { data, error } = await supabase.from('energy_intervals').select(ENERGY_SERIES_COLUMNS)
       .eq('plant_id', plantId).eq('interval_type', timeType)
       .gte('interval_start', lower).lt('interval_start', upper)
       .order('interval_start', { ascending: true }).range(offset, offset + 999);
@@ -54,7 +62,7 @@ export async function listEnergyIntervalsRange(plantId, timeType, startDate, end
   const upper = new Date(Date.parse(`${endDate}T00:00:00.000Z`) + 86400000).toISOString();
   const rows = [];
   for (let offset = 0; ; offset += 1000) {
-    const { data, error } = await supabase.from('energy_intervals').select('*')
+    const { data, error } = await supabase.from('energy_intervals').select(ENERGY_RANGE_COLUMNS)
       .eq('plant_id', plantId).eq('interval_type', timeType)
       .gte('interval_start', lower).lt('interval_start', upper)
       .order('interval_start', { ascending: true }).range(offset, offset + 999);

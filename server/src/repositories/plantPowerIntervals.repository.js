@@ -1,6 +1,16 @@
 import { supabase } from '../config/supabase.js';
 import { localDateKey } from '../utils/timezone.js';
 
+// Proyección explícita día: derivaciones Growatt/HYXi necesitan id (linaje
+// power_interval_id), interval_start/timezone, los 6 campos W
+// (hasPowerValues evalúa también batería) y raw_data (contadores Growatt).
+// Se eliminan plant_id/provider/created_at/updated_at, no consumidos.
+const POWER_DAY_COLUMNS = 'id, interval_start, timezone, generation_power_w, consumption_power_w, battery_charge_power_w, battery_discharge_power_w, grid_import_power_w, grid_export_power_w, raw_data';
+// Proyección explícita rango: solo alimenta aggregateHistory (4 campos W +
+// interval_start/timezone); la respuesta construye buckets nuevos, por lo
+// que raw_data/id/batería no viajan.
+const POWER_RANGE_COLUMNS = 'interval_start, timezone, generation_power_w, consumption_power_w, grid_import_power_w, grid_export_power_w';
+
 export async function upsertPlantPowerIntervals(rows) {
   if (!rows.length) return;
   const { error } = await supabase.from('plant_power_intervals').upsert(rows, {
@@ -30,7 +40,7 @@ export async function listPlantPowerIntervals(plantId, startTime) {
   const upper = new Date(start + 2 * 86400000).toISOString();
   const rows = [];
   for (let offset = 0; ; offset += 1000) {
-    const { data, error } = await supabase.from('plant_power_intervals').select('*')
+    const { data, error } = await supabase.from('plant_power_intervals').select(POWER_DAY_COLUMNS)
       .eq('plant_id', plantId).gte('interval_start', lower).lt('interval_start', upper)
       .order('interval_start', { ascending: true }).range(offset, offset + 999);
     if (error) throw new Error('No se pudo consultar la curva de potencia');
@@ -46,7 +56,7 @@ export async function listPlantPowerIntervalsRange(plantId, startDate, endDate) 
   const upper = new Date(Date.parse(`${endDate}T00:00:00.000Z`) + 86400000).toISOString();
   const rows = [];
   for (let offset = 0; ; offset += 1000) {
-    const { data, error } = await supabase.from('plant_power_intervals').select('*')
+    const { data, error } = await supabase.from('plant_power_intervals').select(POWER_RANGE_COLUMNS)
       .eq('plant_id', plantId).gte('interval_start', lower).lt('interval_start', upper)
       .order('interval_start', { ascending: true }).range(offset, offset + 999);
     if (error) throw new Error('No se pudo consultar la curva de potencia');
