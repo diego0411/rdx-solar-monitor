@@ -17,7 +17,7 @@ const page = ref(1);
 let controller;
 
 const providerNames = { hyxi: 'HYXi', growatt: 'Growatt' };
-const statuses = { online: 'En línea', offline: 'Sin conexión', alarm: 'Con alarma', inactive: 'Inactivo', unknown: 'Desconocido' };
+const statuses = { online: 'En línea', offline: 'Sin conexión', alarm: 'Con alarma', inactive: 'Inactivo', unknown: 'Desconocido', standby: 'En espera' };
 const typeLabels = { STRING_INVERTER: 'Inversor string', HYBRID_INVERTER: 'Inversor híbrido', COLLECTOR: 'Comunicador', MIN: 'Inversor' };
 const number = new Intl.NumberFormat('es-BO', { maximumFractionDigits: 2 });
 const dateTime = new Intl.DateTimeFormat('es-BO', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
@@ -64,7 +64,7 @@ function relative(value) {
 const summary = computed(() => ({
   total: devices.value.length,
   online: devices.value.filter(item => item.status === 'online').length,
-  offline: devices.value.filter(item => item.status === 'offline').length,
+  offline: devices.value.filter(item => item.status === 'offline' || item.status === 'unknown').length,
   alarm: devices.value.filter(item => item.status === 'alarm').length,
 }));
 
@@ -136,7 +136,7 @@ onUnmounted(() => controller?.abort());
       <section class="summary-grid" aria-label="Resumen de dispositivos">
         <article><i class="icon">▤</i><div><p>Total dispositivos</p><strong>{{ summary.total }}</strong><small>Equipos registrados</small></div></article>
         <article><i class="icon online">✓</i><div><p>En línea</p><strong>{{ summary.online }}</strong><small>Operando normalmente</small></div></article>
-        <article><i class="icon offline">!</i><div><p>Sin conexión</p><strong>{{ summary.offline }}</strong><small>Estado reportado offline</small></div></article>
+        <article><i class="icon offline">!</i><div><p>Sin conexión</p><strong>{{ summary.offline }}</strong><small>Incluye equipos en espera nocturna</small></div></article>
         <article><i class="icon alarm">△</i><div><p>Con alarmas</p><strong>{{ summary.alarm }}</strong><small>Requieren atención</small></div></article>
       </section>
 
