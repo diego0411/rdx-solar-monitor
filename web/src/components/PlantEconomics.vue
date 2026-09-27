@@ -8,6 +8,7 @@ const props = defineProps({
   period: { type: String, required: true },
   selectedDate: { type: String, required: true },
 });
+const emit = defineEmits(['update:period', 'update:selectedDate']);
 
 const summary = ref(null);
 const tariffs = ref([]);
@@ -294,6 +295,16 @@ watch(() => [props.plantId, props.period, props.selectedDate], loadSummary, { im
 watch(() => props.plantId, loadTariffs, { immediate: true });
 watch(distributorChoice, () => { void loadCategoriesForDistributor(); });
 
+const periods = Object.entries(periodNames).map(([key, label]) => ({ key, label }));
+
+function selectPeriod(key) {
+  emit('update:period', key);
+}
+
+function updateSelectedDate(event) {
+  emit('update:selectedDate', event?.target?.value ?? '');
+}
+
 onMounted(async () => {
   try {
     const me = await getMyProfile();
@@ -323,6 +334,20 @@ onBeforeUnmount(() => {
       <button v-if="canManage" class="economics-button secondary" type="button" @click="newTariff">
         Configurar tarifas
       </button>
+    </div>
+    <div class="economics-period">
+      <div class="segmented" role="group" aria-label="Periodo del resumen económico">
+        <button
+          v-for="item in periods"
+          :key="item.key"
+          type="button"
+          :class="{ active: period === item.key }"
+          @click="selectPeriod(item.key)"
+        >
+          {{ item.label }}
+        </button>
+      </div>
+      <label><span class="sr-only">Fecha del resumen económico</span><input :value="selectedDate" type="date" @input="updateSelectedDate($event)" /></label>
     </div>
 
     <p v-if="loading" class="economics-state" role="status">Calculando resumen económico…</p>
@@ -452,6 +477,11 @@ h2, h3 { margin: 0; color: var(--rdx-text-strong); }
 h2 { font-size: 17px; }
 h3 { font-size: 13px; }
 .economics-head p, .economics-disclaimer, .compensation-label { margin: 3px 0 0; color: var(--rdx-text-muted); font-size: 11px; line-height: 1.5; }
+.economics-period { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+.segmented { display: flex; gap: 4px; padding: 3px; border-radius: var(--rdx-radius-sm); background: var(--rdx-background); }
+.segmented button { min-height: 30px; padding: 5px 11px; border: 0; border-radius: 5px; background: transparent; color: var(--rdx-text-muted); font: inherit; font-size: 11px; cursor: pointer; }
+.segmented button.active { background: var(--rdx-primary); color: white; }
+.economics-period input { height: 36px; padding: 0 9px; border: 1px solid var(--rdx-border); border-radius: var(--rdx-radius-sm); background: var(--rdx-surface); color: var(--rdx-text); font: inherit; font-size: 12px; }
 .coverage-note { margin: 12px 0; padding: 9px 11px; border-radius: var(--rdx-radius-sm); background: var(--rdx-success-soft); color: var(--rdx-success); font-size: 11px; font-weight: 600; }
 .coverage-partial, .coverage-none { background: var(--rdx-warning-soft); color: var(--rdx-warning); }
 .economics-columns { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }

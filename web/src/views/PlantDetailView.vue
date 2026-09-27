@@ -14,6 +14,8 @@ const detail = ref(null), loading = ref(true), error = ref(''), notFound = ref(f
 const today = new Date();
 const historyPeriod = ref('day');
 const historyDate = ref(`${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`);
+const economicPeriod = ref('day');
+const economicDate = ref(historyDate.value);
 const historyResponse = ref(null);
 const providerNames = { hyxi: 'HYXi', growatt: 'Growatt' };
 const statuses = {
@@ -255,8 +257,8 @@ watch(() => route.params.id, async (id, previous, onCleanup) => {
       <PlantEconomics
         v-if="detail"
         :plant-id="String(route.params.id)"
-        :period="historyPeriod"
-        :selected-date="historyDate"
+        v-model:period="economicPeriod"
+        v-model:selected-date="economicDate"
       />
 
       <PlantInstallationDetails

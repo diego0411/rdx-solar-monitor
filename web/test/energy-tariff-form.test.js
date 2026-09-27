@@ -29,7 +29,7 @@ function setup() {
     if (Array.isArray(node?.children)) node.children.forEach(child => nodes(child, result));
     return result;
   }
-  return { view, calls, nodes: () => nodes(render(Vue.proxyRefs({ ...props, ...view }), [])) };
+  return { view, calls, nodes: (root) => nodes(root ?? render(Vue.proxyRefs({ ...props, ...view }), [])) };
 }
 
 test('Bolivian distributors force BOB without prefilling any price; API payload stays compatible', async () => {
@@ -88,14 +88,16 @@ test('none hides export price; monetary requires it and energy_credit preserves 
 
 test('custom fields, currency selector and optional end date follow selections', () => {
   const { view, nodes } = setup();
+  const formOf = () => nodes().find(node => node.type === 'form');
+  const formDates = () => nodes(formOf()).filter(node => node.type === 'input' && node.props?.type === 'date');
   view.distributorChoice.value = 'CRE R.L.';
-  assert.equal(nodes().filter(node => node.type === 'input' && node.props?.type === 'date').length, 1);
+  assert.equal(formDates().length, 1);
   assert.equal(nodes().filter(node => node.type === 'select' && node.props?.disabled === true).length, 1);
   view.distributorChoice.value = 'other';
   view.categoryChoice.value = 'other';
   view.hasEndDate.value = true;
   assert.equal(nodes().filter(node => node.type === 'input' && node.props?.maxlength === '120').length, 2);
-  assert.equal(nodes().filter(node => node.type === 'input' && node.props?.type === 'date').length, 2);
+  assert.equal(formDates().length, 2);
   assert.equal(nodes().filter(node => node.type === 'select' && node.props?.disabled === true).length, 0);
 });
 
