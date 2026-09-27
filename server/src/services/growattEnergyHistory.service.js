@@ -45,10 +45,22 @@ export function deriveGrowattEnergyHistory(plant, devices, powerRows) {
           const previous = references.get(key);
           let delta = null;
           if (day && current !== null) {
-            if (previous?.day === day && current >= previous.value) delta = current - previous.value;
+            if (previous === undefined || (previous.day !== null && previous.day !== day)) {
+              // Primera referencia legítima del día: los contadores *Today
+              // acumulan desde medianoche, por lo que el valor actual es la
+              // energía del día hasta esta muestra (0 si comienza en cero).
+              delta = current;
+            } else if (previous.day === day && previous.value !== null && current >= previous.value) {
+              delta = current - previous.value;
+            }
+            // Referencia rota el mismo día (tombstone) o caída/reset
+            // intradía: cobertura desconocida, delta null.
             references.set(key, { day, value: current });
           } else {
-            references.delete(key);
+            // Muestra inválida o sin día: tombstone que conserva el rastro
+            // del día iniciado. La siguiente muestra válida del mismo día
+            // NO se trata como inicio (sigue siendo desconocida).
+            references.set(key, { day: day ?? null, value: null });
           }
           contributions[targetField].push(delta);
         }
