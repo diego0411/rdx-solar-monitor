@@ -1,6 +1,7 @@
 <script setup>
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
 import { apiFetch } from '../services/api.js';
+import { deviceInCategory, deviceTypeCategoryLabel, deviceTypeLabel, visibleDeviceTypeCategories } from '../utils/deviceDisplay.js';
 
 const PAGE_SIZE = 8;
 const devices = ref([]);
@@ -18,13 +19,12 @@ let controller;
 
 const providerNames = { hyxi: 'HYXi', growatt: 'Growatt' };
 const statuses = { online: 'En línea', offline: 'Sin conexión', alarm: 'Con alarma', inactive: 'Inactivo', unknown: 'Desconocido', standby: 'En espera' };
-const typeLabels = { STRING_INVERTER: 'Inversor string', HYBRID_INVERTER: 'Inversor híbrido', COLLECTOR: 'Comunicador', MIN: 'Inversor' };
+const typeLabel = value => deviceTypeLabel(value);
 const number = new Intl.NumberFormat('es-BO', { maximumFractionDigits: 2 });
 const dateTime = new Intl.DateTimeFormat('es-BO', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
 
 const hasValue = value => value !== null && value !== undefined;
 const normalize = value => String(value ?? '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
-const typeLabel = value => typeLabels[String(value ?? '').toUpperCase()] ?? value ?? '—';
 const isCollector = device => String(device?.device_type ?? '').toUpperCase() === 'COLLECTOR';
 
 function deviceTitle(device) {
@@ -74,7 +74,7 @@ const plants = computed(() => {
   return [...values].map(([id, name]) => ({ id, name })).sort((a, b) => a.name.localeCompare(b.name, 'es'));
 });
 const providers = computed(() => [...new Set(devices.value.map(item => item.provider).filter(Boolean))].sort());
-const deviceTypes = computed(() => [...new Set(devices.value.map(item => item.device_type).filter(Boolean))].sort());
+const deviceCategories = computed(() => visibleDeviceTypeCategories(devices.value));
 const availableStatuses = computed(() => [...new Set(devices.value.map(item => item.status ?? 'unknown'))].sort());
 const lastUpdated = computed(() => {
   const times = devices.value.map(item => Date.parse(item.collected_at ?? '')).filter(Number.isFinite);
@@ -86,7 +86,7 @@ const filtered = computed(() => {
   return devices.value.filter(item => normalize(`${item.name ?? ''} ${item.serial_number ?? ''} ${item.model ?? ''}`).includes(term)
     && (!plant.value || item.plant_id === plant.value)
     && (!provider.value || item.provider === provider.value)
-    && (!deviceType.value || item.device_type === deviceType.value)
+    && (!deviceType.value || deviceInCategory(item, deviceType.value))
     && (!status.value || (item.status ?? 'unknown') === status.value));
 });
 const totalPages = computed(() => Math.max(1, Math.ceil(filtered.value.length / PAGE_SIZE)));
@@ -144,7 +144,7 @@ onUnmounted(() => controller?.abort());
         <label class="search"><span class="sr-only">Buscar</span><input v-model="search" type="search" placeholder="Buscar por nombre, SN o modelo" /></label>
         <label><span>Planta</span><select v-model="plant"><option value="">Todas las plantas</option><option v-for="item in plants" :key="item.id" :value="item.id">{{ item.name }}</option></select></label>
         <label><span>Proveedor</span><select v-model="provider"><option value="">Todos</option><option v-for="item in providers" :key="item" :value="item">{{ providerNames[item] ?? item }}</option></select></label>
-        <label><span>Tipo</span><select v-model="deviceType"><option value="">Todos</option><option v-for="item in deviceTypes" :key="item" :value="item">{{ typeLabel(item) }}</option></select></label>
+        <label><span>Tipo</span><select v-model="deviceType"><option value="">Todos</option><option v-for="item in deviceCategories" :key="item" :value="item">{{ deviceTypeCategoryLabel(item) }}</option></select></label>
         <label><span>Estado</span><select v-model="status"><option value="">Todos</option><option v-for="item in availableStatuses" :key="item" :value="item">{{ statuses[item] ?? statuses.unknown }}</option></select></label>
       </form>
 
