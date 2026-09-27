@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onMounted, ref, watch } from 'vue';
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { apiFetch, getMyProfile } from '../services/api.js';
 import { compensationValue, creditEstimatedValue } from '../utils/economicPresentation.js';
 
@@ -26,6 +26,17 @@ const catalogDistributors = ref([]);
 const catalogCategories = ref([]);
 const hasEndDate = ref(false);
 let originalPayload = null;
+
+// Concurrencia: cada ciclo de carga invalida al anterior para que una
+// respuesta obsoleta nunca sobrescriba el estado vigente. Resumen y
+// tarifas tienen ciclos independientes (distintos triggers y estado).
+let summaryController = null;
+let tariffsController = null;
+let catalogController = null;
+
+function isAbortError(error) {
+  return error?.name === 'AbortError';
+}
 const currency = computed({
   get: () => distributors.includes(distributorChoice.value) ? 'BOB' : form.value.currency,
   set: value => { form.value.currency = value; },
@@ -60,11 +71,17 @@ async function loadCategoriesForDistributor() {
     if (isCatalogCategory(categoryChoice.value)) categoryChoice.value = 'none';
     return;
   }
+  let controller = null;
   try {
+    catalogController?.abort();
+    controller = new AbortController();
+    catalogController = controller;
     const data = await apiFetch(
-      `/plants/catalog/energy-distributors/${encodeURIComponent(distributor.id)}/tariff-categories`);
+      `/plants/catalog/energy-distributors/${encodeURIComponent(distributor.id)}/tariff-categories`, { signal: controller.signal });
+    if (controller !== catalogController) return;
     catalogCategories.value = Array.isArray(data) ? data : [];
   } catch {
+    if (controller !== catalogController) return;
     catalogCategories.value = [];
   }
   if (isCatalogCategory(categoryChoice.value)
@@ -150,23 +167,37 @@ const creditValue = computed(() => creditEstimatedValue(summary.value));
 
 async function loadSummary() {
   if (!props.plantId || !props.selectedDate) return;
+  summaryController?.abort();
+  const controller = new AbortController();
+  summaryController = controller;
   loading.value = true;
   error.value = '';
   try {
-    summary.value = await apiFetch(`/plants/${encodeURIComponent(props.plantId)}/economics?period=${encodeURIComponent(props.period)}&startTime=${encodeURIComponent(props.selectedDate)}`);
-  } catch {
+    const data = await apiFetch(`/plants/${encodeURIComponent(props.plantId)}/economics?period=${encodeURIComponent(props.period)}&startTime=${encodeURIComponent(props.selectedDate)}`, { signal: controller.signal });
+    if (controller !== summaryController) return;
+    summary.value = data;
+  } catch (requestError) {
+    if (controller !== summaryController) return;
+    if (isAbortError(requestError)) return;
     summary.value = null;
     error.value = 'No se pudo cargar el resumen económico.';
   } finally {
-    loading.value = false;
+    if (controller === summaryController) loading.value = false;
   }
 }
 
 async function loadTariffs() {
+  tariffsController?.abort();
+  const controller = new AbortController();
+  tariffsController = controller;
   tariffError.value = '';
   try {
-    tariffs.value = await apiFetch(`/plants/${encodeURIComponent(props.plantId)}/energy-tariffs`);
-  } catch {
+    const data = await apiFetch(`/plants/${encodeURIComponent(props.plantId)}/energy-tariffs`, { signal: controller.signal });
+    if (controller !== tariffsController) return;
+    tariffs.value = data;
+  } catch (requestError) {
+    if (controller !== tariffsController) return;
+    if (isAbortError(requestError)) return;
     tariffs.value = [];
     tariffError.value = 'No se pudieron cargar las tarifas.';
   }
@@ -270,6 +301,15 @@ onMounted(async () => {
   } catch {
     canManage.value = false;
   }
+});
+
+onBeforeUnmount(() => {
+  summaryController?.abort();
+  summaryController = null;
+  tariffsController?.abort();
+  tariffsController = null;
+  catalogController?.abort();
+  catalogController = null;
 });
 </script>
 

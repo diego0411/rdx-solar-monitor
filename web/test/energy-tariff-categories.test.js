@@ -18,12 +18,12 @@ const render = new Function('Vue', compile(descriptor.template.content, { mode: 
 
 function setup({ distributors = [{ id: CRE_ID, code: 'CRE', name: 'CRE R.L.' }], categories = {} } = {}) {
   const calls = [];
-  const deps = { ref: Vue.ref, computed: Vue.computed, watch() {}, onMounted() {},
+  const deps = { ref: Vue.ref, computed: Vue.computed, watch() {}, onMounted() {}, onBeforeUnmount() {},
     compensationValue, creditEstimatedValue,
     getMyProfile: async () => ({}),
     async apiFetch(path, options) {
       calls.push({ path, options });
-      if (options) return {};
+      if (options?.method) return {};
       if (path === '/plants/catalog/energy-distributors') return distributors;
       const match = path.match(/^\/plants\/catalog\/energy-distributors\/(.+)\/tariff-categories$/);
       if (match) return categories[decodeURIComponent(match[1])] ?? [];
@@ -95,7 +95,7 @@ test('4. distribuidor sin categorías muestra solo No especificada + Otra', asyn
   assert.equal(view.categoryChoice.value, 'none');
   Object.assign(view.form.value, { purchase_energy_rate: '0.8', export_compensation_type: 'none' });
   await view.saveTariff();
-  const payload = JSON.parse(calls.filter(call => call.options).pop().options.body);
+  const payload = JSON.parse(calls.filter(call => call.options?.method).pop().options.body);
   assert.equal(payload.tariff_category, null);
   assert.equal(payload.distributor, 'CRE R.L.');
 });
@@ -109,7 +109,7 @@ test('5. Otra categoría conserva el flujo manual', async () => {
   Object.assign(view.form.value, { purchase_energy_rate: '0.8', export_compensation_type: 'none' });
   view.form.value.tariff_category = ' Mi categoría ';
   await view.saveTariff();
-  assert.equal(JSON.parse(calls.filter(call => call.options).pop().options.body).tariff_category, 'Mi categoría');
+  assert.equal(JSON.parse(calls.filter(call => call.options?.method).pop().options.body).tariff_category, 'Mi categoría');
 });
 
 test('6. seleccionar categoría de catálogo no modifica tarifas ni compensación', async () => {
@@ -141,7 +141,7 @@ test('7. formulario existente sigue guardando correctamente con categoría de ca
   view.categoryChoice.value = 'D-PD-BT';
   Object.assign(view.form.value, { purchase_energy_rate: '0.8', export_compensation_type: 'none' });
   await view.saveTariff();
-  assert.deepEqual(JSON.parse(calls.filter(call => call.options).pop().options.body), {
+  assert.deepEqual(JSON.parse(calls.filter(call => call.options?.method).pop().options.body), {
     distributor: 'CRE R.L.', tariff_category: 'D-PD-BT', currency: 'BOB', purchase_energy_rate: 0.8,
     export_compensation_type: 'none', export_energy_rate: null,
     effective_from: '2026-09-24', effective_to: null,

@@ -14,10 +14,10 @@ const render = new Function('Vue', compile(descriptor.template.content, { mode: 
 });
 function setup() {
   const calls = [];
-  const deps = { ref: Vue.ref, computed: Vue.computed, watch() {}, onMounted() {},
+  const deps = { ref: Vue.ref, computed: Vue.computed, watch() {}, onMounted() {}, onBeforeUnmount() {},
     compensationValue, creditEstimatedValue, shouldShowExportValue,
     getMyProfile: async () => ({}),
-    async apiFetch(path, options) { calls.push({ path, options }); return options ? {} : []; },
+    async apiFetch(path, options) { calls.push({ path, options }); return options?.method ? {} : []; },
   };
   const component = new Function(...Object.keys(deps), script)(...Object.values(deps));
   const props = { plantId: 'plant', selectedDate: '2026-09-24', period: 'day' };
@@ -46,7 +46,7 @@ test('Bolivian distributors force BOB without prefilling any price; API payload 
   view.form.value.export_energy_rate = '99';
   view.form.value.effective_to = '2027-01-01';
   await view.saveTariff();
-  const writes = calls.filter(call => call.options);
+  const writes = calls.filter(call => call.options?.method);
   assert.equal(writes[0].options.method, 'POST');
   assert.deepEqual(JSON.parse(writes[0].options.body), {
     distributor: 'CRE R.L.', tariff_category: null, currency: 'BOB', purchase_energy_rate: 0,
@@ -64,7 +64,7 @@ test('Other accepts custom distributor/category/currency and monetary export pri
   view.hasEndDate.value = true;
   view.form.value.effective_to = '2026-12-31';
   await view.saveTariff();
-  const payload = JSON.parse(calls.filter(call => call.options).pop().options.body);
+  const payload = JSON.parse(calls.filter(call => call.options?.method).pop().options.body);
   assert.equal(payload.distributor, 'Custom distributor');
   assert.equal(payload.tariff_category, 'Custom category');
   assert.equal(payload.currency, 'EUR');
@@ -109,8 +109,8 @@ test('closing a historical tariff patches only its end date, preserving legacy d
   view.hasEndDate.value = true;
   view.form.value.effective_to = '2026-09-24';
   await view.saveTariff();
-  assert.equal(calls.filter(call => call.options)[0].options.method, 'PATCH');
-  assert.deepEqual(JSON.parse(calls.filter(call => call.options)[0].options.body), { effective_to: '2026-09-24' });
+  assert.equal(calls.filter(call => call.options?.method)[0].options.method, 'PATCH');
+  assert.deepEqual(JSON.parse(calls.filter(call => call.options?.method)[0].options.body), { effective_to: '2026-09-24' });
 });
 
 test('unchecking end date sends null on edit; new tariff resets custom controls', async () => {
@@ -120,7 +120,7 @@ test('unchecking end date sends null on edit; new tariff resets custom controls'
     effective_from: '2030-01-01', effective_to: '2031-01-01' });
   view.hasEndDate.value = false;
   await view.saveTariff();
-  assert.deepEqual(JSON.parse(calls.filter(call => call.options)[0].options.body), { effective_to: null });
+  assert.deepEqual(JSON.parse(calls.filter(call => call.options?.method)[0].options.body), { effective_to: null });
   view.newTariff();
   assert.equal(view.hasEndDate.value, false);
   assert.equal(view.categoryChoice.value, 'none');
@@ -132,6 +132,6 @@ test('blank custom names are rejected without a request', async () => {
   view.distributorChoice.value = 'other';
   view.form.value.distributor = '   ';
   await view.saveTariff();
-  assert.equal(calls.filter(call => call.options).length, 0);
+  assert.equal(calls.filter(call => call.options?.method).length, 0);
   assert.ok(view.tariffError.value);
 });
