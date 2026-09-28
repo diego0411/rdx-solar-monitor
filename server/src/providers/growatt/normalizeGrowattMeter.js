@@ -61,7 +61,9 @@ export function buildMeterDevice(plantId, selected, candidates) {
     name: null,
     model: selected.device_name,
     device_type: 'meter',
-    status: null,
+    // Misma semántica que los MIN: el meter aún no forma parte de la
+    // telemetría latest, así que nace 'unknown' (devices.status es NOT NULL).
+    status: 'unknown',
     active: true,
     parent_serial_number: selected.datalogger_sn,
     metadata: {

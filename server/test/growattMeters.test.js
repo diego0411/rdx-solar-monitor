@@ -30,6 +30,8 @@ test('B: device_sn=meter nunca es identidad; la compuesta sí', () => {
   assert.equal(device.external_device_id, 'growatt-meter:ZOD5E6L3HT:1');
   assert.equal(device.serial_number, 'growatt-meter:ZOD5E6L3HT:1');
   assert.equal(device.device_type, 'meter');
+  assert.equal(device.status, 'unknown');
+  assert.equal(device.active, true);
   assert.equal(device.model, 'CHNT_ONE');
   assert.equal(device.parent_serial_number, 'ZOD5E6L3HT');
   assert.equal(device.metadata.address, '1');
