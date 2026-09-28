@@ -267,16 +267,17 @@ test('metrics 1: día completo → todo EXACT e igual a legacy', () => {
   assert.equal(result.metrics.estimated_economic_benefit.quality, 'EXACT');
 });
 
-test('metrics 2+3: consumo parcial → PARTIAL observado sin degradar self/savings', () => {
+test('metrics 2+3: consumo parcial con gen/imp/exp completos → balance EXACT', () => {
   const result = calculatePlantEconomics(huangDay(), [tariff({ purchase_energy_rate: 0.8 })], context);
   approx(result.metrics.generation_kwh.value, 31.7);
   assert.equal(result.metrics.generation_kwh.quality, 'EXACT');
-  approx(result.metrics.consumption_kwh.value, 8);
+  // Balance 31.7-27.6+1.6=5.7: el agregado no hereda el PARTIAL intervalario.
+  approx(result.metrics.consumption_kwh.value, 5.7);
   assert.deepEqual(
     [result.metrics.consumption_kwh.valid_intervals, result.metrics.consumption_kwh.total_intervals,
       result.metrics.consumption_kwh.complete, result.metrics.consumption_kwh.quality],
-    [142, 158, false, 'PARTIAL']);
-  assert.equal(result.consumption_kwh, null);
+    [158, 158, true, 'EXACT']);
+  approx(result.consumption_kwh, 5.7);
   approx(result.metrics.self_consumption_kwh.value, 4.1);
   assert.equal(result.metrics.self_consumption_kwh.quality, 'EXACT');
   approx(result.self_consumption_kwh, 4.1);
@@ -307,12 +308,12 @@ test('metrics 5: export parcial + generation completa → self PARTIAL', () => {
     { value: 14, valid_intervals: 2, total_intervals: 3, complete: false, quality: 'PARTIAL' });
 });
 
-test('metrics 6: sin valores válidos → UNAVAILABLE con value null', () => {
+test('metrics 6: cons null con gen/imp/exp completos → balance EXACT', () => {
   const result = calculatePlantEconomics(
     [metricRow(0, { ...fullValues, consumption_kwh: null })], [tariff()], context);
   assert.deepEqual(result.metrics.consumption_kwh,
-    { value: null, valid_intervals: 0, total_intervals: 1, complete: false, quality: 'UNAVAILABLE' });
-  assert.equal(result.consumption_kwh, null);
+    { value: 12, valid_intervals: 1, total_intervals: 1, complete: true, quality: 'EXACT' });
+  assert.equal(result.consumption_kwh, 12);
 });
 
 test('metrics 7: tarifa faltante en 1 intervalo → savings PARTIAL observado', () => {
@@ -367,10 +368,10 @@ test('metrics 10: mixed currency → dinero UNAVAILABLE; energía intacta', () =
   assert.equal(result.currency, 'mixed');
 });
 
-test('metrics 11: escalares legacy conservan semántica strictSum', () => {
+test('metrics 11: escalares legacy (consumption por balance cuando aplica)', () => {
   const result = calculatePlantEconomics(huangDay(), [tariff({ purchase_energy_rate: 0.8 })], context);
   approx(result.generation_kwh, 31.7);
-  assert.equal(result.consumption_kwh, null);
+  approx(result.consumption_kwh, 5.7);
   approx(result.grid_import_kwh, 1.6);
   approx(result.grid_export_kwh, 27.6);
   approx(result.self_consumption_kwh, 4.1);
@@ -742,4 +743,101 @@ test('romao I: multi-día aísla solo el día Romao-like', () => {
   });
   assert.equal(result.coverage.meter_suspect, true);
   assert.deepEqual(result.coverage.suspect_days, ['2026-09-26']);
+});
+
+// --- Consumo agregado por balance (gen-imp-exp completos, no suspect) ---
+// Serie intervalaria intacta: el balance solo fija el agregado/métrica.
+function arturoMeterDay() {
+  // Arturo 27/09 con meter: 152 intervalos, cons válido en 135 (6.4).
+  const rows = [];
+  for (let i = 0; i < 152; i += 1) {
+    rows.push(dayRow('2026-09-27', i, {
+      generation_kwh: 36.7 / 152,
+      consumption_kwh: i < 135 ? 6.4 / 135 : null,
+      grid_import_kwh: 4.8 / 152,
+      grid_export_kwh: 31.9 / 152,
+    }));
+  }
+  return rows;
+}
+const meterCtx = { period: 'day', start: '2026-09-27', end: '2026-09-28', now: Date.UTC(2026, 8, 28, 12, 0) };
+
+test('balance A: Arturo con meter → consumption 9.6 EXACT, self 4.8 EXACT', () => {
+  const result = calculatePlantEconomics(arturoMeterDay(), [arturoTariff()], meterCtx);
+  assert.equal(result.coverage.meter_suspect, false);
+  approx(result.metrics.generation_kwh.value, 36.7);
+  approx(result.metrics.grid_import_kwh.value, 4.8);
+  approx(result.metrics.grid_export_kwh.value, 31.9);
+  assert.deepEqual(
+    [result.metrics.consumption_kwh.valid_intervals, result.metrics.consumption_kwh.total_intervals,
+      result.metrics.consumption_kwh.complete, result.metrics.consumption_kwh.quality],
+    [152, 152, true, 'EXACT']);
+  approx(result.metrics.consumption_kwh.value, 9.6);
+  approx(result.consumption_kwh, 9.6);
+  approx(result.metrics.self_consumption_kwh.value, 4.8);
+  assert.equal(result.metrics.self_consumption_kwh.quality, 'EXACT');
+  approx(result.self_consumption_kwh, 4.8);
+  // La serie conserva sus 17 nulls: el balance no rellena intervalos.
+  assert.equal(result.coverage.missing_energy_intervals, 17);
+  assert.equal(result.coverage.status, 'partial');
+});
+
+test('balance B: Arturo antiguo suspect NO calcula 36.7', () => {
+  const result = calculatePlantEconomics(arturoDay(), [arturoTariff()], afterDay);
+  assert.equal(result.coverage.meter_suspect, true);
+  assert.equal(result.metrics.consumption_kwh.quality, 'SUSPECT');
+  assert.equal(result.metrics.consumption_kwh.value, 0);
+  assert.notEqual(result.metrics.consumption_kwh.value, 36.7);
+  assert.equal(result.consumption_kwh, 0);
+});
+
+test('balance C: canal incompleto → PARTIAL observado, sin balance', () => {
+  const result = calculatePlantEconomics([
+    dayRow('2026-09-27', 0, { generation_kwh: 10, consumption_kwh: 12, grid_import_kwh: 5, grid_export_kwh: 3 }),
+    dayRow('2026-09-27', 1, { generation_kwh: 10, consumption_kwh: null, grid_import_kwh: null, grid_export_kwh: 3 }),
+  ], [tariff()], meterCtx);
+  assert.deepEqual(
+    [result.metrics.consumption_kwh.value, result.metrics.consumption_kwh.valid_intervals,
+      result.metrics.consumption_kwh.total_intervals, result.metrics.consumption_kwh.complete,
+      result.metrics.consumption_kwh.quality],
+    [12, 1, 2, false, 'PARTIAL']);
+  assert.equal(result.consumption_kwh, null);
+});
+
+test('balance D: balance materialmente negativo → null UNAVAILABLE sin clamp', () => {
+  const result = calculatePlantEconomics([
+    dayRow('2026-09-27', 0, { generation_kwh: 10, consumption_kwh: 5, grid_import_kwh: 1, grid_export_kwh: 12 }),
+  ], [tariff()], meterCtx);
+  assert.equal(result.metrics.consumption_kwh.value, null);
+  assert.equal(result.metrics.consumption_kwh.quality, 'UNAVAILABLE');
+  assert.equal(result.consumption_kwh, null);
+});
+
+test('balance E: negativo dentro de epsilon → 0 EXACT', () => {
+  const result = calculatePlantEconomics([
+    dayRow('2026-09-27', 0, { generation_kwh: 10, consumption_kwh: null, grid_import_kwh: 0, grid_export_kwh: 10.0000005 }),
+  ], [tariff()], meterCtx);
+  assert.deepEqual(result.metrics.consumption_kwh,
+    { value: 0, valid_intervals: 1, total_intervals: 1, complete: true, quality: 'EXACT' });
+  assert.equal(result.consumption_kwh, 0);
+});
+
+test('balance F: savings/export/benefit no cambian de fórmula', () => {
+  const result = calculatePlantEconomics(arturoMeterDay(), [tariff({
+    effective_from: '2026-09-27', purchase_energy_rate: 0.8,
+    export_energy_rate: 0.5, export_compensation_type: 'monetary',
+  })], meterCtx);
+  approx(result.metrics.self_consumption_savings.value, 4.8 * 0.8);
+  approx(result.self_consumption_savings, 4.8 * 0.8);
+  approx(result.metrics.export_value.value, 31.9 * 0.5);
+  approx(result.export_value, 31.9 * 0.5);
+  approx(result.metrics.estimated_economic_benefit.value, 4.8 * 0.8 + 31.9 * 0.5);
+  approx(result.estimated_economic_benefit, 4.8 * 0.8 + 31.9 * 0.5);
+});
+
+test('balance G: calculatePlantEconomics no escribe energy_intervals', () => {
+  const rows = arturoMeterDay();
+  const before = JSON.parse(JSON.stringify(rows));
+  calculatePlantEconomics(rows, [tariff()], meterCtx);
+  assert.deepEqual(rows, before);
 });

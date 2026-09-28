@@ -167,6 +167,19 @@ export function calculatePlantEconomics(rows, tariffs, { period, start, end, now
   const aggregateSelf = generationSum - exportSum;
   const aggregateCoherent = generationComplete && exportComplete && aggregateSelf >= -FP_DUST_KWH;
   const correctedSelf = aggregateCoherent ? Math.max(aggregateSelf, 0) : null;
+  // Consumo agregado por balance: con generation/import/export completos y
+  // medición confiable (!meterSuspect), el total es gen-exp+imp aunque la
+  // serie intervalaria quede PARTIAL (desfase MIN/meter: Arturo 6.4 + 17
+  // nulls → 9.6). Solo el agregado; la serie observacional no se toca.
+  // Balance materialmente negativo: null + UNAVAILABLE, nunca 0 fabricado.
+  const importComplete = intervalResults.length > 0
+    && intervalResults.every(row => row.grid_import_kwh !== null);
+  const importSum = intervalResults.reduce((sum, row) => sum + (row.grid_import_kwh ?? 0), 0);
+  const balanceApplies = generationComplete && importComplete && exportComplete && !meterSuspect;
+  const aggregateBalance = generationSum - exportSum + importSum;
+  const balanceCoherent = balanceApplies && aggregateBalance >= -FP_DUST_KWH;
+  const balancedConsumption = balanceApplies && balanceCoherent
+    ? Math.max(aggregateBalance, 0) : null;
   const rawInconsistentIntervals = intervalResults.filter(row => row.inconsistent).length;
   const inconsistentIntervals = aggregateCoherent ? 0 : rawInconsistentIntervals;
   // Ahorro por tramo tarifario: cada grupo con gen/exp completos aporta
@@ -220,6 +233,24 @@ export function calculatePlantEconomics(rows, tariffs, { period, start, end, now
   // válidos con el clamp conservador existente (sin estimar faltantes).
   const energyMetrics = Object.fromEntries(energyFields.map(field => [field, observedMetric(
     intervalResults.map(row => row[field]))]));
+  // Consumo por balance cuando aplica: EXACT completo; balance incoherente:
+  // UNAVAILABLE. El resto conserva la métrica observada (PARTIAL honesto).
+  const consumptionMetricBase = !balanceApplies ? energyMetrics.consumption_kwh
+    : (balanceCoherent
+      ? {
+        value: balancedConsumption,
+        valid_intervals: intervalResults.length,
+        total_intervals: intervalResults.length,
+        complete: true,
+        quality: 'EXACT',
+      }
+      : {
+        value: null,
+        valid_intervals: 0,
+        total_intervals: intervalResults.length,
+        complete: false,
+        quality: 'UNAVAILABLE',
+      });
   const pairSelf = intervalResults.map(row => row.self_consumption_kwh);
   let selfConsumptionMetric;
   if (generationComplete && exportComplete) {
@@ -296,7 +327,7 @@ export function calculatePlantEconomics(rows, tariffs, { period, start, end, now
   };
   const metrics = {
     ...energyMetrics,
-    consumption_kwh: suspectMetric(energyMetrics.consumption_kwh, { nullable: false, monetary: false }),
+    consumption_kwh: suspectMetric(consumptionMetricBase, { nullable: false, monetary: false }),
     grid_import_kwh: suspectMetric(energyMetrics.grid_import_kwh, { nullable: false, monetary: false }),
     grid_export_kwh: suspectMetric(energyMetrics.grid_export_kwh, { nullable: false, monetary: false }),
     self_consumption_kwh: suspectMetric(selfConsumptionMetric, { nullable: true, monetary: false }),
@@ -305,6 +336,9 @@ export function calculatePlantEconomics(rows, tariffs, { period, start, end, now
       : suspectMetric(exportValueMetric, { nullable: true, monetary: true }),
     estimated_economic_benefit: suspectMetric(benefitMetric, { nullable: true, monetary: true }),
   };
+  // Legacy consumption refleja el balance cuando aplica (nunca el strict
+  // parcial); si no aplica, se preserva strictSum.
+  const consumptionTotal = balanceApplies ? balancedConsumption : total('consumption_kwh');
   // Legacy self con cobertura completa refleja el agregado corregido (nunca
   // el clamp por intervalo); con parcial se preserva strictSum; agregado
   // incoherente (export > generation) es null, no 0 fabricado.
@@ -321,7 +355,7 @@ export function calculatePlantEconomics(rows, tariffs, { period, start, end, now
     start,
     end,
     generation_kwh: total('generation_kwh'),
-    consumption_kwh: total('consumption_kwh'),
+    consumption_kwh: consumptionTotal,
     self_consumption_kwh: selfConsumptionTotal,
     grid_import_kwh: total('grid_import_kwh'),
     grid_export_kwh: total('grid_export_kwh'),
