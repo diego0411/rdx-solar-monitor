@@ -384,10 +384,149 @@ test('metrics 11: escalares legacy conservan semántica strictSum', () => {
 test('metrics 12: coverage legacy intacto', () => {
   const result = calculatePlantEconomics(huangDay(), [tariff()], context);
   assert.deepEqual(Object.keys(result.coverage).sort(), [
-    'complete', 'inconsistent_intervals', 'intervals', 'missing_energy_intervals',
-    'missing_tariff_intervals', 'mixed_currency', 'note', 'source_partial_intervals', 'status',
+    'complete', 'inconsistent_intervals', 'intervals', 'meter_suspect', 'missing_energy_intervals',
+    'missing_tariff_intervals', 'mixed_currency', 'note', 'period_in_progress',
+    'source_partial_intervals', 'status', 'suspect_days',
   ]);
   assert.equal(result.coverage.complete, false);
   assert.equal(result.coverage.intervals, 158);
   assert.equal(result.coverage.status, 'partial');
+});
+
+// --- Período en curso + medición sospechosa (solo histórico) ---
+function dayRow(date, index, values) {
+  const hour = String(6 + Math.floor(index / 60)).padStart(2, '0');
+  const minute = String(index % 60).padStart(2, '0');
+  return row(date, { interval_start: `${date}T${hour}:${minute}:00.000Z`, ...values });
+}
+
+const arturoValues = {
+  generation_kwh: 35.7 / 152, consumption_kwh: 0, grid_import_kwh: 0, grid_export_kwh: 0,
+};
+function arturoDay() {
+  const rows = [];
+  for (let i = 0; i < 152; i += 1) rows.push(dayRow('2026-09-26', i, arturoValues));
+  return rows;
+}
+const arturoTariff = () => tariff({
+  effective_from: '2026-09-26', purchase_energy_rate: 1.068,
+  export_compensation_type: 'energy_credit', export_energy_rate: null,
+});
+const dayContext = { period: 'day', start: '2026-09-26', end: '2026-09-27' };
+// 2026-09-28 12:00Z = 08:00 La Paz: "hoy" fijado sin flaky.
+const afterDay = { ...dayContext, now: Date.UTC(2026, 8, 28, 12, 0) };
+
+test('suspect A: Arturo 26/09 → meter_suspect + suspect_days, derivados SUSPECT', () => {
+  const result = calculatePlantEconomics(arturoDay(), [arturoTariff()], afterDay);
+  assert.equal(result.coverage.period_in_progress, false);
+  assert.equal(result.coverage.meter_suspect, true);
+  assert.deepEqual(result.coverage.suspect_days, ['2026-09-26']);
+  approx(result.metrics.generation_kwh.value, 35.7);
+  assert.equal(result.metrics.generation_kwh.quality, 'EXACT');
+  for (const key of ['consumption_kwh', 'grid_import_kwh', 'grid_export_kwh']) {
+    assert.equal(result.metrics[key].value, 0);
+    assert.equal(result.metrics[key].quality, 'SUSPECT');
+  }
+  for (const key of ['self_consumption_kwh', 'self_consumption_savings',
+    'estimated_economic_benefit']) {
+    assert.equal(result.metrics[key].value, null);
+    assert.equal(result.metrics[key].quality, 'SUSPECT');
+  }
+  // Legacy intacto: el ahorro "Bs 38,13" sigue en el escalar, pero metrics lo invalida.
+  approx(result.generation_kwh, 35.7);
+  assert.equal(result.consumption_kwh, 0);
+  approx(result.self_consumption_kwh, 35.7);
+  approx(result.self_consumption_savings, 38.1276);
+});
+
+test('suspect monetary: export_value también SUSPECT-null', () => {
+  const result = calculatePlantEconomics(arturoDay(), [tariff()], afterDay);
+  assert.equal(result.metrics.export_value.value, null);
+  assert.equal(result.metrics.export_value.quality, 'SUSPECT');
+  assert.equal(result.metrics.estimated_economic_benefit.quality, 'SUSPECT');
+});
+
+test('suspect none: export_value 0 por regla se preserva EXACT', () => {
+  const result = calculatePlantEconomics(arturoDay(),
+    [tariff({ export_compensation_type: 'none', export_energy_rate: null })], afterDay);
+  assert.equal(result.coverage.meter_suspect, true);
+  assert.deepEqual(result.metrics.export_value,
+    { value: 0, valid_intervals: 152, total_intervals: 152, complete: true, quality: 'EXACT' });
+  assert.equal(result.metrics.self_consumption_savings.quality, 'SUSPECT');
+  assert.equal(result.metrics.self_consumption_savings.value, null);
+});
+
+test('suspect B/C: zero-export válido con consumo real no es sospechoso', () => {
+  const validZeroExport = calculatePlantEconomics([
+    dayRow('2026-09-26', 0, fullValues),
+    dayRow('2026-09-26', 1, { ...fullValues, grid_export_kwh: 0 }),
+  ], [tariff()], afterDay);
+  assert.equal(validZeroExport.coverage.meter_suspect, false);
+  assert.deepEqual(validZeroExport.coverage.suspect_days, []);
+  const selfOnly = calculatePlantEconomics([
+    dayRow('2026-09-26', 0, { ...fullValues, grid_import_kwh: 0, grid_export_kwh: 0 }),
+  ], [tariff()], afterDay);
+  assert.equal(selfOnly.coverage.meter_suspect, false);
+});
+
+test('suspect D/E: día sin producción o con métrica incompleta no es sospechoso', () => {
+  const idle = calculatePlantEconomics([
+    dayRow('2026-09-26', 0, {
+      generation_kwh: 0, consumption_kwh: 0, grid_import_kwh: 0, grid_export_kwh: 0,
+    }),
+  ], [tariff()], afterDay);
+  assert.equal(idle.coverage.meter_suspect, false);
+  const partial = calculatePlantEconomics([
+    dayRow('2026-09-26', 0, { ...arturoValues, consumption_kwh: null }),
+  ], [tariff()], afterDay);
+  assert.equal(partial.coverage.meter_suspect, false);
+});
+
+test('suspect F: Huang no es sospechoso y su self no se modifica', () => {
+  const result = calculatePlantEconomics(huangDay(), [tariff()], {
+    period: 'month', start: '2026-09-01', end: '2026-10-01', now: Date.UTC(2026, 9, 5, 12, 0),
+  });
+  assert.equal(result.coverage.meter_suspect, false);
+  assert.equal(result.metrics.self_consumption_kwh.quality, 'EXACT');
+  approx(result.metrics.self_consumption_kwh.value, 4.1);
+});
+
+test('progreso G/H: hoy true, ayer false', () => {
+  const todayCtx = { period: 'day', start: '2026-09-26', end: '2026-09-27', now: Date.UTC(2026, 8, 26, 15, 0) };
+  const today = calculatePlantEconomics(
+    [dayRow('2026-09-26', 0, fullValues), dayRow('2026-09-26', 1, { ...fullValues, consumption_kwh: null })],
+    [tariff()], todayCtx);
+  assert.equal(today.coverage.period_in_progress, true);
+  assert.equal(today.coverage.meter_suspect, false);
+  const yesterday = calculatePlantEconomics([dayRow('2026-09-26', 0, fullValues)], [tariff()], {
+    period: 'day', start: '2026-09-26', end: '2026-09-27', now: Date.UTC(2026, 8, 27, 11, 0),
+  });
+  assert.equal(yesterday.coverage.period_in_progress, false);
+});
+
+test('progreso I/J: semana actual true, histórica false', () => {
+  const current = calculatePlantEconomics([dayRow('2026-09-23', 0, fullValues)], [tariff()], {
+    period: 'week', start: '2026-09-21', end: '2026-09-28', now: Date.UTC(2026, 8, 23, 12, 0),
+  });
+  assert.equal(current.coverage.period_in_progress, true);
+  const past = calculatePlantEconomics([dayRow('2026-09-15', 0, fullValues)], [tariff()], {
+    period: 'week', start: '2026-09-14', end: '2026-09-21', now: Date.UTC(2026, 8, 28, 12, 0),
+  });
+  assert.equal(past.coverage.period_in_progress, false);
+});
+
+test('suspect K: multi-día aísla el día sospechoso sin ocultarlo', () => {
+  const result = calculatePlantEconomics([
+    dayRow('2026-09-26', 0, arturoValues),
+    dayRow('2026-09-26', 1, arturoValues),
+    dayRow('2026-09-27', 0, fullValues),
+  ], [tariff()], {
+    period: 'week', start: '2026-09-21', end: '2026-09-28', now: Date.UTC(2026, 8, 28, 12, 0),
+  });
+  assert.equal(result.coverage.meter_suspect, true);
+  assert.deepEqual(result.coverage.suspect_days, ['2026-09-26']);
+  assert.equal(result.metrics.consumption_kwh.quality, 'SUSPECT');
+  assert.equal(result.metrics.consumption_kwh.value, 12);
+  assert.equal(result.metrics.self_consumption_kwh.value, null);
+  assert.equal(result.metrics.self_consumption_kwh.quality, 'SUSPECT');
 });

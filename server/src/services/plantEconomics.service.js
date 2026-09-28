@@ -55,7 +55,7 @@ function combineQuality(...qualities) {
   return 'EXACT';
 }
 
-export function calculatePlantEconomics(rows, tariffs, { period, start, end }) {
+export function calculatePlantEconomics(rows, tariffs, { period, start, end, now = Date.now() }) {
   const intervalResults = rows.map(row => {
     const values = Object.fromEntries(energyFields.map(field => [field, numeric(row[field])]));
     const localDate = localDateKey(row.interval_start, row.timezone);
@@ -107,8 +107,42 @@ export function calculatePlantEconomics(rows, tariffs, { period, start, end }) {
       tariff,
       inconsistent,
       source_partial: row.raw_data?.coverage === 'partial',
+      local_date: localDate,
     };
   });
+
+  // Período en curso: el rango contiene el día local actual (misma
+  // semántica de calendario/timezone que el resto del servicio).
+  // Sin muestras, sin estado del inversor, sin ocaso: solo calendario.
+  const rowTimezone = rows.find(row => row.timezone)?.timezone ?? 'UTC';
+  const todayLocal = localDateKey(new Date(now), rowTimezone) ?? '';
+  const periodInProgress = todayLocal !== '' && start <= todayLocal && todayLocal < end;
+
+  // Medición red/carga sospechosa: evaluación conservadora POR DÍA LOCAL
+  // sobre histórico almacenado. Solo si generación completa y >0 con los
+  // tres contadores de red/carga completos y exactamente en 0.
+  // Nunca por métricas incompletas, generación 0 o estado del inversor.
+  const byLocalDay = new Map();
+  for (const row of intervalResults) {
+    if (row.local_date === null) continue;
+    if (!byLocalDay.has(row.local_date)) byLocalDay.set(row.local_date, []);
+    byLocalDay.get(row.local_date).push(row);
+  }
+  const suspectDay = group => {
+    if (!group.length) return false;
+    const complete = field => group.every(row => row[field] !== null);
+    const sum = field => group.reduce((total, row) => total + row[field], 0);
+    return complete('generation_kwh') && sum('generation_kwh') > 0
+      && complete('consumption_kwh') && sum('consumption_kwh') === 0
+      && complete('grid_import_kwh') && sum('grid_import_kwh') === 0
+      && complete('grid_export_kwh') && sum('grid_export_kwh') === 0;
+  };
+  const suspectDays = [...byLocalDay.keys()].filter(day => suspectDay(byLocalDay.get(day))).sort();
+  const meterSuspect = suspectDays.length > 0;
+  // Compensación 'none' en todo el período: export_value es 0 por regla,
+  // independiente de la medición, y no se marca SUSPECT.
+  const allNoneCompensation = intervalResults.length > 0
+    && intervalResults.every(row => row.tariff?.export_compensation_type === 'none');
 
   const total = field => strictSum(intervalResults.map(row => row[field]));
   const missingEnergyIntervals = intervalResults.filter(row => energyFields
@@ -158,12 +192,25 @@ export function calculatePlantEconomics(rows, tariffs, { period, start, end }) {
       ...benefitObserved,
       quality: combineQuality(savingsObserved.quality, exportObserved.quality),
     };
+  // Medición sospechosa: los ceros de red/carga no son confiables y ningún
+  // derivado (autoconsumo, ahorro, exportación, beneficio) puede calcularse
+  // con ellos. Generación intacta. Única excepción: moneda mixta ya deja el
+  // dinero en UNAVAILABLE (no agregable) y se conserva.
+  // Sin convertir ceros en NULL: energy_intervals no se toca.
+  const suspectMetric = (observed, { nullable, monetary }) => {
+    if (!meterSuspect || (mixedCurrency && monetary)) return observed;
+    return { ...observed, value: nullable ? null : observed.value, quality: 'SUSPECT' };
+  };
   const metrics = {
     ...energyMetrics,
-    self_consumption_kwh: selfConsumptionMetric,
-    self_consumption_savings: savingsMetric,
-    export_value: exportValueMetric,
-    estimated_economic_benefit: benefitMetric,
+    consumption_kwh: suspectMetric(energyMetrics.consumption_kwh, { nullable: false, monetary: false }),
+    grid_import_kwh: suspectMetric(energyMetrics.grid_import_kwh, { nullable: false, monetary: false }),
+    grid_export_kwh: suspectMetric(energyMetrics.grid_export_kwh, { nullable: false, monetary: false }),
+    self_consumption_kwh: suspectMetric(selfConsumptionMetric, { nullable: true, monetary: false }),
+    self_consumption_savings: suspectMetric(savingsMetric, { nullable: true, monetary: true }),
+    export_value: allNoneCompensation ? exportValueMetric
+      : suspectMetric(exportValueMetric, { nullable: true, monetary: true }),
+    estimated_economic_benefit: suspectMetric(benefitMetric, { nullable: true, monetary: true }),
   };
   const status = !rows.length ? 'none'
     : missingEnergyIntervals || missingTariffIntervals || inconsistentIntervals
@@ -202,6 +249,9 @@ export function calculatePlantEconomics(rows, tariffs, { period, start, end }) {
       inconsistent_intervals: inconsistentIntervals,
       source_partial_intervals: sourcePartialIntervals,
       mixed_currency: mixedCurrency,
+      period_in_progress: periodInProgress,
+      meter_suspect: meterSuspect,
+      suspect_days: suspectDays,
       note: rows.length
         ? 'La disponibilidad de intervalos no demuestra por sí sola cobertura total del periodo.'
         : 'No existen intervalos energéticos para el periodo.',

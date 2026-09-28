@@ -136,3 +136,114 @@ test('6. periodos Día/Semana/Mes/Año intactos con metrics', async () => {
   assert.ok(last.url.includes('period=year'), last.url);
   assert.deepEqual(view.periods.map(item => item.key), ['day', 'week', 'month', 'year']);
 });
+
+const suspectMetric = (value, valid, total, quality) => ({
+  value, valid_intervals: valid, total_intervals: total,
+  complete: valid === total && total > 0, quality,
+});
+
+function arturoSummary() {
+  return {
+    generation_kwh: 35.7,
+    consumption_kwh: 0,
+    self_consumption_kwh: 35.7,
+    grid_import_kwh: 0,
+    grid_export_kwh: 0,
+    self_consumption_savings: 38.1276,
+    estimated_economic_benefit: null,
+    purchase_energy_rate: 1.068,
+    currency: 'BOB',
+    compensation_type: 'energy_credit',
+    export_credit_kwh: 0,
+    coverage: {
+      status: 'available', meter_suspect: true, suspect_days: ['2026-09-26'],
+      inconsistent_intervals: 0, missing_tariff_intervals: 0, period_in_progress: false,
+    },
+    metrics: {
+      generation_kwh: suspectMetric(35.7, 152, 152, 'EXACT'),
+      consumption_kwh: suspectMetric(0, 152, 152, 'SUSPECT'),
+      self_consumption_kwh: suspectMetric(null, 152, 152, 'SUSPECT'),
+      grid_import_kwh: suspectMetric(0, 152, 152, 'SUSPECT'),
+      grid_export_kwh: suspectMetric(0, 152, 152, 'SUSPECT'),
+      self_consumption_savings: suspectMetric(null, 152, 152, 'SUSPECT'),
+      export_value: suspectMetric(null, 152, 152, 'SUSPECT'),
+      estimated_economic_benefit: suspectMetric(null, 0, 0, 'SUSPECT'),
+    },
+  };
+}
+
+test('7. Arturo: warning prioritario + ceros con marca + dinero suprimido', () => {
+  const { view } = setupEconomics();
+  view.summary.value = arturoSummary();
+  assert.equal(view.coverageLabel.value,
+    'Medición de red/carga no confirmada. Verifique el medidor/CT y su configuración.');
+  assert.equal(view.coverageClass.value, 'coverage-suspect');
+  assert.equal(view.metricDisplay.value.generation_kwh.text, view.energy(35.7));
+  assert.equal(view.metricDisplay.value.generation_kwh.suspect, false);
+  for (const field of ['consumption_kwh', 'grid_import_kwh', 'grid_export_kwh']) {
+    assert.equal(view.metricDisplay.value[field].text, view.energy(0));
+    assert.equal(view.metricDisplay.value[field].suspect, true);
+  }
+  assert.equal(view.metricDisplay.value.self_consumption_kwh.text, '—');
+  assert.equal(view.savingsDisplay.value, '—');
+  assert.equal(view.benefitDisplay.value, '—');
+  assert.equal(view.compensationDisplay.value, '—');
+  assert.equal(view.creditDisplay.value, '—');
+  assert.equal(view.creditValueDisplay.value, 'No disponible');
+  assert.equal(view.rate(view.summary.value.purchase_energy_rate, 'BOB'), 'Bs 1,068/kWh');
+});
+
+test('8. prioridad: suspect vence a inconsistencia, tarifa, parcial y curso', () => {
+  const { view } = setupEconomics();
+  const summary = arturoSummary();
+  summary.coverage.inconsistent_intervals = 5;
+  summary.coverage.missing_tariff_intervals = 2;
+  summary.coverage.status = 'partial';
+  summary.coverage.period_in_progress = true;
+  view.summary.value = summary;
+  assert.ok(view.coverageLabel.value.includes('no confirmada'));
+  const plain = { ...summary, coverage: { ...summary.coverage, meter_suspect: false } };
+  view.summary.value = plain;
+  assert.equal(view.coverageLabel.value, 'Datos inconsistentes: autoconsumo no calculable');
+});
+
+test('9. período en curso muestra mensaje informativo sin standby', () => {
+  const { view } = setupEconomics();
+  view.summary.value = {
+    generation_kwh: 5, consumption_kwh: 6, self_consumption_kwh: 4,
+    grid_import_kwh: 2, grid_export_kwh: 1,
+    coverage: { status: 'available', period_in_progress: true },
+    metrics: {
+      generation_kwh: metric(5, 10, 10, 'EXACT'),
+      consumption_kwh: metric(6, 10, 10, 'EXACT'),
+      self_consumption_kwh: metric(4, 10, 10, 'EXACT'),
+      grid_import_kwh: metric(2, 10, 10, 'EXACT'),
+      grid_export_kwh: metric(1, 10, 10, 'EXACT'),
+    },
+  };
+  assert.equal(view.coverageLabel.value,
+    'Período en curso. Los valores corresponden a los datos registrados hasta el momento.');
+  assert.ok(!view.coverageLabel.value.toLowerCase().includes('standby'));
+});
+
+test('10. fecha histórica sana no muestra banner', () => {
+  const { view } = setupEconomics();
+  view.summary.value = {
+    generation_kwh: 10, consumption_kwh: 12, self_consumption_kwh: 7,
+    grid_import_kwh: 5, grid_export_kwh: 3, self_consumption_savings: 5.6,
+    estimated_economic_benefit: 7.1,
+    coverage: { status: 'available', period_in_progress: false },
+    metrics: {
+      generation_kwh: metric(10, 3, 3, 'EXACT'),
+      consumption_kwh: metric(12, 3, 3, 'EXACT'),
+      self_consumption_kwh: metric(7, 3, 3, 'EXACT'),
+      grid_import_kwh: metric(5, 3, 3, 'EXACT'),
+      grid_export_kwh: metric(3, 3, 3, 'EXACT'),
+      self_consumption_savings: metric(5.6, 3, 3, 'EXACT'),
+      estimated_economic_benefit: metric(7.1, 3, 3, 'EXACT'),
+    },
+  };
+  assert.equal(view.coverageLabel.value, '');
+  assert.equal(view.savingsDisplay.value, view.money(5.6));
+  assert.equal(view.benefitDisplay.value, view.money(7.1));
+});

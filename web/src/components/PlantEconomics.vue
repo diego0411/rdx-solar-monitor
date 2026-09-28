@@ -168,22 +168,52 @@ const metricDisplay = computed(() => Object.fromEntries(
     .map(field => {
       const entry = summary.value?.metrics?.[field] ?? null;
       const legacy = summary.value?.[field] ?? null;
-      if (!entry) return [field, { text: energy(legacy), coverage: '' }];
-      if (entry.quality === 'PARTIAL') {
-        return [field, { text: energy(entry.value), coverage: metricCoverage(entry) }];
+      if (!entry) return [field, { text: energy(legacy), coverage: '', suspect: false }];
+      if (entry.quality === 'SUSPECT') {
+        return [field, field === 'self_consumption_kwh'
+          ? { text: '—', coverage: '', suspect: true }
+          : { text: energy(entry.value), coverage: '', suspect: true }];
       }
-      if (entry.quality === 'UNAVAILABLE') return [field, { text: '—', coverage: '' }];
-      return [field, { text: energy(legacy), coverage: '' }];
+      if (entry.quality === 'PARTIAL') {
+        return [field, { text: energy(entry.value), coverage: metricCoverage(entry), suspect: false }];
+      }
+      if (entry.quality === 'UNAVAILABLE') return [field, { text: '—', coverage: '', suspect: false }];
+      return [field, { text: energy(legacy), coverage: '', suspect: false }];
     }),
 ));
+
+// Dinero nunca confiable con medición sospechosa: se suprime aunque el
+// escalar legacy traiga valor. La tarifa (rate) sigue visible.
+function suspectMoney(field) {
+  return summary.value?.metrics?.[field]?.quality === 'SUSPECT';
+}
+const savingsDisplay = computed(() => (suspectMoney('self_consumption_savings')
+  ? '—' : money(summary.value?.self_consumption_savings)));
+const benefitDisplay = computed(() => (suspectMoney('estimated_economic_benefit')
+  ? '—' : money(summary.value?.estimated_economic_benefit)));
+const compensationDisplay = computed(() => (suspectMoney('export_value')
+  ? '—' : money(compensation.value)));
+const creditDisplay = computed(() => (suspectMoney('export_value')
+  ? '—' : energy(summary.value?.export_credit_kwh)));
+const creditValueDisplay = computed(() => {
+  if (suspectMoney('export_value')) return 'No disponible';
+  const value = creditValue.value;
+  return value === null || value === undefined ? 'No disponible' : money(value);
+});
 
 const coverageLabel = computed(() => {
   const coverage = summary.value?.coverage;
   if (!coverage || coverage.status === 'none') return 'Sin datos energéticos para el periodo';
+  if (coverage.meter_suspect) return 'Medición de red/carga no confirmada. Verifique el medidor/CT y su configuración.';
   if (coverage.inconsistent_intervals) return 'Datos inconsistentes: autoconsumo no calculable';
   if (coverage.missing_tariff_intervals) return 'Falta una tarifa aplicable a parte o todo el periodo';
   if (coverage.status === 'partial') return 'Cobertura parcial';
-  return 'Datos disponibles; cobertura total no confirmada';
+  if (coverage.period_in_progress) return 'Período en curso. Los valores corresponden a los datos registrados hasta el momento.';
+  return '';
+});
+const coverageClass = computed(() => {
+  if (summary.value?.coverage?.meter_suspect) return 'coverage-suspect';
+  return `coverage-${summary.value?.coverage?.status}`;
 });
 
 const showCredit = computed(() => summary.value
@@ -378,44 +408,44 @@ onBeforeUnmount(() => {
     <p v-if="loading" class="economics-state" role="status">Calculando resumen económico…</p>
     <p v-else-if="error" class="economics-state error" role="alert">{{ error }}</p>
     <template v-else-if="summary">
-      <p class="coverage-note" :class="`coverage-${summary.coverage?.status}`">{{ coverageLabel }}</p>
+      <p v-if="coverageLabel" class="coverage-note" :class="coverageClass">{{ coverageLabel }}</p>
       <div class="economics-columns">
         <div>
           <h3>Resumen energético</h3>
           <dl class="economics-list">
-            <div><dt>Generación</dt><dd>{{ metricDisplay.generation_kwh.text }}<span v-if="metricDisplay.generation_kwh.coverage" class="metric-coverage">{{ metricDisplay.generation_kwh.coverage }}</span></dd></div>
-            <div><dt>Consumo observado</dt><dd>{{ metricDisplay.consumption_kwh.text }}<span v-if="metricDisplay.consumption_kwh.coverage" class="metric-coverage">{{ metricDisplay.consumption_kwh.coverage }}</span></dd></div>
-            <div><dt>Autoconsumo</dt><dd>{{ metricDisplay.self_consumption_kwh.text }}<span v-if="metricDisplay.self_consumption_kwh.coverage" class="metric-coverage">{{ metricDisplay.self_consumption_kwh.coverage }}</span></dd></div>
-            <div><dt>Importación</dt><dd>{{ metricDisplay.grid_import_kwh.text }}<span v-if="metricDisplay.grid_import_kwh.coverage" class="metric-coverage">{{ metricDisplay.grid_import_kwh.coverage }}</span></dd></div>
-            <div><dt>Inyección a red</dt><dd>{{ metricDisplay.grid_export_kwh.text }}<span v-if="metricDisplay.grid_export_kwh.coverage" class="metric-coverage">{{ metricDisplay.grid_export_kwh.coverage }}</span></dd></div>
+            <div><dt>Generación</dt><dd>{{ metricDisplay.generation_kwh.text }}<span v-if="metricDisplay.generation_kwh.coverage" class="metric-coverage">{{ metricDisplay.generation_kwh.coverage }}</span><span v-if="metricDisplay.generation_kwh.suspect" class="metric-suspect">Medición no confirmada</span></dd></div>
+            <div><dt>Consumo observado</dt><dd>{{ metricDisplay.consumption_kwh.text }}<span v-if="metricDisplay.consumption_kwh.coverage" class="metric-coverage">{{ metricDisplay.consumption_kwh.coverage }}</span><span v-if="metricDisplay.consumption_kwh.suspect" class="metric-suspect">Medición no confirmada</span></dd></div>
+            <div><dt>Autoconsumo</dt><dd>{{ metricDisplay.self_consumption_kwh.text }}<span v-if="metricDisplay.self_consumption_kwh.coverage" class="metric-coverage">{{ metricDisplay.self_consumption_kwh.coverage }}</span><span v-if="metricDisplay.self_consumption_kwh.suspect" class="metric-suspect">Medición no confirmada</span></dd></div>
+            <div><dt>Importación</dt><dd>{{ metricDisplay.grid_import_kwh.text }}<span v-if="metricDisplay.grid_import_kwh.coverage" class="metric-coverage">{{ metricDisplay.grid_import_kwh.coverage }}</span><span v-if="metricDisplay.grid_import_kwh.suspect" class="metric-suspect">Medición no confirmada</span></dd></div>
+            <div><dt>Inyección a red</dt><dd>{{ metricDisplay.grid_export_kwh.text }}<span v-if="metricDisplay.grid_export_kwh.coverage" class="metric-coverage">{{ metricDisplay.grid_export_kwh.coverage }}</span><span v-if="metricDisplay.grid_export_kwh.suspect" class="metric-suspect">Medición no confirmada</span></dd></div>
           </dl>
         </div>
         <div>
           <h3>Ahorro por autoconsumo</h3>
           <dl class="economics-list">
-            <div><dt>Autoconsumo</dt><dd>{{ energy(summary.self_consumption_kwh) }}</dd></div>
+            <div><dt>Autoconsumo</dt><dd>{{ metricDisplay.self_consumption_kwh.text }}</dd></div>
             <div><dt>Tarifa compra</dt><dd>{{ rate(summary.purchase_energy_rate, summary.currency) }}</dd></div>
-            <div><dt>Ahorro</dt><dd>{{ money(summary.self_consumption_savings) }}</dd></div>
+            <div><dt>Ahorro</dt><dd>{{ savingsDisplay }}</dd></div>
           </dl>
           <h3>Compensación por inyección</h3>
           <dl class="economics-list">
-            <div><dt>Inyección</dt><dd>{{ energy(summary.grid_export_kwh) }}</dd></div>
+            <div><dt>Inyección</dt><dd>{{ metricDisplay.grid_export_kwh.text }}<span v-if="metricDisplay.grid_export_kwh.suspect" class="metric-suspect">Medición no confirmada</span></dd></div>
             <div><dt>Modalidad</dt><dd>{{ compensationNames[summary.compensation_type] ?? 'Sin tarifa configurada' }}</dd></div>
             <div v-if="summary.compensation_type === 'monetary'">
               <dt>Tarifa compensación</dt><dd>{{ rate(summary.export_energy_rate, summary.currency) }}</dd>
             </div>
             <div v-if="summary.compensation_type === 'monetary'">
-              <dt>Compensación</dt><dd>{{ money(compensation) }}</dd>
+              <dt>Compensación</dt><dd>{{ compensationDisplay }}</dd>
             </div>
-            <div v-if="showCredit"><dt>Crédito generado</dt><dd>{{ energy(summary.export_credit_kwh) }}</dd></div>
+            <div v-if="showCredit"><dt>Crédito generado</dt><dd>{{ creditDisplay }}</dd></div>
             <div v-if="showCredit">
               <dt>Valor económico estimado</dt>
-              <dd>{{ creditValue === null || creditValue === undefined ? 'No disponible' : money(creditValue) }}</dd>
+              <dd>{{ creditValueDisplay }}</dd>
             </div>
           </dl>
           <h3>Beneficio económico total</h3>
           <dl class="economics-list">
-            <div class="benefit"><dt>Total</dt><dd>{{ money(summary.estimated_economic_benefit) }}</dd></div>
+            <div class="benefit"><dt>Total</dt><dd>{{ benefitDisplay }}</dd></div>
           </dl>
           <p class="compensation-label">Ahorro por autoconsumo + compensación o valor estimado de inyección.</p>
         </div>
@@ -509,7 +539,7 @@ h3 { font-size: 13px; }
 .segmented button.active { background: var(--rdx-primary); color: white; }
 .economics-period input { height: 36px; padding: 0 9px; border: 1px solid var(--rdx-border); border-radius: var(--rdx-radius-sm); background: var(--rdx-surface); color: var(--rdx-text); font: inherit; font-size: 12px; }
 .coverage-note { margin: 12px 0; padding: 9px 11px; border-radius: var(--rdx-radius-sm); background: var(--rdx-success-soft); color: var(--rdx-success); font-size: 11px; font-weight: 600; }
-.coverage-partial, .coverage-none { background: var(--rdx-warning-soft); color: var(--rdx-warning); }
+.coverage-partial, .coverage-none, .coverage-suspect { background: var(--rdx-warning-soft); color: var(--rdx-warning); }
 .economics-columns { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
 .economics-columns > div { padding: 14px; border: 1px solid var(--rdx-border); border-radius: var(--rdx-radius-sm); background: var(--rdx-surface); }
 .economics-list { margin: 8px 0 0; }
@@ -518,6 +548,7 @@ h3 { font-size: 13px; }
 .economics-list dt { color: var(--rdx-text-muted); font-size: 11px; }
 .economics-list dd { margin: 0; color: var(--rdx-text-strong); font-size: 12px; font-weight: 700; text-align: right; font-variant-numeric: tabular-nums; }
 .metric-coverage { display: block; margin-top: 2px; color: var(--rdx-warning); font-size: 10px; font-weight: 600; }
+.metric-suspect { display: block; margin-top: 2px; color: var(--rdx-warning); font-size: 10px; font-weight: 600; }
 .economics-list .benefit { margin-top: 4px; padding: 11px 9px; border: 0; border-radius: var(--rdx-radius-sm); background: var(--rdx-primary-soft); }
 .economics-list .benefit dt, .economics-list .benefit dd { color: var(--rdx-primary); font-weight: 700; }
 .economics-disclaimer { margin-top: 10px; }
