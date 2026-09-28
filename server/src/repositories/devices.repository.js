@@ -82,6 +82,15 @@ export async function listActiveGrowattMinDevicesByPlant(plantId) {
   return data;
 }
 
+export async function listActiveGrowattMeterByPlant(plantId) {
+  const { data, error } = await supabase.from('devices')
+    .select('id, serial_number, metadata').eq('plant_id', plantId)
+    .eq('provider', 'growatt').eq('active', true).ilike('device_type', 'meter')
+    .order('id', { ascending: true }).limit(1).maybeSingle();
+  if (error) throw new Error('No se pudo consultar el medidor Growatt de la planta');
+  return data;
+}
+
 export async function linkGrowattDeviceToPlant(serialNumber, plantId) {
   const { data, error } = await supabase.from('devices').update({ plant_id: plantId })
     .eq('provider', 'growatt').eq('serial_number', serialNumber).select('id');

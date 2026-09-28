@@ -1,9 +1,31 @@
-import { listActiveGrowattMinDevicesByPlant } from '../repositories/devices.repository.js';
+import { listActiveGrowattMinDevicesByPlant, listActiveGrowattMeterByPlant } from '../repositories/devices.repository.js';
 import { listEnergyIntervalsRange, upsertEnergyIntervals } from '../repositories/energyIntervals.repository.js';
 import { listPlantPowerIntervals } from '../repositories/plantPowerIntervals.repository.js';
 import { syncGrowattPowerHistory } from './growattPowerHistory.service.js';
+import { GrowattProvider } from '../providers/growatt/GrowattProvider.js';
+import { parseGrowattTimestamp } from '../providers/growatt/growattStates.js';
 import { localDateKey } from '../utils/timezone.js';
 import { aggregateHistory, periodRange } from './historyPeriods.js';
+
+const meterProvider = new GrowattProvider();
+
+const meterCumulativeFields = {
+  positiveActiveTodayEnergy: 'grid_import_kwh',
+  reverseActiveTodayEnergy: 'grid_export_kwh',
+};
+
+// Ventana de asociación MIN↔meter: p50 real 5-9 s, cobertura 99-100%
+// dentro de ±150 s (Jorge 90% por huecos; esos van a filas extra).
+const METER_ALIGN_WINDOW_MS = 150000;
+// Un throttle por datalogger evita ráfagas contra meter_data (límite
+// documentado 1 llamada/5 min) cuando el sync se dispara concurrente;
+// ante throttle se usa fallback MIN y el siguiente ciclo lo retoma.
+const METER_CALL_MIN_INTERVAL_MS = 5 * 60 * 1000;
+const meterCallTimestamps = new Map();
+// Negativo material por desalineación gen/export en una fila: esa fila
+// queda con consumption null sin tocar los contadores observados.
+const METER_SELF_EPS_KWH = 1e-6;
+const INVARIANT_EPS_KWH = 1e-6;
 
 const cumulativeFields = {
   eacToday: 'generation_kwh',
@@ -58,6 +80,272 @@ function deviceRawData(row, device, deviceCount) {
 
 function localDay(rawData) {
   return String(rawData?.time ?? '').match(/^(\d{4}-\d{2}-\d{2})/)?.[1] ?? null;
+}
+
+// Paso elemental de derivación por contador, idéntico para MIN y meter:
+// primer valor válido del día = contador completo (absorbe lo acumulado
+// desde medianoche, p.ej. importación nocturna en la primera muestra),
+// luego deltas, y null ante drop/reset/inválido (tombstone).
+function nextCounterDelta(references, key, day, current) {
+  const previous = references.get(key);
+  let delta = null;
+  if (day && current !== null) {
+    if (previous === undefined || (previous.day !== null && previous.day !== day)) {
+      delta = current;
+    } else if (previous.day === day && previous.value !== null && current >= previous.value) {
+      delta = current - previous.value;
+    }
+    references.set(key, { day, value: current });
+  } else {
+    references.set(key, { day: day ?? null, value: null });
+  }
+  return delta;
+}
+
+function meterCallAllowed(dataloggerSn, now = Date.now()) {
+  const last = meterCallTimestamps.get(dataloggerSn) ?? Number.NEGATIVE_INFINITY;
+  if (now - last < METER_CALL_MIN_INTERVAL_MS) return false;
+  meterCallTimestamps.set(dataloggerSn, now);
+  return true;
+}
+
+// Deltas del meter sobre SU PROPIO timeline (orden cronológico), antes de
+// cualquier alineación: así los huecos MIN no alteran el acumulado.
+export function deriveMeterDeltas(meterSamples, meterId, plantTimezone) {
+  const references = new Map();
+  return [...meterSamples]
+    .map(sample => ({
+      raw: sample,
+      instant: Date.parse(parseGrowattTimestamp(sample?.timeText ?? sample?.time, plantTimezone) ?? ''),
+      day: localDay({ time: sample?.timeText ?? sample?.time }),
+    }))
+    .filter(sample => Number.isFinite(sample.instant) && sample.day !== null)
+    .sort((left, right) => left.instant - right.instant)
+    .map(sample => {
+      const deltas = {};
+      for (const [sourceField, targetField] of Object.entries(meterCumulativeFields)) {
+        deltas[targetField] = nextCounterDelta(
+          references, `${meterId}:${sourceField}`, sample.day,
+          nonNegativeNumber(sample.raw?.[sourceField]),
+        );
+      }
+      return { instant: sample.instant, day: sample.day, raw: sample.raw, ...deltas };
+    });
+}
+
+// Asociación determinista dirigida por meter: cada delta reclama la fila
+// MIN no reclamada más cercana dentro de la ventana (empate: la anterior).
+// Un delta jamás se duplica; lo no reclamado va a filas extra.
+export function alignMeterDeltas(minInstants, meterDeltas) {
+  const claimedMin = new Set();
+  const byMinRow = new Map();
+  const usedMeter = new Set();
+  meterDeltas.forEach((meterDelta, meterIndex) => {
+    let bestRow = -1;
+    let bestDist = Infinity;
+    let bestInstant = Infinity;
+    minInstants.forEach(({ instant, rowIndex }) => {
+      if (claimedMin.has(rowIndex)) return;
+      const dist = Math.abs(instant - meterDelta.instant);
+      if (dist <= METER_ALIGN_WINDOW_MS
+        && (dist < bestDist || (dist === bestDist && instant < bestInstant))) {
+        bestRow = rowIndex;
+        bestDist = dist;
+        bestInstant = instant;
+      }
+    });
+    if (bestRow !== -1) {
+      claimedMin.add(bestRow);
+      usedMeter.add(meterIndex);
+      byMinRow.set(bestRow, meterIndex);
+    }
+  });
+  return {
+    byMinRow,
+    unclaimed: meterDeltas.map((_, meterIndex) => meterIndex).filter(index => !usedMeter.has(index)),
+  };
+}
+
+function meterDeviceEntry(meter, rawSample) {
+  return { device_id: meter.id, serial_number: meter.serial_number, data: rawSample };
+}
+
+function consumptionFromMeterParts(generation, gridExport, gridImport) {
+  if (generation === null || gridExport === null || gridImport === null) return null;
+  const self = generation - gridExport;
+  if (self < -METER_SELF_EPS_KWH) return null;
+  return Math.max(self, 0) + gridImport;
+}
+
+// Fusión MIN (generación) + meter (red): en modo meter los contadores
+// elocal/etoUser/etoGrid del MIN están congelados y se ignoran; solo
+// generation viene del MIN. Sin meter válido no se llama: fallback intacto.
+export function mergeMeterEnergy({ plant, minDevices, baseRows, powerRows, meterSamples, meter }) {
+  const meterDeltas = deriveMeterDeltas(meterSamples, meter.id, plant.timezone ?? 'UTC');
+  const minInstants = [];
+  baseRows.forEach((row, rowIndex) => {
+    const instant = Date.parse(row.interval_start);
+    if (Number.isFinite(instant)) minInstants.push({ instant, rowIndex });
+  });
+  const { byMinRow, unclaimed } = alignMeterDeltas(minInstants, meterDeltas);
+  const rows = baseRows.map((row, rowIndex) => {
+    const meterIndex = byMinRow.get(rowIndex);
+    if (meterIndex === undefined) {
+      return {
+        ...row,
+        consumption_kwh: null,
+        grid_import_kwh: null,
+        grid_export_kwh: null,
+      };
+    }
+    const meterDelta = meterDeltas[meterIndex];
+    const gridImport = meterDelta.grid_import_kwh;
+    const gridExport = meterDelta.grid_export_kwh;
+    const devices = Array.isArray(row.raw_data?.devices) ? [...row.raw_data.devices] : [];
+    devices.push(meterDeviceEntry(meter, meterDelta.raw));
+    return {
+      ...row,
+      consumption_kwh: consumptionFromMeterParts(row.generation_kwh, gridExport, gridImport),
+      grid_import_kwh: gridImport,
+      grid_export_kwh: gridExport,
+      raw_data: { ...row.raw_data, devices },
+    };
+  });
+  const existingInstants = new Set(minInstants.map(({ instant }) => instant));
+  let unmatchedMeterSamples = 0;
+  for (const meterIndex of unclaimed) {
+    const meterDelta = meterDeltas[meterIndex];
+    if (meterDelta.grid_import_kwh === null && meterDelta.grid_export_kwh === null) continue;
+    if (meterDelta.grid_import_kwh === 0 && meterDelta.grid_export_kwh === 0) {
+      // Delta cero: sin energía que conservar; crear fila solo dañaría la
+      // cobertura de generation. Se cuenta como no asociado (transparencia).
+      unmatchedMeterSamples += 1;
+      continue;
+    }
+    if (existingInstants.has(meterDelta.instant)) {
+      // Colisión temporal exacta con fila existente: rellenar solo nulls.
+      const rowIndex = baseRows.findIndex(row => Date.parse(row.interval_start) === meterDelta.instant);
+      const target = rows[rowIndex];
+      if (target.grid_import_kwh === null) target.grid_import_kwh = meterDelta.grid_import_kwh;
+      if (target.grid_export_kwh === null) target.grid_export_kwh = meterDelta.grid_export_kwh;
+      if (target.consumption_kwh === null) {
+        target.consumption_kwh = consumptionFromMeterParts(
+          target.generation_kwh, target.grid_export_kwh, target.grid_import_kwh);
+      }
+      continue;
+    }
+    unmatchedMeterSamples += 1;
+    existingInstants.add(meterDelta.instant);
+    rows.push({
+      plant_id: plant.id,
+      provider: 'growatt',
+      interval_type: 1,
+      interval_start: new Date(meterDelta.instant).toISOString(),
+      timezone: plant.timezone ?? 'UTC',
+      generation_kwh: null,
+      consumption_kwh: null,
+      grid_import_kwh: meterDelta.grid_import_kwh,
+      grid_export_kwh: meterDelta.grid_export_kwh,
+      battery_charge_kwh: null,
+      battery_discharge_kwh: null,
+      raw_data: {
+        derived_from: 'growatt_meter_history',
+        meter_device_id: meter.id,
+        meter: {
+          datalogger_sn: meter.metadata?.datalogger_sn ?? null,
+          address: meter.metadata?.address ?? null,
+        },
+        devices: [meterDeviceEntry(meter, meterDelta.raw)],
+      },
+      updated_at: new Date().toISOString(),
+    });
+  }
+  rows.sort((left, right) => left.interval_start.localeCompare(right.interval_start));
+  // Invariante diaria: Σ deltas == último contador por serie verificable
+  // (serie con nulls ese día: no verificable, no falla).
+  const dayKey = instant => localDateKey(new Date(instant).toISOString(), plant.timezone ?? 'UTC');
+  const lastGenByDay = new Map();
+  for (const powerRow of [...(powerRows ?? [])]
+    .sort((left, right) => left.interval_start.localeCompare(right.interval_start))) {
+    for (const device of minDevices ?? []) {
+      const payload = deviceRawData(powerRow, device, (minDevices ?? []).length || 1);
+      const day = localDay(payload);
+      const current = nonNegativeNumber(payload?.eacToday);
+      if (day === null || current === null) continue;
+      if (!lastGenByDay.has(day)) lastGenByDay.set(day, new Map());
+      lastGenByDay.get(day).set(device.id, current);
+    }
+  }
+  const lastMeterByDay = new Map();
+  const orderedMeterSamples = [...(meterSamples ?? [])]
+    .map(sample => ({
+      day: localDay({ time: sample?.timeText ?? sample?.time }),
+      instant: Date.parse(parseGrowattTimestamp(sample?.timeText ?? sample?.time, plant.timezone ?? 'UTC') ?? ''),
+      import: nonNegativeNumber(sample?.positiveActiveTodayEnergy),
+      export: nonNegativeNumber(sample?.reverseActiveTodayEnergy),
+    }))
+    .filter(sample => sample.day !== null && Number.isFinite(sample.instant))
+    .sort((left, right) => left.instant - right.instant);
+  for (const sample of orderedMeterSamples) {
+    if (!lastMeterByDay.has(sample.day)) lastMeterByDay.set(sample.day, {});
+    if (sample.import !== null) lastMeterByDay.get(sample.day).import = sample.import;
+    if (sample.export !== null) lastMeterByDay.get(sample.day).export = sample.export;
+  }
+  const sumsByDay = new Map();
+  const totals = { generation: 0, import: 0, export: 0 };
+  for (const row of rows) {
+    const day = dayKey(row.interval_start);
+    if (day === null) continue;
+    if (!sumsByDay.has(day)) {
+      sumsByDay.set(day, {
+        generation_kwh: { sum: 0, nulls: 0 },
+        grid_import_kwh: { sum: 0, nulls: 0 },
+        grid_export_kwh: { sum: 0, nulls: 0 },
+      });
+    }
+    const entry = sumsByDay.get(day);
+    for (const field of ['generation_kwh', 'grid_import_kwh', 'grid_export_kwh']) {
+      if (row[field] === null || row[field] === undefined) entry[field].nulls += 1;
+      else entry[field].sum += row[field];
+    }
+  }
+  let invariantOk = true;
+  for (const [day, sums] of sumsByDay) {
+    const deviceLast = lastGenByDay.get(day);
+    const devicesComplete = (minDevices ?? []).length > 0
+      && (minDevices ?? []).every(device => deviceLast?.has(device.id));
+    if (sums.generation_kwh.nulls === 0 && devicesComplete) {
+      const expected = [...deviceLast.values()].reduce((sum, value) => sum + value, 0);
+      if (Math.abs(sums.generation_kwh.sum - expected) > INVARIANT_EPS_KWH) invariantOk = false;
+    }
+    const meterLast = lastMeterByDay.get(day);
+    if (sums.grid_import_kwh.nulls === 0 && meterLast?.import !== undefined) {
+      if (Math.abs(sums.grid_import_kwh.sum - meterLast.import) > INVARIANT_EPS_KWH) invariantOk = false;
+    }
+    if (sums.grid_export_kwh.nulls === 0 && meterLast?.export !== undefined) {
+      if (Math.abs(sums.grid_export_kwh.sum - meterLast.export) > INVARIANT_EPS_KWH) invariantOk = false;
+    }
+  }
+  for (const sums of sumsByDay.values()) {
+    totals.generation += sums.generation_kwh.sum;
+    totals.import += sums.grid_import_kwh.sum;
+    totals.export += sums.grid_export_kwh.sum;
+  }
+  return {
+    rows,
+    meta: {
+      meter_used: true,
+      meter_device_id: meter.id,
+      generation_total: totals.generation,
+      meter_import_total: totals.import,
+      meter_export_total: totals.export,
+      unmatched_meter_samples: unmatchedMeterSamples,
+      null_consumption_intervals: rows.filter(row => row.consumption_kwh == null).length,
+      null_import_intervals: rows.filter(row => row.grid_import_kwh == null).length,
+      null_export_intervals: rows.filter(row => row.grid_export_kwh == null).length,
+      invariant_ok: invariantOk,
+    },
+  };
 }
 
 export function deriveGrowattEnergyHistory(plant, devices, powerRows) {
@@ -136,29 +424,50 @@ export async function syncGrowattEnergyHistory(plant, date) {
     powerRows = await listPlantPowerIntervals(plant.id, date);
   }
   const devices = await listActiveGrowattMinDevicesByPlant(plant.id);
-  const rows = deriveGrowattEnergyHistory(plant, devices, powerRows);
+  let rows = deriveGrowattEnergyHistory(plant, devices, powerRows);
+  // Capa meter (canónica para red): solo si existe meter lógico; cualquier
+  // fallo o throttle usa el pipeline MIN sin degradar lo existente.
+  let meterMeta = { meter_used: false };
+  try {
+    const meter = typeof listActiveGrowattMeterByPlant === 'function'
+      ? await listActiveGrowattMeterByPlant(plant.id)
+      : null;
+    const dataloggerSn = meter?.metadata?.datalogger_sn ?? null;
+    const address = meter?.metadata?.address ?? null;
+    if (meter && dataloggerSn !== null && address !== null && meterCallAllowed(dataloggerSn)) {
+      const meterSamples = await meterProvider.getMeterHistory(
+        dataloggerSn, address, date, date);
+      const merged = mergeMeterEnergy({ plant, minDevices: devices, baseRows: rows, powerRows, meterSamples, meter });
+      rows = merged.rows;
+      meterMeta = merged.meta;
+    }
+  } catch {
+    meterMeta = { meter_used: false };
+  }
   // Protección anti-degradación: nunca sobrescribir energy_intervals
   // existentes con una derivación materialmente peor. La comparación es del
   // conjunto completo de la fecha: o se escriben todas las filas o ninguna.
+  // Con meter, el invariante Σ==último contador también debe cumplirse.
   const existing = await listEnergyIntervalsRange(plant.id, 1, date, periodRange('day', date).end);
   const existing_nulls = nullTotals(existing);
   const derived_nulls = nullTotals(rows);
   const existingValues = existing.length * Object.keys(cumulativeFields).length - existing_nulls;
   const derivedValues = rows.length * Object.keys(cumulativeFields).length - derived_nulls;
-  const degraded = existing.length > 0
-    && (derivedValues === 0 ? existingValues > 0 : derived_nulls > existing_nulls);
+  const degraded = (existing.length > 0
+    && (derivedValues === 0 ? existingValues > 0 : derived_nulls > existing_nulls))
+    || (meterMeta.meter_used === true && meterMeta.invariant_ok === false);
   if (degraded) {
     return {
       provider: 'growatt', devices: devices.length, fetched: powerRows.length,
       upserted: 0, failed: 0, power_history_synced: powerHistorySynced,
-      skipped_degraded: true, existing_nulls, derived_nulls,
+      skipped_degraded: true, existing_nulls, derived_nulls, ...meterMeta,
     };
   }
   await upsertEnergyIntervals(rows);
   return {
     provider: 'growatt', devices: devices.length, fetched: powerRows.length,
     upserted: rows.length, failed: 0, power_history_synced: powerHistorySynced,
-    skipped_degraded: false, existing_nulls, derived_nulls,
+    skipped_degraded: false, existing_nulls, derived_nulls, ...meterMeta,
   };
 }
 

@@ -179,6 +179,44 @@ export class GrowattProvider {
     return Array.isArray(payload?.data?.meters) ? payload.data.meters : [];
   }
 
+  async getMeterHistory(dataloggerSn, address, startDate, endDate) {
+    const samples = [];
+    let page = 1;
+    for (;;) {
+      const url = new URL('/v4/device/ammeter/meter_data', this.baseUrl);
+      url.search = new URLSearchParams({
+        datalog_sn: String(dataloggerSn),
+        address: String(address),
+        start_date: startDate,
+        end_date: endDate,
+        page: String(page),
+        perpage: '100',
+      });
+      const response = await fetch(url, {
+        method: 'GET',
+        headers: { Accept: 'application/json', token: this.apiToken },
+        redirect: 'error',
+        signal: AbortSignal.timeout(10000),
+      });
+      if (!response.ok) throw new Error('Growatt meter history request failed');
+      const payload = await response.json();
+      if (Number(payload?.code) === 102 || Number(payload?.error_code) === 102) {
+        const error = new Error('Growatt rate limit');
+        error.rateLimited = true;
+        error.statusCode = 429;
+        throw error;
+      }
+      if (payload?.code !== 0 && payload?.error_code !== 0) {
+        throw new Error('Growatt meter history response failed');
+      }
+      const rows = Array.isArray(payload?.data?.meter_data) ? payload.data.meter_data : [];
+      samples.push(...rows);
+      if (rows.length < 100 || page >= 31) break;
+      page += 1;
+    }
+    return samples;
+  }
+
   async checkDeviceBySn(deviceSn) {
     const url = new URL('/v1/device/check/sn', this.baseUrl);
     url.search = new URLSearchParams({ dataloggerSn: String(deviceSn) });

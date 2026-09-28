@@ -33,7 +33,10 @@ mock.module('../src/repositories/plantPowerIntervals.repository.js', {
   exports: { listPlantPowerIntervals: async () => powerRows },
 });
 mock.module('../src/repositories/devices.repository.js', {
-  exports: { listActiveGrowattMinDevicesByPlant: async () => devices },
+  exports: {
+    listActiveGrowattMinDevicesByPlant: async () => devices,
+    listActiveGrowattMeterByPlant: async () => null,
+  },
 });
 mock.module('../src/repositories/energyIntervals.repository.js', {
   exports: {
