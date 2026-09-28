@@ -101,12 +101,14 @@ test('null conserva resultados desconocidos y marca cobertura parcial', () => {
   assert.equal(result.coverage.missing_energy_intervals, 1);
 });
 
-test('autoconsumo negativo se limita a cero pero conserva la inconsistencia en cobertura', () => {
+test('autoconsumo agregado negativo no se fabrica como 0: queda null e inconsistente', () => {
   const result = calculatePlantEconomics([
     row('2026-09-23', { generation_kwh: 100, grid_export_kwh: 120 }),
   ], [tariff()], context);
-  assert.equal(result.self_consumption_kwh, 0);
-  assert.equal(result.self_consumption_savings, 0);
+  assert.equal(result.self_consumption_kwh, null);
+  assert.equal(result.self_consumption_savings, null);
+  assert.equal(result.metrics.self_consumption_kwh.value, null);
+  assert.equal(result.metrics.self_consumption_kwh.quality, 'UNAVAILABLE');
   assert.equal(result.coverage.inconsistent_intervals, 1);
   assert.equal(result.coverage.status, 'partial');
 });
@@ -173,12 +175,12 @@ test('CASO 5: crédito energético sin tarifa conserva kWh y deja el total desco
   assert.equal(result.estimated_economic_benefit, null);
 });
 
-test('CASO 6: exportación mayor que generación nunca da autoconsumo negativo', () => {
+test('CASO 6: exportación mayor que generación nunca da autoconsumo negativo ni 0 fabricado', () => {
   const result = calculatePlantEconomics(
     [v1row({ generation_kwh: 100, grid_export_kwh: 300 })], [v1tariff()], context);
-  assert.ok(result.self_consumption_kwh >= 0);
-  assert.equal(result.self_consumption_kwh, 0);
-  assert.equal(result.self_consumption_savings, 0);
+  assert.equal(result.self_consumption_kwh, null);
+  assert.equal(result.self_consumption_savings, null);
+  assert.equal(result.coverage.inconsistent_intervals, 1);
 });
 
 test('CASO 7: datos faltantes conservan null sin convertir a cero', () => {
@@ -529,4 +531,147 @@ test('suspect K: multi-día aísla el día sospechoso sin ocultarlo', () => {
   assert.equal(result.metrics.consumption_kwh.value, 12);
   assert.equal(result.metrics.self_consumption_kwh.value, null);
   assert.equal(result.metrics.self_consumption_kwh.quality, 'SUSPECT');
+});
+
+// --- Autoconsumo agregado (corrige sesgo del clamp por intervalo) ---
+const pairRow = (date, index, generation, gridExport) => dayRow(date, index, {
+  ...fullValues, generation_kwh: generation, grid_export_kwh: gridExport,
+});
+
+test('self A: completo normal usa agregado gen-export', () => {
+  const result = calculatePlantEconomics([
+    pairRow('2026-09-26', 0, 1, 0.2),
+    pairRow('2026-09-26', 1, 1, 0.3),
+    pairRow('2026-09-26', 2, 1, 0.4),
+  ], [tariff()], { period: 'day', start: '2026-09-26', end: '2026-09-27' });
+  approx(result.self_consumption_kwh, 2.1);
+  approx(result.metrics.self_consumption_kwh.value, 2.1);
+  assert.deepEqual(
+    [result.metrics.self_consumption_kwh.valid_intervals,
+      result.metrics.self_consumption_kwh.total_intervals,
+      result.metrics.self_consumption_kwh.complete,
+      result.metrics.self_consumption_kwh.quality],
+    [3, 3, true, 'EXACT']);
+  approx(result.self_consumption_savings, 1.68);
+  assert.equal(result.metrics.self_consumption_savings.quality, 'EXACT');
+  approx(result.estimated_economic_benefit, 2.13);
+});
+
+test('self B: desfase alterno suma 0 EXACT sin inconsistencia', () => {
+  const result = calculatePlantEconomics([
+    pairRow('2026-09-26', 0, 0.5, 0.4),
+    pairRow('2026-09-26', 1, 0.4, 0.5),
+    pairRow('2026-09-26', 2, 0.5, 0.4),
+    pairRow('2026-09-26', 3, 0.4, 0.5),
+  ], [tariff()], { period: 'day', start: '2026-09-26', end: '2026-09-27' });
+  approx(result.self_consumption_kwh, 0);
+  approx(result.metrics.self_consumption_kwh.value, 0);
+  assert.equal(result.metrics.self_consumption_kwh.quality, 'EXACT');
+  assert.equal(result.coverage.inconsistent_intervals, 0);
+  assert.equal(result.coverage.status, 'available');
+});
+
+test('self C: Huang real da 4.1 EXACT sin warning de inconsistencia', () => {
+  const result = calculatePlantEconomics(huangDay(), [tariff({ purchase_energy_rate: 0.8 })], {
+    period: 'month', start: '2026-09-01', end: '2026-10-01', now: Date.UTC(2026, 9, 5, 12, 0),
+  });
+  approx(result.self_consumption_kwh, 4.1);
+  approx(result.metrics.self_consumption_kwh.value, 4.1);
+  assert.equal(result.metrics.self_consumption_kwh.quality, 'EXACT');
+  assert.equal(result.coverage.inconsistent_intervals, 0);
+  assert.equal(result.coverage.meter_suspect, false);
+  approx(result.self_consumption_savings, 3.28);
+});
+
+test('self D: agregado export>generation → null + inconsistente, sin 0 fabricado', () => {
+  const result = calculatePlantEconomics(
+    [pairRow('2026-09-26', 0, 10, 11)], [tariff()],
+    { period: 'day', start: '2026-09-26', end: '2026-09-27' });
+  assert.equal(result.self_consumption_kwh, null);
+  assert.equal(result.metrics.self_consumption_kwh.value, null);
+  assert.equal(result.metrics.self_consumption_kwh.quality, 'UNAVAILABLE');
+  assert.equal(result.coverage.inconsistent_intervals, 1);
+  assert.equal(result.coverage.status, 'partial');
+  assert.equal(result.self_consumption_savings, null);
+  assert.equal(result.estimated_economic_benefit, null);
+});
+
+test('self E/F/G: parcial usa pares válidos con clamp conservador', () => {
+  const genMissing = calculatePlantEconomics([
+    pairRow('2026-09-26', 0, 10, 3),
+    dayRow('2026-09-26', 1, { ...fullValues, generation_kwh: null }),
+  ], [tariff()], { period: 'day', start: '2026-09-26', end: '2026-09-27' });
+  assert.deepEqual(genMissing.metrics.self_consumption_kwh,
+    { value: 7, valid_intervals: 1, total_intervals: 2, complete: false, quality: 'PARTIAL' });
+  assert.equal(genMissing.self_consumption_kwh, null);
+  const expMissing = calculatePlantEconomics([
+    pairRow('2026-09-26', 0, 10, 3),
+    dayRow('2026-09-26', 1, { ...fullValues, grid_export_kwh: null }),
+  ], [tariff()], { period: 'day', start: '2026-09-26', end: '2026-09-27' });
+  assert.deepEqual(expMissing.metrics.self_consumption_kwh,
+    { value: 7, valid_intervals: 1, total_intervals: 2, complete: false, quality: 'PARTIAL' });
+  const bothMissing = calculatePlantEconomics([
+    dayRow('2026-09-26', 0, { ...fullValues, generation_kwh: null }),
+    dayRow('2026-09-26', 1, { ...fullValues, grid_export_kwh: null }),
+    pairRow('2026-09-26', 2, 10, 3),
+  ], [tariff()], { period: 'day', start: '2026-09-26', end: '2026-09-27' });
+  assert.deepEqual(bothMissing.metrics.self_consumption_kwh,
+    { value: 7, valid_intervals: 1, total_intervals: 3, complete: false, quality: 'PARTIAL' });
+});
+
+test('self H/I: cons o imp parcial no afectan self con gen/exp completos', () => {
+  const ctx = { period: 'day', start: '2026-09-26', end: '2026-09-27' };
+  const consPartial = calculatePlantEconomics([
+    pairRow('2026-09-26', 0, 10, 3),
+    dayRow('2026-09-26', 1, { generation_kwh: 10, grid_export_kwh: 3, consumption_kwh: null, grid_import_kwh: 5 }),
+  ], [tariff()], ctx);
+  assert.equal(consPartial.self_consumption_kwh, 14);
+  assert.equal(consPartial.metrics.self_consumption_kwh.quality, 'EXACT');
+  const impPartial = calculatePlantEconomics([
+    pairRow('2026-09-26', 0, 10, 3),
+    dayRow('2026-09-26', 1, { generation_kwh: 10, grid_export_kwh: 3, consumption_kwh: 12, grid_import_kwh: null }),
+  ], [tariff()], ctx);
+  assert.equal(impPartial.self_consumption_kwh, 14);
+  assert.equal(impPartial.metrics.self_consumption_kwh.quality, 'EXACT');
+});
+
+test('self J: Arturo sigue protegido (SUSPECT anula el agregado 35.7)', () => {
+  const result = calculatePlantEconomics(arturoDay(), [arturoTariff()], afterDay);
+  assert.equal(result.coverage.meter_suspect, true);
+  approx(result.self_consumption_kwh, 35.7);
+  assert.equal(result.metrics.self_consumption_kwh.value, null);
+  assert.equal(result.metrics.self_consumption_kwh.quality, 'SUSPECT');
+  assert.equal(result.metrics.self_consumption_savings.value, null);
+  assert.equal(result.metrics.estimated_economic_benefit.value, null);
+});
+
+test('self K: zero-export válido da self=gen EXACT', () => {
+  const result = calculatePlantEconomics([
+    pairRow('2026-09-26', 0, 10, 0),
+    pairRow('2026-09-26', 1, 10, 0),
+  ], [tariff()], { period: 'day', start: '2026-09-26', end: '2026-09-27' });
+  assert.equal(result.coverage.meter_suspect, false);
+  assert.equal(result.self_consumption_kwh, 20);
+  assert.equal(result.metrics.self_consumption_kwh.quality, 'EXACT');
+});
+
+test('self L/M: savings usa self corregido y respeta cada tarifa', () => {
+  const uniform = calculatePlantEconomics([
+    pairRow('2026-09-26', 0, 1, 0.2),
+    pairRow('2026-09-26', 1, 1, 0.3),
+    pairRow('2026-09-26', 2, 1, 0.4),
+  ], [tariff({ purchase_energy_rate: 0.8 })],
+  { period: 'day', start: '2026-09-26', end: '2026-09-27' });
+  approx(uniform.self_consumption_savings, 1.68);
+  const multi = calculatePlantEconomics([
+    pairRow('2026-09-26', 0, 10, 2),
+    row('2026-09-27', { generation_kwh: 10, grid_export_kwh: 2, consumption_kwh: 12, grid_import_kwh: 5 }),
+  ], [
+    tariff({ effective_from: '2026-01-01', effective_to: '2026-09-26', purchase_energy_rate: 0.5, export_compensation_type: 'none', export_energy_rate: null }),
+    tariff({ effective_from: '2026-09-27', purchase_energy_rate: 1, export_compensation_type: 'none', export_energy_rate: null }),
+  ], { period: 'week', start: '2026-09-21', end: '2026-09-28' });
+  approx(multi.self_consumption_savings, 12);
+  assert.equal(multi.metrics.self_consumption_savings.quality, 'EXACT');
+  assert.ok(Math.abs(multi.self_consumption_savings - 8) > 1e-9);
+  assert.ok(Math.abs(multi.self_consumption_savings - 16) > 1e-9);
 });

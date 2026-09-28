@@ -51,6 +51,7 @@ function observedMetric(values) {
 
 function combineQuality(...qualities) {
   if (qualities.some(quality => quality === 'UNAVAILABLE')) return 'UNAVAILABLE';
+  if (qualities.some(quality => quality === 'SUSPECT')) return 'SUSPECT';
   if (qualities.some(quality => quality === 'PARTIAL')) return 'PARTIAL';
   return 'EXACT';
 }
@@ -148,13 +149,59 @@ export function calculatePlantEconomics(rows, tariffs, { period, start, end, now
   const missingEnergyIntervals = intervalResults.filter(row => energyFields
     .some(field => row[field] === null)).length;
   const missingTariffIntervals = intervalResults.filter(row => row.tariff === null).length;
-  const inconsistentIntervals = intervalResults.filter(row => row.inconsistent).length;
+  // Autoconsumo agregado: con generation+export completos, los negativos por
+  // intervalo son desfase de contadores (resolución 0.1 kWh en polls
+  // distintos) que se cancela en el agregado. Clampar por intervalo fabrica
+  // sesgo (Huang: +1.0 kWh). Solo el agregado decide coherencia.
+  // FP_DUST_KWH es higiene float, muy por debajo de la resolución física.
+  const FP_DUST_KWH = 1e-6;
+  const generationComplete = intervalResults.length > 0
+    && intervalResults.every(row => row.generation_kwh !== null);
+  const exportComplete = intervalResults.length > 0
+    && intervalResults.every(row => row.grid_export_kwh !== null);
+  const generationSum = intervalResults.reduce((sum, row) => sum + (row.generation_kwh ?? 0), 0);
+  const exportSum = intervalResults.reduce((sum, row) => sum + (row.grid_export_kwh ?? 0), 0);
+  const aggregateSelf = generationSum - exportSum;
+  const aggregateCoherent = generationComplete && exportComplete && aggregateSelf >= -FP_DUST_KWH;
+  const correctedSelf = aggregateCoherent ? Math.max(aggregateSelf, 0) : null;
+  const rawInconsistentIntervals = intervalResults.filter(row => row.inconsistent).length;
+  const inconsistentIntervals = aggregateCoherent ? 0 : rawInconsistentIntervals;
+  // Ahorro por tramo tarifario: cada grupo con gen/exp completos aporta
+  // self_grupo * rate_grupo. Nunca una sola tarifa para todo el período.
+  // Grupo inválido (sin tarifa o self negativo) invalida el total legacy;
+  // en métricas solo invalida su tramo.
+  const savingsGroups = new Map();
+  if (generationComplete && exportComplete) {
+    for (const row of intervalResults) {
+      const rate = numeric(row.tariff?.purchase_energy_rate);
+      const key = rate === null ? '__notariff__' : `rate:${rate}`;
+      let group = savingsGroups.get(key);
+      if (!group) {
+        group = { rate, generation: 0, export: 0, intervals: 0 };
+        savingsGroups.set(key, group);
+      }
+      group.generation += row.generation_kwh;
+      group.export += row.grid_export_kwh;
+      group.intervals += 1;
+    }
+  }
+  const groupSelf = group => group.generation - group.export;
+  const groupValid = group => group.rate !== null && groupSelf(group) >= -FP_DUST_KWH;
+  const groupSavings = group => Math.max(groupSelf(group), 0) * group.rate;
+  const savingsGroupsList = [...savingsGroups.values()];
   const sourcePartialIntervals = intervalResults.filter(row => row.source_partial).length;
   const currency = commonValue(intervalResults.map(row => row.tariff?.currency ?? null));
   const mixedCurrency = currency === 'mixed';
   const singleOrNull = value => (value === 'mixed' ? null : value);
   const productionValue = mixedCurrency ? null : total('production_value');
-  const selfConsumptionSavings = mixedCurrency ? null : total('self_consumption_savings');
+  // Legacy savings con cobertura completa usa el autoconsumo corregido por
+  // tramo (nunca el clampado por intervalo); con parcial se preserva strict.
+  const selfConsumptionSavings = mixedCurrency ? null
+    : (generationComplete && exportComplete
+      ? (savingsGroupsList.every(groupValid)
+        ? savingsGroupsList.reduce((sum, group) => sum + groupSavings(group), 0)
+        : null)
+      : total('self_consumption_savings'));
   const exportValue = mixedCurrency ? null : total('export_value');
   const exportCompensationValue = mixedCurrency ? null : total('export_compensation_value');
   const creditIntervals = intervalResults.filter(row =>
@@ -166,32 +213,75 @@ export function calculatePlantEconomics(rows, tariffs, { period, start, end, now
   const estimatedBenefit = selfConsumptionSavings !== null && exportValue !== null
     ? selfConsumptionSavings + exportValue : null;
   // Métricas aditivas con cobertura por campo. No alteran escalares legacy:
-  // cada derivada agrega solo intervalos donde sus insumos reales existen.
-  // self_consumption_kwh por intervalo ya es null sin generation+export, y
-  // savings/export_value por intervalo ya son null sin su tarifa aplicable.
+  // self usa el agregado corregido si gen/exp completos; si no, pares
+  // válidos con el clamp conservador existente (sin estimar faltantes).
   const energyMetrics = Object.fromEntries(energyFields.map(field => [field, observedMetric(
     intervalResults.map(row => row[field]))]));
-  const selfConsumptionMetric = observedMetric(
-    intervalResults.map(row => row.self_consumption_kwh));
-  const savingsObserved = observedMetric(
+  const pairSelf = intervalResults.map(row => row.self_consumption_kwh);
+  let selfConsumptionMetric;
+  if (generationComplete && exportComplete) {
+    selfConsumptionMetric = aggregateCoherent
+      ? {
+        value: correctedSelf,
+        valid_intervals: intervalResults.length,
+        total_intervals: intervalResults.length,
+        complete: true,
+        quality: 'EXACT',
+      }
+      : {
+        value: null,
+        valid_intervals: 0,
+        total_intervals: intervalResults.length,
+        complete: false,
+        quality: 'UNAVAILABLE',
+      };
+  } else {
+    selfConsumptionMetric = observedMetric(pairSelf);
+  }
+  const perIntervalSavingsMetric = observedMetric(
     intervalResults.map(row => row.self_consumption_savings));
+  let savingsMetricBase;
+  if (mixedCurrency || !generationComplete || !exportComplete) {
+    savingsMetricBase = perIntervalSavingsMetric;
+  } else {
+    const validGroups = savingsGroupsList.filter(groupValid);
+    const validIntervals = validGroups.reduce((sum, group) => sum + group.intervals, 0);
+    savingsMetricBase = {
+      value: validGroups.length
+        ? validGroups.reduce((sum, group) => sum + groupSavings(group), 0) : null,
+      valid_intervals: validIntervals,
+      total_intervals: intervalResults.length,
+      complete: validIntervals === intervalResults.length && intervalResults.length > 0,
+      quality: !validGroups.length ? 'UNAVAILABLE'
+        : (validIntervals === intervalResults.length ? 'EXACT' : 'PARTIAL'),
+    };
+  }
   const exportObserved = observedMetric(
     intervalResults.map(row => row.export_value));
-  const benefitObserved = observedMetric(intervalResults.map(row => (
-    row.self_consumption_savings !== null && row.export_value !== null
-      ? row.self_consumption_savings + row.export_value : null)));
+  // Beneficio observado: usa los valores de las métricas (corregidas), no la
+  // suma por intervalo. Conteos conservadores (mínimo de ambos).
+  const savingsForBenefit = savingsMetricBase;
+  const benefitValue = savingsForBenefit.value !== null && exportObserved.value !== null
+    ? savingsForBenefit.value + exportObserved.value : null;
+  const benefitCounts = {
+    valid_intervals: Math.min(savingsForBenefit.valid_intervals, exportObserved.valid_intervals),
+    total_intervals: intervalResults.length,
+    complete: savingsForBenefit.complete && exportObserved.complete,
+  };
+  const benefitObserved = {
+    value: benefitValue,
+    ...benefitCounts,
+    quality: combineQuality(savingsForBenefit.quality, exportObserved.quality),
+  };
   // Moneda mixta: los datos existen pero no son agregables. Se conserva el
   // conteo real y se fuerza value=null + quality UNAVAILABLE en dinero.
   const moneyMetric = observed => (mixedCurrency
     ? { ...observed, value: null, quality: 'UNAVAILABLE' } : observed);
-  const savingsMetric = moneyMetric(savingsObserved);
+  const savingsMetric = moneyMetric(savingsMetricBase);
   const exportValueMetric = moneyMetric(exportObserved);
   const benefitMetric = mixedCurrency
     ? { ...benefitObserved, value: null, quality: 'UNAVAILABLE' }
-    : {
-      ...benefitObserved,
-      quality: combineQuality(savingsObserved.quality, exportObserved.quality),
-    };
+    : benefitObserved;
   // Medición sospechosa: los ceros de red/carga no son confiables y ningún
   // derivado (autoconsumo, ahorro, exportación, beneficio) puede calcularse
   // con ellos. Generación intacta. Única excepción: moneda mixta ya deja el
@@ -212,6 +302,12 @@ export function calculatePlantEconomics(rows, tariffs, { period, start, end, now
       : suspectMetric(exportValueMetric, { nullable: true, monetary: true }),
     estimated_economic_benefit: suspectMetric(benefitMetric, { nullable: true, monetary: true }),
   };
+  // Legacy self con cobertura completa refleja el agregado corregido (nunca
+  // el clamp por intervalo); con parcial se preserva strictSum; agregado
+  // incoherente (export > generation) es null, no 0 fabricado.
+  const selfConsumptionTotal = !generationComplete || !exportComplete
+    ? total('self_consumption_kwh')
+    : correctedSelf;
   const status = !rows.length ? 'none'
     : missingEnergyIntervals || missingTariffIntervals || inconsistentIntervals
         || sourcePartialIntervals || mixedCurrency
@@ -223,7 +319,7 @@ export function calculatePlantEconomics(rows, tariffs, { period, start, end, now
     end,
     generation_kwh: total('generation_kwh'),
     consumption_kwh: total('consumption_kwh'),
-    self_consumption_kwh: total('self_consumption_kwh'),
+    self_consumption_kwh: selfConsumptionTotal,
     grid_import_kwh: total('grid_import_kwh'),
     grid_export_kwh: total('grid_export_kwh'),
     production_value: productionValue,
