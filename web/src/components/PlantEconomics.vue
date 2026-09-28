@@ -152,6 +152,31 @@ function date(value) {
     .format(new Date(`${value}T00:00:00.000Z`));
 }
 
+// Cobertura por métrica (aditiva y backward-compatible): sin summary.metrics
+// (API antigua) se usa el escalar legacy. EXACT conserva el escalar legacy;
+// PARTIAL muestra el valor observado con su cobertura; UNAVAILABLE muestra '—'.
+// El dinero conserva siempre los escalares legacy.
+function metricCoverage(entry) {
+  if (!entry || entry.quality !== 'PARTIAL' || !entry.total_intervals) return '';
+  const percent = new Intl.NumberFormat('es-BO', { maximumFractionDigits: 1 })
+    .format(entry.valid_intervals / entry.total_intervals * 100);
+  return `Cobertura: ${entry.valid_intervals}/${entry.total_intervals} intervalos (${percent}%)`;
+}
+
+const metricDisplay = computed(() => Object.fromEntries(
+  ['generation_kwh', 'consumption_kwh', 'self_consumption_kwh', 'grid_import_kwh', 'grid_export_kwh']
+    .map(field => {
+      const entry = summary.value?.metrics?.[field] ?? null;
+      const legacy = summary.value?.[field] ?? null;
+      if (!entry) return [field, { text: energy(legacy), coverage: '' }];
+      if (entry.quality === 'PARTIAL') {
+        return [field, { text: energy(entry.value), coverage: metricCoverage(entry) }];
+      }
+      if (entry.quality === 'UNAVAILABLE') return [field, { text: '—', coverage: '' }];
+      return [field, { text: energy(legacy), coverage: '' }];
+    }),
+));
+
 const coverageLabel = computed(() => {
   const coverage = summary.value?.coverage;
   if (!coverage || coverage.status === 'none') return 'Sin datos energéticos para el periodo';
@@ -358,10 +383,11 @@ onBeforeUnmount(() => {
         <div>
           <h3>Resumen energético</h3>
           <dl class="economics-list">
-            <div><dt>Generación</dt><dd>{{ energy(summary.generation_kwh) }}</dd></div>
-            <div><dt>Autoconsumo</dt><dd>{{ energy(summary.self_consumption_kwh) }}</dd></div>
-            <div><dt>Importación</dt><dd>{{ energy(summary.grid_import_kwh) }}</dd></div>
-            <div><dt>Inyección a red</dt><dd>{{ energy(summary.grid_export_kwh) }}</dd></div>
+            <div><dt>Generación</dt><dd>{{ metricDisplay.generation_kwh.text }}<span v-if="metricDisplay.generation_kwh.coverage" class="metric-coverage">{{ metricDisplay.generation_kwh.coverage }}</span></dd></div>
+            <div><dt>Consumo observado</dt><dd>{{ metricDisplay.consumption_kwh.text }}<span v-if="metricDisplay.consumption_kwh.coverage" class="metric-coverage">{{ metricDisplay.consumption_kwh.coverage }}</span></dd></div>
+            <div><dt>Autoconsumo</dt><dd>{{ metricDisplay.self_consumption_kwh.text }}<span v-if="metricDisplay.self_consumption_kwh.coverage" class="metric-coverage">{{ metricDisplay.self_consumption_kwh.coverage }}</span></dd></div>
+            <div><dt>Importación</dt><dd>{{ metricDisplay.grid_import_kwh.text }}<span v-if="metricDisplay.grid_import_kwh.coverage" class="metric-coverage">{{ metricDisplay.grid_import_kwh.coverage }}</span></dd></div>
+            <div><dt>Inyección a red</dt><dd>{{ metricDisplay.grid_export_kwh.text }}<span v-if="metricDisplay.grid_export_kwh.coverage" class="metric-coverage">{{ metricDisplay.grid_export_kwh.coverage }}</span></dd></div>
           </dl>
         </div>
         <div>
@@ -491,6 +517,7 @@ h3 { font-size: 13px; }
 .economics-list > div:last-child { border-bottom: 0; }
 .economics-list dt { color: var(--rdx-text-muted); font-size: 11px; }
 .economics-list dd { margin: 0; color: var(--rdx-text-strong); font-size: 12px; font-weight: 700; text-align: right; font-variant-numeric: tabular-nums; }
+.metric-coverage { display: block; margin-top: 2px; color: var(--rdx-warning); font-size: 10px; font-weight: 600; }
 .economics-list .benefit { margin-top: 4px; padding: 11px 9px; border: 0; border-radius: var(--rdx-radius-sm); background: var(--rdx-primary-soft); }
 .economics-list .benefit dt, .economics-list .benefit dd { color: var(--rdx-primary); font-weight: 700; }
 .economics-disclaimer { margin-top: 10px; }

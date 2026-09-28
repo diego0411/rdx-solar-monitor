@@ -33,6 +33,28 @@ function commonValue(values) {
   return unique.length === 1 ? unique[0] : 'mixed';
 }
 
+// Suma observada aditiva: solo agrega valores utilizables ya normalizados.
+// Dato faltante != 0: los NULL nunca se rellenan ni se estiman.
+function observedMetric(values) {
+  const present = values.filter(value => value !== null);
+  const validIntervals = present.length;
+  const totalIntervals = values.length;
+  const complete = totalIntervals > 0 && validIntervals === totalIntervals;
+  return {
+    value: validIntervals ? present.reduce((sum, value) => sum + value, 0) : null,
+    valid_intervals: validIntervals,
+    total_intervals: totalIntervals,
+    complete,
+    quality: validIntervals === 0 ? 'UNAVAILABLE' : (complete ? 'EXACT' : 'PARTIAL'),
+  };
+}
+
+function combineQuality(...qualities) {
+  if (qualities.some(quality => quality === 'UNAVAILABLE')) return 'UNAVAILABLE';
+  if (qualities.some(quality => quality === 'PARTIAL')) return 'PARTIAL';
+  return 'EXACT';
+}
+
 export function calculatePlantEconomics(rows, tariffs, { period, start, end }) {
   const intervalResults = rows.map(row => {
     const values = Object.fromEntries(energyFields.map(field => [field, numeric(row[field])]));
@@ -109,6 +131,40 @@ export function calculatePlantEconomics(rows, tariffs, { period, start, end }) {
     ? null : strictSum(creditIntervals.map(row => row.export_credit_estimated_value));
   const estimatedBenefit = selfConsumptionSavings !== null && exportValue !== null
     ? selfConsumptionSavings + exportValue : null;
+  // Métricas aditivas con cobertura por campo. No alteran escalares legacy:
+  // cada derivada agrega solo intervalos donde sus insumos reales existen.
+  // self_consumption_kwh por intervalo ya es null sin generation+export, y
+  // savings/export_value por intervalo ya son null sin su tarifa aplicable.
+  const energyMetrics = Object.fromEntries(energyFields.map(field => [field, observedMetric(
+    intervalResults.map(row => row[field]))]));
+  const selfConsumptionMetric = observedMetric(
+    intervalResults.map(row => row.self_consumption_kwh));
+  const savingsObserved = observedMetric(
+    intervalResults.map(row => row.self_consumption_savings));
+  const exportObserved = observedMetric(
+    intervalResults.map(row => row.export_value));
+  const benefitObserved = observedMetric(intervalResults.map(row => (
+    row.self_consumption_savings !== null && row.export_value !== null
+      ? row.self_consumption_savings + row.export_value : null)));
+  // Moneda mixta: los datos existen pero no son agregables. Se conserva el
+  // conteo real y se fuerza value=null + quality UNAVAILABLE en dinero.
+  const moneyMetric = observed => (mixedCurrency
+    ? { ...observed, value: null, quality: 'UNAVAILABLE' } : observed);
+  const savingsMetric = moneyMetric(savingsObserved);
+  const exportValueMetric = moneyMetric(exportObserved);
+  const benefitMetric = mixedCurrency
+    ? { ...benefitObserved, value: null, quality: 'UNAVAILABLE' }
+    : {
+      ...benefitObserved,
+      quality: combineQuality(savingsObserved.quality, exportObserved.quality),
+    };
+  const metrics = {
+    ...energyMetrics,
+    self_consumption_kwh: selfConsumptionMetric,
+    self_consumption_savings: savingsMetric,
+    export_value: exportValueMetric,
+    estimated_economic_benefit: benefitMetric,
+  };
   const status = !rows.length ? 'none'
     : missingEnergyIntervals || missingTariffIntervals || inconsistentIntervals
         || sourcePartialIntervals || mixedCurrency
@@ -150,6 +206,7 @@ export function calculatePlantEconomics(rows, tariffs, { period, start, end }) {
         ? 'La disponibilidad de intervalos no demuestra por sí sola cobertura total del periodo.'
         : 'No existen intervalos energéticos para el periodo.',
     },
+    metrics,
   };
 }
 
