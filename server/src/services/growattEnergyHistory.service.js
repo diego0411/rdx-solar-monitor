@@ -415,15 +415,15 @@ function nullTotals(rows) {
   return total;
 }
 
-function nullsByField(rows) {
-  const totals = {};
-  for (const field of Object.values(cumulativeFields)) totals[field] = 0;
+// Energía observada por canal (solo valores válidos, sin convertir nulls).
+function energySums(rows) {
+  const sums = { generation_kwh: 0, grid_import_kwh: 0, grid_export_kwh: 0 };
   for (const row of rows) {
-    for (const field of Object.values(cumulativeFields)) {
-      if (row[field] === null || row[field] === undefined) totals[field] += 1;
+    for (const field of Object.keys(sums)) {
+      if (row[field] !== null && row[field] !== undefined) sums[field] += row[field];
     }
   }
-  return totals;
+  return sums;
 }
 
 export async function syncGrowattEnergyHistory(plant, date) {
@@ -465,15 +465,17 @@ export async function syncGrowattEnergyHistory(plant, date) {
   const existingValues = existing.length * Object.keys(cumulativeFields).length - existing_nulls;
   const derivedValues = rows.length * Object.keys(cumulativeFields).length - derived_nulls;
   // Con meter válido (invariant_ok), los consumption=null honestos del
-  // desfase MIN/meter no cuentan como degradación: generation/import/export
+  // desfase MIN/meter no cuentan como degradación; generation/import/export
   // se protegen campo a campo. Sin meter válido, comparación legacy intacta.
+  // Con extras meter (gen=null) se mide evidencia, no nulls: solo la pérdida
+  // de energía observada por canal bloquea (tolerancia INVARIANT_EPS_KWH).
   const meterTrusted = meterMeta.meter_used === true && meterMeta.invariant_ok === true;
   let coverageDegraded;
   if (meterTrusted) {
-    const existingByField = nullsByField(existing);
-    const derivedByField = nullsByField(rows);
+    const existingSums = energySums(existing);
+    const derivedSums = energySums(rows);
     coverageDegraded = ['generation_kwh', 'grid_import_kwh', 'grid_export_kwh']
-      .some(field => derivedByField[field] > existingByField[field]);
+      .some(field => derivedSums[field] + INVARIANT_EPS_KWH < existingSums[field]);
   } else {
     coverageDegraded = derived_nulls > existing_nulls;
   }

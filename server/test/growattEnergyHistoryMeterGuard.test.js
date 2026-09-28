@@ -30,10 +30,10 @@ const minRow = (utc, wall, eac) => ({
     }],
   },
 });
-const completeRow = () => ({
+const completeRow = (generation = 1) => ({
   interval_start: '2026-09-27T16:00:00.000Z',
   timezone: 'America/La_Paz',
-  generation_kwh: 1, consumption_kwh: 1, grid_import_kwh: 1, grid_export_kwh: 1,
+  generation_kwh: generation, consumption_kwh: 1, grid_import_kwh: 1, grid_export_kwh: 1,
 });
 const meterSample = (wall, imp, exp) => ({
   timeText: wall,
@@ -179,16 +179,16 @@ test('C: meter_used=false con más nulls mantiene legacy y bloquea', { skip: !su
 test('D: meter válido pero generation degradada bloquea', { skip: !supportsModuleMocks }, async () => {
   reset({
     power: [
-      minRow('2026-09-27T10:00:00.000Z', '2026-09-27 06:00:00', 10),
-      minRow('2026-09-27T14:00:00.000Z', '2026-09-27 10:00:00', null),
-      minRow('2026-09-27T18:00:00.000Z', '2026-09-27 14:00:00', 20),
+      minRow('2026-09-27T10:00:00.000Z', '2026-09-27 06:00:00', 0.5),
+      minRow('2026-09-27T14:00:00.000Z', '2026-09-27 10:00:00', 0.5),
+      minRow('2026-09-27T18:00:00.000Z', '2026-09-27 14:00:00', 0.5),
     ],
     existing: [completeRow(), completeRow(), completeRow()],
     sn: 'DL-D',
     samples: [
-      meterSample('2026-09-27 06:00:00', 4.5, 0),
-      meterSample('2026-09-27 10:00:00', 4.6, 5),
-      meterSample('2026-09-27 14:00:00', 4.8, 8),
+      meterSample('2026-09-27 06:00:00', 0.3, 0),
+      meterSample('2026-09-27 10:00:00', 0.3, 5),
+      meterSample('2026-09-27 14:00:00', 0.3, 8),
     ],
   });
   const result = await syncGrowattEnergyHistory(syncPlant, '2026-09-27');
@@ -200,16 +200,16 @@ test('D: meter válido pero generation degradada bloquea', { skip: !supportsModu
 test('E: meter válido pero import pierde cobertura bloquea', { skip: !supportsModuleMocks }, async () => {
   reset({
     power: [
-      minRow('2026-09-27T10:00:00.000Z', '2026-09-27 06:00:00', 0),
+      minRow('2026-09-27T10:00:00.000Z', '2026-09-27 06:00:00', 10),
       minRow('2026-09-27T14:00:00.000Z', '2026-09-27 10:00:00', 10),
-      minRow('2026-09-27T18:00:00.000Z', '2026-09-27 14:00:00', 36.7),
+      minRow('2026-09-27T18:00:00.000Z', '2026-09-27 14:00:00', 10),
     ],
     existing: [completeRow(), completeRow(), completeRow()],
     sn: 'DL-E',
     samples: [
-      meterSample('2026-09-27 06:00:00', 4.5, 0),
+      meterSample('2026-09-27 06:00:00', 1.5, 0),
       meterSample('2026-09-27 10:00:00', null, 5),
-      meterSample('2026-09-27 14:00:00', 4.8, 8),
+      meterSample('2026-09-27 14:00:00', 1.3, 8),
     ],
   });
   const result = await syncGrowattEnergyHistory(syncPlant, '2026-09-27');
