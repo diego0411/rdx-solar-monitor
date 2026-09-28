@@ -18,21 +18,31 @@ function nonNegativeNumber(value) {
   return Number.isFinite(number) && number >= 0 ? number : null;
 }
 
+function legacyPayload(entry) {
+  // Forma REAL legacy: { "<serial>": [ { ...payload } ] } (array de 1).
+  if (Array.isArray(entry)) {
+    if (entry.length !== 1) return null;
+    const single = entry[0];
+    return single && typeof single === 'object' && !Array.isArray(single) ? single : null;
+  }
+  // Compatibilidad: objeto con un único subíndice y payload válido.
+  if (!entry || typeof entry !== 'object') return null;
+  const subKeys = Object.keys(entry);
+  if (subKeys.length !== 1) return null;
+  const payload = entry[subKeys[0]];
+  return payload && typeof payload === 'object' && !Array.isArray(payload) ? payload : null;
+}
+
 function legacyDeviceData(entries, device) {
-  // Envelope legado (p. ej. 2026-09-14): devices: { "<serial>": { "0": { ...payload } } }.
-  // Se resuelve por serial_number sin ambigüedad: exactamente una entrada y
-  // un único subíndice; en cualquier otro caso se devuelve null (sin elegir).
+  // Envelope legado: devices: { "<serial>": [ { ...payload } ] }.
+  // Se resuelve por serial_number sin ambigüedad: exactamente una entrada;
+  // en cualquier otro caso se devuelve null (sin elegir).
   if (!entries || typeof entries !== 'object' || Array.isArray(entries)) return null;
   const wanted = String(device?.serial_number ?? '').trim();
   const keys = Object.keys(entries).filter(key => key === device?.serial_number
     || (wanted !== '' && key.toLowerCase() === wanted.toLowerCase()));
   if (keys.length !== 1) return null;
-  const entry = entries[keys[0]];
-  if (!entry || typeof entry !== 'object' || Array.isArray(entry)) return null;
-  const subKeys = Object.keys(entry);
-  if (subKeys.length !== 1) return null;
-  const payload = entry[subKeys[0]];
-  return payload && typeof payload === 'object' && !Array.isArray(payload) ? payload : null;
+  return legacyPayload(entries[keys[0]]);
 }
 
 function deviceRawData(row, device, deviceCount) {

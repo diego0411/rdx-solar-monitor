@@ -150,7 +150,7 @@ test('integracion post-fix: filas completas dan totales y cobertura available', 
 function legacyPowerRow(time, data, serial = 'MIN-1') {
   return {
     interval_start: `${time.replace(' ', 'T')}.000Z`,
-    raw_data: { devices: { [serial]: { 0: { time, ...data } } } },
+    raw_data: { devices: { [serial]: [{ time, ...data }] } },
   };
 }
 
@@ -199,8 +199,10 @@ test('legado: estructura ambigua no selecciona arbitrariamente', () => {
   assert.equal(twoSerials[0].generation_kwh, null);
   const twoSlots = deriveGrowattEnergyHistory(plant, [devices[0]], [
     { interval_start: '2026-09-14T06:08:33.000Z',
-      raw_data: { devices: { 'MIN-1': { 0: { time: '2026-09-14 06:08:33', eacToday: 1 },
-        1: { time: '2026-09-14 06:08:33', eacToday: 2 } } } } },
+      raw_data: { devices: { 'MIN-1': [
+        { time: '2026-09-14 06:08:33', eacToday: 1 },
+        { time: '2026-09-14 06:08:33', eacToday: 2 },
+      ] } } },
   ]);
   assert.equal(twoSlots[0].generation_kwh, null);
 });
