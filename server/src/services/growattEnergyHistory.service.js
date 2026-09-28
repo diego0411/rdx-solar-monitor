@@ -415,6 +415,17 @@ function nullTotals(rows) {
   return total;
 }
 
+function nullsByField(rows) {
+  const totals = {};
+  for (const field of Object.values(cumulativeFields)) totals[field] = 0;
+  for (const row of rows) {
+    for (const field of Object.values(cumulativeFields)) {
+      if (row[field] === null || row[field] === undefined) totals[field] += 1;
+    }
+  }
+  return totals;
+}
+
 export async function syncGrowattEnergyHistory(plant, date) {
   let powerRows = await listPlantPowerIntervals(plant.id, date);
   let powerHistorySynced = false;
@@ -453,8 +464,21 @@ export async function syncGrowattEnergyHistory(plant, date) {
   const derived_nulls = nullTotals(rows);
   const existingValues = existing.length * Object.keys(cumulativeFields).length - existing_nulls;
   const derivedValues = rows.length * Object.keys(cumulativeFields).length - derived_nulls;
+  // Con meter válido (invariant_ok), los consumption=null honestos del
+  // desfase MIN/meter no cuentan como degradación: generation/import/export
+  // se protegen campo a campo. Sin meter válido, comparación legacy intacta.
+  const meterTrusted = meterMeta.meter_used === true && meterMeta.invariant_ok === true;
+  let coverageDegraded;
+  if (meterTrusted) {
+    const existingByField = nullsByField(existing);
+    const derivedByField = nullsByField(rows);
+    coverageDegraded = ['generation_kwh', 'grid_import_kwh', 'grid_export_kwh']
+      .some(field => derivedByField[field] > existingByField[field]);
+  } else {
+    coverageDegraded = derived_nulls > existing_nulls;
+  }
   const degraded = (existing.length > 0
-    && (derivedValues === 0 ? existingValues > 0 : derived_nulls > existing_nulls))
+    && (derivedValues === 0 ? existingValues > 0 : coverageDegraded))
     || (meterMeta.meter_used === true && meterMeta.invariant_ok === false);
   if (degraded) {
     return {
