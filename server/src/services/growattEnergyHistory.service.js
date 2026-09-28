@@ -18,12 +18,31 @@ function nonNegativeNumber(value) {
   return Number.isFinite(number) && number >= 0 ? number : null;
 }
 
+function legacyDeviceData(entries, device) {
+  // Envelope legado (p. ej. 2026-09-14): devices: { "<serial>": { "0": { ...payload } } }.
+  // Se resuelve por serial_number sin ambigüedad: exactamente una entrada y
+  // un único subíndice; en cualquier otro caso se devuelve null (sin elegir).
+  if (!entries || typeof entries !== 'object' || Array.isArray(entries)) return null;
+  const wanted = String(device?.serial_number ?? '').trim();
+  const keys = Object.keys(entries).filter(key => key === device?.serial_number
+    || (wanted !== '' && key.toLowerCase() === wanted.toLowerCase()));
+  if (keys.length !== 1) return null;
+  const entry = entries[keys[0]];
+  if (!entry || typeof entry !== 'object' || Array.isArray(entry)) return null;
+  const subKeys = Object.keys(entry);
+  if (subKeys.length !== 1) return null;
+  const payload = entry[subKeys[0]];
+  return payload && typeof payload === 'object' && !Array.isArray(payload) ? payload : null;
+}
+
 function deviceRawData(row, device, deviceCount) {
   const entries = row.raw_data?.devices;
   if (Array.isArray(entries)) {
     return entries.find(entry => entry.device_id === device.id
       || entry.serial_number === device.serial_number)?.data ?? null;
   }
+  const legacy = legacyDeviceData(entries, device);
+  if (legacy !== null) return legacy;
   return deviceCount === 1 ? row.raw_data ?? null : null;
 }
 
@@ -90,6 +109,14 @@ export function deriveGrowattEnergyHistory(plant, devices, powerRows) {
     });
 }
 
+function nullTotals(rows) {
+  let total = 0;
+  for (const field of Object.values(cumulativeFields)) {
+    total += rows.filter(row => row[field] === null || row[field] === undefined).length;
+  }
+  return total;
+}
+
 export async function syncGrowattEnergyHistory(plant, date) {
   let powerRows = await listPlantPowerIntervals(plant.id, date);
   let powerHistorySynced = false;
@@ -100,10 +127,28 @@ export async function syncGrowattEnergyHistory(plant, date) {
   }
   const devices = await listActiveGrowattMinDevicesByPlant(plant.id);
   const rows = deriveGrowattEnergyHistory(plant, devices, powerRows);
+  // Protección anti-degradación: nunca sobrescribir energy_intervals
+  // existentes con una derivación materialmente peor. La comparación es del
+  // conjunto completo de la fecha: o se escriben todas las filas o ninguna.
+  const existing = await listEnergyIntervalsRange(plant.id, 1, date, periodRange('day', date).end);
+  const existing_nulls = nullTotals(existing);
+  const derived_nulls = nullTotals(rows);
+  const existingValues = existing.length * Object.keys(cumulativeFields).length - existing_nulls;
+  const derivedValues = rows.length * Object.keys(cumulativeFields).length - derived_nulls;
+  const degraded = existing.length > 0
+    && (derivedValues === 0 ? existingValues > 0 : derived_nulls > existing_nulls);
+  if (degraded) {
+    return {
+      provider: 'growatt', devices: devices.length, fetched: powerRows.length,
+      upserted: 0, failed: 0, power_history_synced: powerHistorySynced,
+      skipped_degraded: true, existing_nulls, derived_nulls,
+    };
+  }
   await upsertEnergyIntervals(rows);
   return {
     provider: 'growatt', devices: devices.length, fetched: powerRows.length,
     upserted: rows.length, failed: 0, power_history_synced: powerHistorySynced,
+    skipped_degraded: false, existing_nulls, derived_nulls,
   };
 }
 

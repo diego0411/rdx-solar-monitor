@@ -146,3 +146,61 @@ test('integracion post-fix: filas completas dan totales y cobertura available', 
   assert.equal(result.coverage.status, 'available');
   assert.equal(result.coverage.missing_energy_intervals, 0);
 });
+
+function legacyPowerRow(time, data, serial = 'MIN-1') {
+  return {
+    interval_start: `${time.replace(' ', 'T')}.000Z`,
+    raw_data: { devices: { [serial]: { 0: { time, ...data } } } },
+  };
+}
+
+const legacyCounters = {
+  eacToday: 0.4, elocalLoadToday: 0.2, etoUserToday: 0.1, etoGridToday: 0.3,
+};
+
+test('legado: resuelve por serial y deriva los cuatro contadores', () => {
+  const rows = deriveGrowattEnergyHistory(plant, [devices[0]], [
+    legacyPowerRow('2026-09-14 06:08:33', legacyCounters),
+    legacyPowerRow('2026-09-14 06:13:33', { eacToday: 0.9, elocalLoadToday: 0.5, etoUserToday: 0.2, etoGridToday: 0.6 }),
+  ]);
+  assert.equal(rows[0].generation_kwh, 0.4);
+  assert.equal(rows[0].consumption_kwh, 0.2);
+  assert.equal(rows[0].grid_import_kwh, 0.1);
+  assert.equal(rows[0].grid_export_kwh, 0.3);
+  assert.ok(Math.abs(rows[1].generation_kwh - 0.5) < 1e-9);
+  assert.ok(Math.abs(rows[1].grid_export_kwh - 0.3) < 1e-9);
+});
+
+test('legado: primer contador 0 da delta 0 y >0 da current', () => {
+  const zero = deriveGrowattEnergyHistory(plant, [devices[0]], [
+    legacyPowerRow('2026-09-14 00:00:00', { eacToday: 0 }),
+  ]);
+  assert.equal(zero[0].generation_kwh, 0);
+  const positive = deriveGrowattEnergyHistory(plant, [devices[0]], [
+    legacyPowerRow('2026-09-14 06:08:33', { eacToday: 2.5 }),
+  ]);
+  assert.equal(positive[0].generation_kwh, 2.5);
+});
+
+test('legado: serial desconocido no toma payload ajeno', () => {
+  const rows = deriveGrowattEnergyHistory(plant, [devices[0]], [
+    legacyPowerRow('2026-09-14 06:08:33', { eacToday: 0.4 }, 'OTHER-SN'),
+    legacyPowerRow('2026-09-14 06:13:33', { eacToday: 0.9 }, 'OTHER-SN'),
+  ]);
+  assert.deepEqual(rows.map(row => row.generation_kwh), [null, null]);
+});
+
+test('legado: estructura ambigua no selecciona arbitrariamente', () => {
+  const twoSerials = deriveGrowattEnergyHistory(plant, [devices[0]], [
+    { interval_start: '2026-09-14T06:08:33.000Z',
+      raw_data: { devices: { 'MIN-1': { 0: { time: '2026-09-14 06:08:33', eacToday: 1 } },
+        'min-1': { 0: { time: '2026-09-14 06:08:33', eacToday: 2 } } } } },
+  ]);
+  assert.equal(twoSerials[0].generation_kwh, null);
+  const twoSlots = deriveGrowattEnergyHistory(plant, [devices[0]], [
+    { interval_start: '2026-09-14T06:08:33.000Z',
+      raw_data: { devices: { 'MIN-1': { 0: { time: '2026-09-14 06:08:33', eacToday: 1 },
+        1: { time: '2026-09-14 06:08:33', eacToday: 2 } } } } },
+  ]);
+  assert.equal(twoSlots[0].generation_kwh, null);
+});
