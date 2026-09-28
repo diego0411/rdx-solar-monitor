@@ -30,7 +30,10 @@ function aliasOf(data) {
 }
 
 export async function syncGrowattLatest(now = Date.now()) {
-  const devices = await listActiveGrowattDevices();
+  // Meters excluidos: su telemetría llega en Fase 2 por endpoints de
+  // ammeter, no por queryLastData de inversores.
+  const devices = (await listActiveGrowattDevices())
+    .filter(device => String(device?.device_type ?? '').toLowerCase() !== 'meter');
   const apiToken = env.GROWATT_API_TOKEN;
   const result = {
     processed: devices.length, updated: 0, no_data: 0, failed: 0, errors: [],

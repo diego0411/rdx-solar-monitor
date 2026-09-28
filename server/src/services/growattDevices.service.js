@@ -2,6 +2,7 @@ import { upsertGrowattDevice } from '../repositories/devices.repository.js';
 import { linkGrowattDeviceToPlant } from '../repositories/devices.repository.js';
 import { listActiveGrowattPlants } from '../repositories/plants.repository.js';
 import { GrowattProvider } from '../providers/growatt/GrowattProvider.js';
+import { buildMeterDevice, selectActiveMeter } from '../providers/growatt/normalizeGrowattMeter.js';
 import { normalizeGrowattDevice } from '../providers/growatt/normalizeGrowattDevice.js';
 import { normalizeGrowattDeviceCheck } from '../providers/growatt/normalizeGrowattDeviceCheck.js';
 import { normalizeGrowattTlxDataInfo } from '../providers/growatt/normalizeGrowattTlxDataInfo.js';
@@ -81,6 +82,50 @@ export async function syncGrowattDevices({ forceCached = false } = {}) {
   return result;
 }
 
+function meterAddress(entry) {
+  const address = entry?.address ?? entry?.addr ?? null;
+  return address === null || address === undefined ? null : String(address);
+}
+
+// Descubrimiento de smart meters por datalogger. No toca el flujo MIN:
+// un fallo aquí nunca destruye/desactiva lo ya vinculado.
+async function linkPlantMeters(plant, realDevices, result) {
+  let linked = 0;
+  const dataloggers = [...new Set(realDevices
+    .map(device => device?.datalogger_sn ?? device?.dataloggerSn ?? null)
+    .filter(value => value !== null && value !== undefined && String(value).trim() !== ''))].sort();
+  for (const dataloggerSn of dataloggers) {
+    let meters;
+    try {
+      meters = await provider.listMeters(dataloggerSn);
+    } catch (error) {
+      result.meter_failed += 1;
+      if (error?.rateLimited) result.rate_limited = true;
+      result.errors.push(error instanceof Error ? error.message : 'Error de meters Growatt');
+      continue;
+    }
+    const byAddress = new Map();
+    for (const entry of meters ?? []) {
+      const address = meterAddress(entry);
+      if (address === null) continue;
+      if (!byAddress.has(address)) byAddress.set(address, []);
+      byAddress.get(address).push(entry);
+    }
+    const addresses = [...byAddress.keys()].sort();
+    result.meters_fetched += addresses.length;
+    for (const address of addresses) {
+      const { selected, candidates } = selectActiveMeter(byAddress.get(address), dataloggerSn);
+      if (!selected || !selected.address) continue;
+      const device = buildMeterDevice(plant.id, selected, candidates);
+      delete device.plant_id;
+      await upsertGrowattDevice(device);
+      linked += await linkGrowattDeviceToPlant(device.serial_number, plant.id);
+    }
+  }
+  result.meters_linked += linked;
+  return linked;
+}
+
 export async function linkNextGrowattPlantDevices() {
   const plants = await listActiveGrowattPlants();
   const progress = readLinkProgress();
@@ -89,6 +134,7 @@ export async function linkNextGrowattPlantDevices() {
   const result = {
     provider: 'growatt', processed_plant: null, remaining_plants: pendingPlants.length,
     fetched: 0, linked: 0, failed: 0, rate_limited: false, errors: [],
+    meters_fetched: 0, meters_linked: 0, meter_failed: 0,
   };
   if (!plant) return result;
 
@@ -101,6 +147,7 @@ export async function linkNextGrowattPlantDevices() {
     for (const device of realDevices) {
       result.linked += await linkGrowattDeviceToPlant(device.device_sn, plant.id);
     }
+    result.linked += await linkPlantMeters(plant, realDevices, result);
     progress[plant.external_plant_id] = true;
     mkdirSync(new URL('../../.cache/', import.meta.url), { recursive: true });
     writeFileSync(LINK_PROGRESS_FILE, JSON.stringify(progress), 'utf8');

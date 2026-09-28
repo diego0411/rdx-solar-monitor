@@ -156,6 +156,29 @@ export class GrowattProvider {
     return Array.isArray(payload?.data?.devices) ? payload.data.devices : [];
   }
 
+  async listMeters(dataloggerSn) {
+    const url = new URL('/v4/device/ammeter/meter_list', this.baseUrl);
+    url.search = new URLSearchParams({ datalog_sn: String(dataloggerSn) });
+    const response = await fetch(url, {
+      method: 'GET',
+      headers: { Accept: 'application/json', token: this.apiToken },
+      redirect: 'error',
+      signal: AbortSignal.timeout(10000),
+    });
+    if (!response.ok) throw new Error('Growatt meter list request failed');
+    const payload = await response.json();
+    if (Number(payload?.code) === 102 || Number(payload?.error_code) === 102) {
+      const error = new Error('Growatt rate limit');
+      error.rateLimited = true;
+      error.statusCode = 429;
+      throw error;
+    }
+    if (payload?.code !== 0 && payload?.error_code !== 0) {
+      throw new Error('Growatt meter list response failed');
+    }
+    return Array.isArray(payload?.data?.meters) ? payload.data.meters : [];
+  }
+
   async checkDeviceBySn(deviceSn) {
     const url = new URL('/v1/device/check/sn', this.baseUrl);
     url.search = new URLSearchParams({ dataloggerSn: String(deviceSn) });
