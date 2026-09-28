@@ -63,3 +63,72 @@ test('no usa ppv como fallback cuando falta pac', () => {
   assert.equal(point.generation_power_w, null);
   assert.equal(point.raw_data.ppv, 5419.6);
 });
+
+const exportCase = (overrides = {}) => normalizeGrowattPowerHistory({ data: [{
+  time: '2026-09-27 12:00:00',
+  pac: 1399.7,
+  pacToLocalLoad: 18.7,
+  pacToUserTotal: 0,
+  pacToGridTotal: 1381,
+  ...overrides,
+}] }, 'America/La_Paz')[0];
+
+test('export A: muestra normal balanceada no se corrige', () => {
+  const point = exportCase();
+  assert.equal(point.grid_export_power_w, 1381);
+  assert.equal(point.generation_power_w, 1399.7);
+});
+
+test('export B: glitch Arturo se corrige a pac-load+import', () => {
+  const point = exportCase({ pac: 2250.7, pacToLocalLoad: 2226.6, pacToGridTotal: 4477.3 });
+  assert.ok(Math.abs(point.grid_export_power_w - 24.1) < 1e-6);
+  assert.equal(point.generation_power_w, 2250.7);
+  assert.equal(point.consumption_power_w, 2226.6);
+  assert.equal(point.grid_import_power_w, 0);
+});
+
+test('export C: otro glitch con load pequeño se corrige', () => {
+  const point = exportCase({ pac: 5942.3, pacToLocalLoad: 42.4, pacToGridTotal: 5984.7 });
+  assert.ok(Math.abs(point.grid_export_power_w - 5899.9) < 1e-6);
+});
+
+test('export D: importación sana balanceada no se toca', () => {
+  const point = exportCase({
+    pac: 1000, pacToLocalLoad: 1500, pacToUserTotal: 500, pacToGridTotal: 0,
+  });
+  assert.equal(point.grid_export_power_w, 0);
+  assert.equal(point.grid_import_power_w, 500);
+});
+
+test('export E: expected negativo (dropout pac) no se corrige ni clamplea', () => {
+  const point = exportCase({
+    pac: 0, pacToLocalLoad: 4872.2, pacToUserTotal: 0, pacToGridTotal: 4872.2,
+  });
+  assert.equal(point.grid_export_power_w, 4872.2);
+});
+
+test('export F: import significativo bloquea la corrección', () => {
+  // pac+load=3300 coincide con reported, pero import=500 lo invalida.
+  const point = exportCase({
+    pac: 3000, pacToLocalLoad: 300, pacToUserTotal: 500, pacToGridTotal: 3300,
+  });
+  assert.equal(point.grid_export_power_w, 3300);
+});
+
+test('export G: diferencia pequeña dentro del balance no se corrige', () => {
+  const point = exportCase({ pacToGridTotal: 1390 });
+  assert.equal(point.grid_export_power_w, 1390);
+});
+
+test('export H: valores no numéricos preservan comportamiento', () => {
+  const point = exportCase({ pacToGridTotal: null });
+  assert.equal(point.grid_export_power_w, null);
+  const noLoad = exportCase({ pacToLocalLoad: undefined, pacToGridTotal: 4477.3 });
+  assert.equal(noLoad.grid_export_power_w, 4477.3);
+});
+
+test('export I/J: generation sigue pac y ppv no interviene', () => {
+  const point = exportCase({ ppv: 9999, pac: 2250.7, pacToLocalLoad: 2226.6, pacToGridTotal: 4477.3 });
+  assert.equal(point.generation_power_w, 2250.7);
+  assert.equal(point.raw_data.ppv, 9999);
+});
