@@ -656,6 +656,7 @@ test('self K: zero-export válido da self=gen EXACT', () => {
 });
 
 test('self L/M: savings usa self corregido y respeta cada tarifa', () => {
+
   const uniform = calculatePlantEconomics([
     pairRow('2026-09-26', 0, 1, 0.2),
     pairRow('2026-09-26', 1, 1, 0.3),
@@ -674,4 +675,71 @@ test('self L/M: savings usa self corregido y respeta cada tarifa', () => {
   assert.equal(multi.metrics.self_consumption_savings.quality, 'EXACT');
   assert.ok(Math.abs(multi.self_consumption_savings - 8) > 1e-9);
   assert.ok(Math.abs(multi.self_consumption_savings - 16) > 1e-9);
+});
+
+// --- meter_suspect con generación parcial (caso Romao) ---
+const romaoRow = (index, generation) => dayRow('2026-09-26', index, {
+  generation_kwh: generation, consumption_kwh: 0, grid_import_kwh: 0, grid_export_kwh: 0,
+});
+const romaoCtx = { period: 'day', start: '2026-09-26', end: '2026-09-27', now: Date.UTC(2026, 8, 28, 12, 0) };
+
+test('romao B: gen parcial + red/carga completas en 0 → SUSPECT', () => {
+  const result = calculatePlantEconomics(
+    [romaoRow(0, 10), romaoRow(1, null), romaoRow(2, 8)], [tariff()], romaoCtx);
+  assert.equal(result.coverage.meter_suspect, true);
+  assert.deepEqual(result.coverage.suspect_days, ['2026-09-26']);
+  assert.equal(result.metrics.generation_kwh.quality, 'PARTIAL');
+  approx(result.metrics.generation_kwh.value, 18);
+  for (const key of ['consumption_kwh', 'grid_import_kwh', 'grid_export_kwh']) {
+    assert.equal(result.metrics[key].value, 0);
+    assert.equal(result.metrics[key].quality, 'SUSPECT');
+  }
+  assert.equal(result.metrics.self_consumption_kwh.value, null);
+  assert.equal(result.metrics.self_consumption_kwh.quality, 'SUSPECT');
+  assert.equal(result.metrics.self_consumption_savings.value, null);
+  assert.equal(result.metrics.estimated_economic_benefit.value, null);
+});
+
+test('romao C: gen parcial + red/carga viva → NO SUSPECT', () => {
+  const result = calculatePlantEconomics([
+    dayRow('2026-09-26', 0, { generation_kwh: 1, consumption_kwh: 0.5, grid_import_kwh: 0, grid_export_kwh: 0.5 }),
+    dayRow('2026-09-26', 1, { generation_kwh: null, consumption_kwh: 0.4, grid_import_kwh: 0.1, grid_export_kwh: 0.5 }),
+    dayRow('2026-09-26', 2, { generation_kwh: 2, consumption_kwh: 0.6, grid_import_kwh: 0, grid_export_kwh: 1.4 }),
+  ], [tariff()], romaoCtx);
+  assert.equal(result.coverage.meter_suspect, false);
+});
+
+test('romao D/E/F: canal red/carga incompleto → NO SUSPECT', () => {
+  const ctx = romaoCtx;
+  const consNull = calculatePlantEconomics([
+    romaoRow(0, 10), dayRow('2026-09-26', 1, { generation_kwh: 8, consumption_kwh: null, grid_import_kwh: 0, grid_export_kwh: 0 }),
+  ], [tariff()], ctx);
+  assert.equal(consNull.coverage.meter_suspect, false);
+  const impNull = calculatePlantEconomics([
+    romaoRow(0, 10), dayRow('2026-09-26', 1, { generation_kwh: 8, consumption_kwh: 0, grid_import_kwh: null, grid_export_kwh: 0 }),
+  ], [tariff()], ctx);
+  assert.equal(impNull.coverage.meter_suspect, false);
+  const expNull = calculatePlantEconomics([
+    romaoRow(0, 10), dayRow('2026-09-26', 1, { generation_kwh: 8, consumption_kwh: 0, grid_import_kwh: 0, grid_export_kwh: null }),
+  ], [tariff()], ctx);
+  assert.equal(expNull.coverage.meter_suspect, false);
+});
+
+test('romao G: generación observada 0 → NO SUSPECT', () => {
+  const result = calculatePlantEconomics([
+    romaoRow(0, 0), romaoRow(1, 0),
+  ], [tariff()], romaoCtx);
+  assert.equal(result.coverage.meter_suspect, false);
+});
+
+test('romao I: multi-día aísla solo el día Romao-like', () => {
+  const result = calculatePlantEconomics([
+    romaoRow(0, 10),
+    dayRow('2026-09-26', 1, { generation_kwh: null, consumption_kwh: 0, grid_import_kwh: 0, grid_export_kwh: 0 }),
+    dayRow('2026-09-27', 0, fullValues),
+  ], [tariff()], {
+    period: 'week', start: '2026-09-21', end: '2026-09-28', now: Date.UTC(2026, 8, 28, 12, 0),
+  });
+  assert.equal(result.coverage.meter_suspect, true);
+  assert.deepEqual(result.coverage.suspect_days, ['2026-09-26']);
 });

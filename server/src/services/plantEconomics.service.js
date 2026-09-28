@@ -120,9 +120,11 @@ export function calculatePlantEconomics(rows, tariffs, { period, start, end, now
   const periodInProgress = todayLocal !== '' && start <= todayLocal && todayLocal < end;
 
   // Medición red/carga sospechosa: evaluación conservadora POR DÍA LOCAL
-  // sobre histórico almacenado. Solo si generación completa y >0 con los
-  // tres contadores de red/carga completos y exactamente en 0.
-  // Nunca por métricas incompletas, generación 0 o estado del inversor.
+  // sobre histórico almacenado. Requiere producción FV observada (>0) más
+  // los tres canales de red/carga COMPLETOS y exactamente en 0.
+  // Generación puede ser parcial (NULL aislados impiden el total EXACTO,
+  // no convierten tres canales planos en medición confiable).
+  // Nunca por canales incompletos, sin generación válida o generación 0.
   const byLocalDay = new Map();
   for (const row of intervalResults) {
     if (row.local_date === null) continue;
@@ -132,8 +134,9 @@ export function calculatePlantEconomics(rows, tariffs, { period, start, end, now
   const suspectDay = group => {
     if (!group.length) return false;
     const complete = field => group.every(row => row[field] !== null);
+    const observedSum = field => group.reduce((total, row) => total + (row[field] ?? 0), 0);
     const sum = field => group.reduce((total, row) => total + row[field], 0);
-    return complete('generation_kwh') && sum('generation_kwh') > 0
+    return group.some(row => row.generation_kwh !== null) && observedSum('generation_kwh') > 0
       && complete('consumption_kwh') && sum('consumption_kwh') === 0
       && complete('grid_import_kwh') && sum('grid_import_kwh') === 0
       && complete('grid_export_kwh') && sum('grid_export_kwh') === 0;
