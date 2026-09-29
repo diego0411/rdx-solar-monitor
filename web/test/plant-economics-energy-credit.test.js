@@ -39,6 +39,7 @@ function creditSummary(creditMetric) {
     grid_export_kwh: null,
     self_consumption_savings: 2.99,
     estimated_economic_benefit: null,
+    export_credit_estimated_value: null,
     purchase_energy_rate: 1.068,
     currency: 'BOB',
     compensation_type: 'energy_credit',
@@ -52,8 +53,8 @@ function creditSummary(creditMetric) {
       grid_import_kwh: metric(null, 0, 99, 'UNAVAILABLE'),
       grid_export_kwh: metric(26.3, 86, 99, 'PARTIAL'),
       self_consumption_savings: metric(2.99, 86, 99, 'PARTIAL'),
-      export_value: metric(null, 0, 99, 'UNAVAILABLE'),
-      estimated_economic_benefit: metric(null, 0, 99, 'UNAVAILABLE'),
+      export_value: metric(28.0944, 86, 99, 'PARTIAL'),
+      estimated_economic_benefit: metric(31.0844, 86, 99, 'PARTIAL'),
       energy_credit_generated_kwh: creditMetric,
     },
   };
@@ -77,14 +78,16 @@ test('3. crédito no disponible mantiene —', () => {
   assert.equal(view.creditCoverage.value, '');
 });
 
-test('4. valor económico estimado sigue No disponible', () => {
+test('4. valor económico estimado 1:1 en Bs con cobertura PARTIAL', () => {
   const view = setupEconomics(creditSummary(metric(26.3, 86, 99, 'PARTIAL')));
-  assert.equal(view.creditValueDisplay.value, 'No disponible');
+  assert.equal(view.creditValueDisplay.value, 'Bs 28,09');
+  assert.equal(view.creditValueCoverage.value, 'Cobertura: 86/99 intervalos (86,9%)');
 });
 
-test('5. beneficio total sigue — sin valoración monetaria', () => {
+test('5. beneficio total 1:1 en Bs sin sumar kWh', () => {
   const view = setupEconomics(creditSummary(metric(26.3, 86, 99, 'PARTIAL')));
-  assert.equal(view.benefitDisplay.value, '—');
+  assert.equal(view.benefitDisplay.value, 'Bs 31,08');
+  assert.equal(view.benefitCoverage.value, 'Cobertura: 86/99 intervalos (86,9%)');
   assert.equal(view.savingsDisplay.value, 'Bs 2,99');
 });
 
@@ -92,4 +95,13 @@ test('6. SUSPECT no muestra crédito generado artificial', () => {
   const view = setupEconomics(creditSummary(metric(0, 99, 99, 'SUSPECT')));
   assert.equal(view.creditDisplay.value, '—');
   assert.equal(view.creditCoverage.value, '');
+});
+
+test('7. sin métrica se conserva el legacy', () => {
+  const view = setupEconomics(creditSummary(metric(26.3, 86, 99, 'PARTIAL')));
+  const summary = view.summary.value;
+  delete summary.metrics.export_value;
+  view.summary.value = summary;
+  assert.equal(view.creditValueDisplay.value, 'No disponible');
+  assert.equal(view.creditValueCoverage.value, '');
 });

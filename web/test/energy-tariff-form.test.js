@@ -72,13 +72,13 @@ test('Other accepts custom distributor/category/currency and monetary export pri
   assert.equal(payload.effective_to, '2026-12-31');
 });
 
-test('none hides export price; monetary requires it and energy_credit preserves the optional supported price', () => {
+test('none and energy_credit hide export price; monetary requires it', () => {
   const { view, nodes } = setup();
   for (const type of ['none', 'energy_credit', 'monetary']) {
     view.form.value.export_compensation_type = type;
     const inputs = nodes().filter(node => node.type === 'input' && node.props?.type === 'number');
-    assert.equal(inputs.length, type === 'none' ? 1 : 2);
-    if (type !== 'none') assert.equal(inputs[1].props.required, type === 'monetary');
+    assert.equal(inputs.length, type === 'monetary' ? 2 : 1);
+    if (type === 'monetary') assert.ok('required' in inputs[1].props);
     view.form.value.export_energy_rate = '12';
     assert.equal(view.tariffPayload().export_energy_rate, type === 'none' ? null : 12);
     view.form.value.export_energy_rate = '';

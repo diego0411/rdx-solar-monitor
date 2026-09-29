@@ -36,23 +36,23 @@ test('monetary calcula valor, autoconsumo, ahorro y beneficio sin confundir prod
   assert.equal(result.currency, 'BOB');
 });
 
-test('energy_credit conserva kWh y no los convierte a dinero sin tarifa explícita', () => {
+test('energy_credit valora 1:1 con purchase sin export rate', () => {
   const result = calculatePlantEconomics([row('2026-09-23')], [tariff({
     export_compensation_type: 'energy_credit', export_energy_rate: null,
   })], context);
   assert.equal(result.export_credit_kwh, 300);
-  assert.equal(result.export_value, null);
-  assert.equal(result.estimated_economic_benefit, null);
+  assert.equal(result.export_value, 240);
+  assert.equal(result.estimated_economic_benefit, 800);
   assert.equal(result.self_consumption_savings, 560);
 });
 
-test('energy_credit admite valoración monetaria solo con tarifa explícita', () => {
+test('energy_credit ignora export rate: purchase manda', () => {
   const result = calculatePlantEconomics([row('2026-09-23')], [tariff({
     export_compensation_type: 'energy_credit', export_energy_rate: 0.25,
   })], context);
   assert.equal(result.export_credit_kwh, 300);
-  assert.equal(result.export_value, 75);
-  assert.equal(result.estimated_economic_benefit, 635);
+  assert.equal(result.export_value, 240);
+  assert.equal(result.estimated_economic_benefit, 800);
 });
 
 test('none fija compensación de exportación en cero', () => {
@@ -159,20 +159,20 @@ test('CASO 3: compensación monetaria suma exportación valorada', () => {
   assert.equal(result.estimated_economic_benefit, 765);
 });
 
-test('CASO 4: crédito energético con tarifa estima su valor', () => {
+test('CASO 4: credito energetico 1:1 con purchase', () => {
   const result = calculatePlantEconomics([v1row()],
     [v1tariff({ export_compensation_type: 'energy_credit' })], context);
   assert.equal(result.export_credit_kwh, 300);
-  assert.equal(result.export_credit_estimated_value, 135);
-  assert.equal(result.estimated_economic_benefit, 765);
+  assert.equal(result.export_credit_estimated_value, 270);
+  assert.equal(result.estimated_economic_benefit, 900);
 });
 
-test('CASO 5: crédito energético sin tarifa conserva kWh y deja el total desconocido', () => {
+test('CASO 5: credito energetico sin export rate igual valora 1:1', () => {
   const result = calculatePlantEconomics([v1row()],
     [v1tariff({ export_compensation_type: 'energy_credit', export_energy_rate: null })], context);
   assert.equal(result.export_credit_kwh, 300);
-  assert.equal(result.export_credit_estimated_value, null);
-  assert.equal(result.estimated_economic_benefit, null);
+  assert.equal(result.export_credit_estimated_value, 270);
+  assert.equal(result.estimated_economic_benefit, 900);
 });
 
 test('CASO 6: exportación mayor que generación nunca da autoconsumo negativo ni 0 fabricado', () => {
@@ -340,15 +340,16 @@ test('metrics 8: compensation none → export_value EXACT 0 aunque falte export'
   assert.equal(result.export_value, 0);
 });
 
-test('metrics 9: energy_credit sin tarifa → null/UNAVAILABLE preservados', () => {
+test('metrics 9: energy_credit valora 1:1 con purchase', () => {
   const result = calculatePlantEconomics([metricRow(0, fullValues)], [tariff({
     export_compensation_type: 'energy_credit', export_energy_rate: null,
   })], context);
-  assert.equal(result.metrics.export_value.quality, 'UNAVAILABLE');
-  assert.equal(result.metrics.export_value.value, null);
-  assert.equal(result.export_value, null);
-  assert.equal(result.metrics.estimated_economic_benefit.quality, 'UNAVAILABLE');
-  assert.equal(result.estimated_economic_benefit, null);
+  assert.equal(result.metrics.export_value.quality, 'EXACT');
+  assert.ok(Math.abs(result.metrics.export_value.value - 2.4) < 1e-9);
+  assert.ok(Math.abs(result.export_value - 2.4) < 1e-9);
+  assert.equal(result.metrics.estimated_economic_benefit.quality, 'EXACT');
+  assert.ok(Math.abs(result.metrics.estimated_economic_benefit.value - 8) < 1e-9);
+  assert.ok(Math.abs(result.estimated_economic_benefit - 8) < 1e-9);
 });
 
 test('metrics 10: mixed currency → dinero UNAVAILABLE; energía intacta', () => {

@@ -85,10 +85,13 @@ export function calculatePlantEconomics(rows, tariffs, { period, start, end, now
     if (compensation === 'monetary' && values.grid_export_kwh !== null && exportRate !== null) {
       exportValue = values.grid_export_kwh * exportRate;
     }
+    // Regla 1:1 energy_credit: 1 kWh de crédito se valora al precio de
+    // 1 kWh comprado (purchase_energy_rate). NO requiere export_energy_rate
+    // (reservada a monetary) y la ignora aunque exista: purchase manda.
     if (compensation === 'energy_credit') {
       exportCredit = values.grid_export_kwh;
-      if (values.grid_export_kwh !== null && exportRate !== null) {
-        exportValue = values.grid_export_kwh * exportRate;
+      if (values.grid_export_kwh !== null && purchaseRate !== null) {
+        exportValue = values.grid_export_kwh * purchaseRate;
       }
     }
     // Semantic aliases for the V1 contract: export_value is kept untouched

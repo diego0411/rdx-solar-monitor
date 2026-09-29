@@ -228,8 +228,17 @@ const creditCoverage = computed(() => {
 });
 const creditValueDisplay = computed(() => {
   if (suspectMoney('export_value')) return 'No disponible';
+  const entry = summary.value?.metrics?.export_value ?? null;
+  if (entry && entry.value !== null && entry.value !== undefined) return money(entry.value);
   const value = creditValue.value;
   return value === null || value === undefined ? 'No disponible' : money(value);
+});
+const creditValueCoverage = computed(() => {
+  const entry = summary.value?.metrics?.export_value ?? null;
+  if (entry && entry.value !== null && entry.value !== undefined && entry.quality === 'PARTIAL') {
+    return metricCoverage(entry);
+  }
+  return '';
 });
 
 const coverageLabel = computed(() => {
@@ -471,7 +480,7 @@ onBeforeUnmount(() => {
             <div v-if="showCredit"><dt>Crédito generado</dt><dd>{{ creditDisplay }}<span v-if="creditCoverage" class="metric-coverage">{{ creditCoverage }}</span></dd></div>
             <div v-if="showCredit">
               <dt>Valor económico estimado</dt>
-              <dd>{{ creditValueDisplay }}</dd>
+              <dd>{{ creditValueDisplay }}<span v-if="creditValueCoverage" class="metric-coverage">{{ creditValueCoverage }}</span></dd>
             </div>
           </dl>
           <h3>Beneficio económico total</h3>
@@ -541,8 +550,8 @@ onBeforeUnmount(() => {
         <label>Tarifa de compra de energía
           <span class="rate-input"><input v-model="form.purchase_energy_rate" type="number" min="0" step="0.0001" required /><span>{{ rateUnit }}</span></span>
         </label>
-        <label v-if="form.export_compensation_type !== 'none'">Tarifa de exportación{{ form.export_compensation_type === 'energy_credit' ? ' (opcional)' : '' }}
-          <span class="rate-input"><input v-model="form.export_energy_rate" type="number" min="0" step="0.0001" :required="form.export_compensation_type === 'monetary'" /><span>{{ rateUnit }}</span></span>
+        <label v-if="form.export_compensation_type === 'monetary'">Tarifa de exportación
+          <span class="rate-input"><input v-model="form.export_energy_rate" type="number" min="0" step="0.0001" required /><span>{{ rateUnit }}</span></span>
         </label>
         <label>Inicio de vigencia<input v-model="form.effective_from" type="date" required /></label>
         <label class="end-date-toggle"><input v-model="hasEndDate" type="checkbox" />Definir fecha de finalización</label>
