@@ -426,6 +426,20 @@ function energySums(rows) {
   return sums;
 }
 
+export function preserveEnergyProvenance(rows, existingRows) {
+  const existingByInterval = new Map(existingRows.map(row => [Date.parse(row.interval_start), row]));
+  return rows.map(row => {
+    if (row.raw_data?.energy_provenance != null) return row;
+    const existingProvenance = existingByInterval.get(Date.parse(row.interval_start))
+      ?.raw_data?.energy_provenance;
+    if (existingProvenance == null) return row;
+    return {
+      ...row,
+      raw_data: { ...row.raw_data, energy_provenance: existingProvenance },
+    };
+  });
+}
+
 export async function syncGrowattEnergyHistory(plant, date) {
   let powerRows = await listPlantPowerIntervals(plant.id, date);
   let powerHistorySynced = false;
@@ -489,6 +503,7 @@ export async function syncGrowattEnergyHistory(plant, date) {
       skipped_degraded: true, existing_nulls, derived_nulls, ...meterMeta,
     };
   }
+  rows = preserveEnergyProvenance(rows, existing);
   await upsertEnergyIntervals(rows);
   return {
     provider: 'growatt', devices: devices.length, fetched: powerRows.length,

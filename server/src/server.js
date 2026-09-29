@@ -11,6 +11,7 @@ import { syncHyxiEnergySummary } from './services/hyxiEnergySummary.service.js';
 import { createScheduledSync } from './services/scheduledSync.js';
 import { localDateForTimezone, syncHyxiPowerHistoryWindow } from './services/hyxiPowerHistory.service.js';
 import { syncHyxiEnergyHistory } from './services/hyxiEnergyHistory.service.js';
+import { startAutomaticSchedulers } from './services/schedulerControl.js';
 import { listActiveGrowattPlants, listActiveHyxiPlants } from './repositories/plants.repository.js';
 
 const HYXI_SYNC_INTERVAL_MS = 5 * 60 * 1000;
@@ -135,22 +136,24 @@ const runHistoricalRollupsSync = createScheduledSync({
 
 app.listen(env.PORT, () => {
   console.log(`RDX Solar Monitor API listening on port ${env.PORT}`);
-  syncGrowattPlants().catch(() => {});
-  runGrowattLatestSync();
-  setInterval(runGrowattLatestSync, GROWATT_LATEST_INTERVAL_MS);
-  runGrowattHistorySync();
-  setInterval(runGrowattHistorySync, GROWATT_HISTORY_SYNC_INTERVAL_MS);
-  for (const runSync of [
-    runHyxiPlantsSync,
-    runHyxiDevicesSync,
-    runHyxiRealtimeSync,
-    runHyxiEnergySummarySync,
-  ]) {
-    void runSync();
-    setInterval(runSync, HYXI_SYNC_INTERVAL_MS);
-  }
-  runHyxiHistorySync();
-  setInterval(runHyxiHistorySync, HYXI_HISTORY_SYNC_INTERVAL_MS);
-  void runHistoricalRollupsSync();
-  setInterval(runHistoricalRollupsSync, HISTORY_ROLLUP_INTERVAL_MS);
+  startAutomaticSchedulers(env.ENABLE_SCHEDULERS, () => {
+    syncGrowattPlants().catch(() => {});
+    runGrowattLatestSync();
+    setInterval(runGrowattLatestSync, GROWATT_LATEST_INTERVAL_MS);
+    runGrowattHistorySync();
+    setInterval(runGrowattHistorySync, GROWATT_HISTORY_SYNC_INTERVAL_MS);
+    for (const runSync of [
+      runHyxiPlantsSync,
+      runHyxiDevicesSync,
+      runHyxiRealtimeSync,
+      runHyxiEnergySummarySync,
+    ]) {
+      void runSync();
+      setInterval(runSync, HYXI_SYNC_INTERVAL_MS);
+    }
+    runHyxiHistorySync();
+    setInterval(runHyxiHistorySync, HYXI_HISTORY_SYNC_INTERVAL_MS);
+    void runHistoricalRollupsSync();
+    setInterval(runHistoricalRollupsSync, HISTORY_ROLLUP_INTERVAL_MS);
+  });
 });

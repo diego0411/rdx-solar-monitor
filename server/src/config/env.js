@@ -1,5 +1,6 @@
 import dotenv from 'dotenv';
 import { fileURLToPath } from 'node:url';
+import { schedulersEnabled } from '../services/schedulerControl.js';
 
 dotenv.config({
   path: fileURLToPath(new URL('../../.env', import.meta.url)),
@@ -17,6 +18,7 @@ for (const name of requiredVariables) {
 
 export const env = {
   PORT: Number(process.env.PORT || 3000),
+  ENABLE_SCHEDULERS: schedulersEnabled(process.env.ENABLE_SCHEDULERS),
   SUPABASE_URL: process.env.SUPABASE_URL.trim(),
   SUPABASE_SERVICE_ROLE_KEY: process.env.SUPABASE_SERVICE_ROLE_KEY.trim(),
   HYXI_BASE_URL: process.env.HYXI_BASE_URL?.trim() || 'https://open.hyxicloud.com',
