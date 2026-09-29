@@ -89,9 +89,11 @@ function localDay(rawData) {
 function nextCounterDelta(references, key, day, current) {
   const previous = references.get(key);
   let delta = null;
+  let firstDailyCounter = false;
   if (day && current !== null) {
     if (previous === undefined || (previous.day !== null && previous.day !== day)) {
       delta = current;
+      firstDailyCounter = true;
     } else if (previous.day === day && previous.value !== null && current >= previous.value) {
       delta = current - previous.value;
     }
@@ -99,7 +101,7 @@ function nextCounterDelta(references, key, day, current) {
   } else {
     references.set(key, { day: day ?? null, value: null });
   }
-  return delta;
+  return { delta, firstDailyCounter };
 }
 
 function meterCallAllowed(dataloggerSn, now = Date.now()) {
@@ -123,13 +125,21 @@ export function deriveMeterDeltas(meterSamples, meterId, plantTimezone) {
     .sort((left, right) => left.instant - right.instant)
     .map(sample => {
       const deltas = {};
+      const energyProvenance = {};
       for (const [sourceField, targetField] of Object.entries(meterCumulativeFields)) {
-        deltas[targetField] = nextCounterDelta(
+        const { delta, firstDailyCounter } = nextCounterDelta(
           references, `${meterId}:${sourceField}`, sample.day,
           nonNegativeNumber(sample.raw?.[sourceField]),
         );
+        deltas[targetField] = delta;
+        energyProvenance[targetField] = {
+          source: 'growatt_meter',
+          first_daily_counter: firstDailyCounter,
+        };
       }
-      return { instant: sample.instant, day: sample.day, raw: sample.raw, ...deltas };
+      return {
+        instant: sample.instant, day: sample.day, raw: sample.raw, energyProvenance, ...deltas,
+      };
     });
 }
 
@@ -177,6 +187,18 @@ function consumptionFromMeterParts(generation, gridExport, gridImport) {
   return Math.max(self, 0) + gridImport;
 }
 
+function meterEnergyProvenance(meterDelta, consumption) {
+  const energyProvenance = { ...meterDelta.energyProvenance };
+  if (consumption !== null) {
+    energyProvenance.consumption_kwh = {
+      source: 'derived',
+      depends_on_first_daily_counter: ['grid_import_kwh', 'grid_export_kwh']
+        .some(field => meterDelta.energyProvenance?.[field]?.first_daily_counter === true),
+    };
+  }
+  return energyProvenance;
+}
+
 // Fusión MIN (generación) + meter (red): en modo meter los contadores
 // elocal/etoUser/etoGrid del MIN están congelados y se ignoran; solo
 // generation viene del MIN. Sin meter válido no se llama: fallback intacto.
@@ -201,14 +223,22 @@ export function mergeMeterEnergy({ plant, minDevices, baseRows, powerRows, meter
     const meterDelta = meterDeltas[meterIndex];
     const gridImport = meterDelta.grid_import_kwh;
     const gridExport = meterDelta.grid_export_kwh;
+    const consumption = consumptionFromMeterParts(row.generation_kwh, gridExport, gridImport);
     const devices = Array.isArray(row.raw_data?.devices) ? [...row.raw_data.devices] : [];
     devices.push(meterDeviceEntry(meter, meterDelta.raw));
     return {
       ...row,
-      consumption_kwh: consumptionFromMeterParts(row.generation_kwh, gridExport, gridImport),
+      consumption_kwh: consumption,
       grid_import_kwh: gridImport,
       grid_export_kwh: gridExport,
-      raw_data: { ...row.raw_data, devices },
+      raw_data: {
+        ...row.raw_data,
+        devices,
+        energy_provenance: {
+          ...row.raw_data?.energy_provenance,
+          ...meterEnergyProvenance(meterDelta, consumption),
+        },
+      },
     };
   });
   const existingInstants = new Set(minInstants.map(({ instant }) => instant));
@@ -256,6 +286,7 @@ export function mergeMeterEnergy({ plant, minDevices, baseRows, powerRows, meter
           address: meter.metadata?.address ?? null,
         },
         devices: [meterDeviceEntry(meter, meterDelta.raw)],
+        energy_provenance: meterEnergyProvenance(meterDelta, null),
       },
       updated_at: new Date().toISOString(),
     });

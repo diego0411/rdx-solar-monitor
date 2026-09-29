@@ -76,6 +76,59 @@ test('B/C/D: primer delta completo y Σ == último contador', () => {
   assert.ok(Math.abs(deltas.reduce((s, d) => s + d.grid_export_kwh, 0) - 31.9) < 1e-9);
 });
 
+test('provenance: first=current queda marcado por contador sin cambiar deltas', () => {
+  const deltas = deriveMeterDeltas([
+    meterSample('2026-09-27 06:00:00', 5.9, 0),
+    meterSample('2026-09-27 06:05:00', 6, 0.2),
+  ], 'meter-1', 'America/La_Paz');
+
+  assert.equal(deltas[0].grid_import_kwh, 5.9);
+  assert.equal(deltas[0].grid_export_kwh, 0);
+  assert.deepEqual(deltas[0].energyProvenance, {
+    grid_import_kwh: { source: 'growatt_meter', first_daily_counter: true },
+    grid_export_kwh: { source: 'growatt_meter', first_daily_counter: true },
+  });
+  assert.ok(Math.abs(deltas[1].grid_import_kwh - 0.1) < 1e-9);
+  assert.equal(deltas[1].grid_export_kwh, 0.2);
+  assert.deepEqual(deltas[1].energyProvenance, {
+    grid_import_kwh: { source: 'growatt_meter', first_daily_counter: false },
+    grid_export_kwh: { source: 'growatt_meter', first_daily_counter: false },
+  });
+});
+
+test('provenance: consumption conserva valor y declara dependencia del primer contador', () => {
+  const powerRows = [
+    minRow('2026-09-27T10:00:00.000Z', 0),
+    minRow('2026-09-27T10:05:00.000Z', 1),
+  ];
+  const { rows, meta } = mergeMeterEnergy({
+    plant,
+    minDevices: [minDevice],
+    baseRows: deriveGrowattEnergyHistory(plant, [minDevice], powerRows),
+    powerRows,
+    meterSamples: [
+      meterSample('2026-09-27 06:00:00', 5.9, 0),
+      meterSample('2026-09-27 06:05:00', 6, 0.2),
+    ],
+    meter,
+  });
+
+  assert.equal(rows[0].generation_kwh, 0);
+  assert.equal(rows[0].grid_import_kwh, 5.9);
+  assert.equal(rows[0].grid_export_kwh, 0);
+  assert.equal(rows[0].consumption_kwh, 5.9);
+  assert.deepEqual(rows[0].raw_data.energy_provenance.consumption_kwh, {
+    source: 'derived', depends_on_first_daily_counter: true,
+  });
+  assert.ok(Math.abs(rows[1].grid_import_kwh - 0.1) < 1e-9);
+  assert.equal(rows[1].grid_export_kwh, 0.2);
+  assert.ok(Math.abs(rows[1].consumption_kwh - 0.9) < 1e-9);
+  assert.deepEqual(rows[1].raw_data.energy_provenance.consumption_kwh, {
+    source: 'derived', depends_on_first_daily_counter: false,
+  });
+  assert.equal(meta.invariant_ok, true);
+});
+
 test('E: offset <150s alinea correctamente', () => {
   const { rows } = mergeMeterEnergy({
     plant,

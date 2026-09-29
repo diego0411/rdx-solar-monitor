@@ -1,13 +1,38 @@
 import { supabase } from '../config/supabase.js';
 import { localDateKey } from '../utils/timezone.js';
 
-// Proyección explícita: los consumidores (hasEnergyValues, gráficos,
-// aggregateHistory) solo usan interval_start/timezone + 4 campos kWh.
-// raw_data/batería/metadatos no se consumen en esta ruta.
+// La serie pública conserva los campos kWh y extrae únicamente provenance
+// conocida desde raw_data; el payload crudo nunca sale del repositorio.
 const ENERGY_SERIES_COLUMNS = 'interval_start, timezone, generation_kwh, consumption_kwh, grid_import_kwh, grid_export_kwh';
+const ENERGY_INTRADAY_COLUMNS = `${ENERGY_SERIES_COLUMNS}, raw_data`;
 // Rango compartido con economía: calculatePlantEconomics además lee
 // row.raw_data?.coverage, por lo que raw_data debe conservarse aquí.
 const ENERGY_RANGE_COLUMNS = `${ENERGY_SERIES_COLUMNS}, raw_data`;
+
+function counterProvenance(value) {
+  return value?.source === 'growatt_meter' && typeof value.first_daily_counter === 'boolean'
+    ? { source: 'growatt_meter', first_daily_counter: value.first_daily_counter }
+    : null;
+}
+
+function consumptionProvenance(value) {
+  return value?.source === 'derived' && typeof value.depends_on_first_daily_counter === 'boolean'
+    ? { source: 'derived', depends_on_first_daily_counter: value.depends_on_first_daily_counter }
+    : null;
+}
+
+export function projectEnergySeriesRow(row) {
+  const stored = row?.raw_data?.energy_provenance;
+  const projected = stored && typeof stored === 'object' ? {
+    grid_import_kwh: counterProvenance(stored.grid_import_kwh),
+    grid_export_kwh: counterProvenance(stored.grid_export_kwh),
+    consumption_kwh: consumptionProvenance(stored.consumption_kwh),
+  } : null;
+  const energyProvenance = projected && Object.values(projected).some(value => value !== null)
+    ? projected : null;
+  const { raw_data, ...series } = row;
+  return { ...series, energy_provenance: energyProvenance };
+}
 
 export async function resolveHyxiPlant(externalPlantId) {
   const { data, error } = await supabase.from('plants').select('id')
@@ -44,14 +69,16 @@ export async function listEnergyIntervals(plantId, timeType, startTime) {
   const prefix = startTime.slice(0, prefixLength);
   const rows = [];
   for (let offset = 0; ; offset += 1000) {
-    const { data, error } = await supabase.from('energy_intervals').select(ENERGY_SERIES_COLUMNS)
+    const { data, error } = await supabase.from('energy_intervals').select(ENERGY_INTRADAY_COLUMNS)
       .eq('plant_id', plantId).eq('interval_type', timeType)
       .gte('interval_start', lower).lt('interval_start', upper)
       .order('interval_start', { ascending: true }).range(offset, offset + 999);
     if (error) throw new Error('No se pudo consultar el histórico energético');
     for (const row of data) {
       const date = localDateKey(row.interval_start, row.timezone);
-      if (date !== null && date.slice(0, prefixLength) === prefix) rows.push(row);
+      if (date !== null && date.slice(0, prefixLength) === prefix) {
+        rows.push(projectEnergySeriesRow(row));
+      }
     }
     if (data.length < 1000) return rows;
   }

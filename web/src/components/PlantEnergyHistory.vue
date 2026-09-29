@@ -6,6 +6,7 @@ import { GridComponent, TooltipComponent, LegendComponent } from 'echarts/compon
 import { CanvasRenderer } from 'echarts/renderers';
 import { apiFetch } from '../services/api.js';
 import { rdxColor, CHART_SERIES_COLORS } from '../utils/rdxTokens.js';
+import { toVisualEnergyPoint } from '../utils/energyHistoryChart.js';
 
 echarts.use([BarChart, GridComponent, TooltipComponent, LegendComponent, CanvasRenderer]);
 const props = defineProps({ plantId: { type: String, required: true }, timezone: String });
@@ -81,7 +82,9 @@ watch(() => [props.plantId, selectedDate.value, period.value], async ([id, day, 
     const data = await apiFetch(`/plants/${encodeURIComponent(id)}/energy-history?${new URLSearchParams({ timeType, startTime: day, period: selectedPeriod })}`, { signal: controller.signal });
     if (!Array.isArray(data?.buckets)) throw new Error('Respuesta inválida');
     if (!controller.signal.aborted) {
-      points.value = [...data.buckets].sort((a, b) => Date.parse(a.interval_start) - Date.parse(b.interval_start));
+      const sorted = [...data.buckets]
+        .sort((a, b) => Date.parse(a.interval_start) - Date.parse(b.interval_start));
+      points.value = selectedPeriod === 'day' ? sorted.map(toVisualEnergyPoint) : sorted;
       emit('history-loaded', data);
     }
   } catch {

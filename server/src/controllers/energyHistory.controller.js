@@ -23,6 +23,18 @@ function hasEnergyValues(rows) {
     && Number.isFinite(Number(value))));
 }
 
+export function intradayEnergyBucket(row) {
+  return {
+    interval_start: row.interval_start,
+    timezone: row.timezone,
+    generation_kwh: row.generation_kwh,
+    consumption_kwh: row.consumption_kwh,
+    grid_import_kwh: row.grid_import_kwh,
+    grid_export_kwh: row.grid_export_kwh,
+    energy_provenance: row.energy_provenance ?? null,
+  };
+}
+
 export async function postHyxiSyncEnergyHistory(req, res) {
   if (!validQuery(req.query)) return res.status(400).json({ error: 'timeType o startTime inválidos' });
   try {
@@ -60,7 +72,7 @@ export async function getStoredEnergyHistory(req, res) {
     if (period === 'day') {
       return res.json({
         period, start: req.query.startTime, end: periodRange('day', req.query.startTime).end,
-        bucket: 'intraday', buckets: rows,
+        bucket: 'intraday', buckets: rows.map(intradayEnergyBucket),
       });
     }
     const range = periodRange(period, req.query.startTime);
