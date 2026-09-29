@@ -156,6 +156,11 @@ export function calculatePlantEconomics(rows, tariffs, { period, start, end, now
   // intervalo son desfase de contadores (resolución 0.1 kWh en polls
   // distintos) que se cancela en el agregado. Clampar por intervalo fabrica
   // sesgo (Huang: +1.0 kWh). Solo el agregado decide coherencia.
+  // Con cobertura PARCIAL vale la misma regla sobre el agregado OBSERVADO
+  // (faltantes tratados como 0 solo para este test, nunca estimados como
+  // energía): un agregado >= -tolerancia no es inconsistente aunque haya
+  // pares negativos aislados por desfase/granularidad. Solo un agregado
+  // materialmente negativo mantiene la inconsistencia.
   // FP_DUST_KWH es higiene float, muy por debajo de la resolución física.
   const FP_DUST_KWH = 1e-6;
   const generationComplete = intervalResults.length > 0
@@ -165,7 +170,7 @@ export function calculatePlantEconomics(rows, tariffs, { period, start, end, now
   const generationSum = intervalResults.reduce((sum, row) => sum + (row.generation_kwh ?? 0), 0);
   const exportSum = intervalResults.reduce((sum, row) => sum + (row.grid_export_kwh ?? 0), 0);
   const aggregateSelf = generationSum - exportSum;
-  const aggregateCoherent = generationComplete && exportComplete && aggregateSelf >= -FP_DUST_KWH;
+  const aggregateCoherent = aggregateSelf >= -FP_DUST_KWH;
   const correctedSelf = aggregateCoherent ? Math.max(aggregateSelf, 0) : null;
   // Consumo agregado por balance: con generation/import/export completos y
   // medición confiable (!meterSuspect), el total es gen-exp+imp aunque la

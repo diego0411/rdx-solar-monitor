@@ -187,12 +187,27 @@ const metricDisplay = computed(() => Object.fromEntries(
 function suspectMoney(field) {
   return summary.value?.metrics?.[field]?.quality === 'SUSPECT';
 }
-const savingsDisplay = computed(() => (suspectMoney('self_consumption_savings')
-  ? '—' : money(summary.value?.self_consumption_savings)));
-const benefitDisplay = computed(() => (suspectMoney('estimated_economic_benefit')
-  ? '—' : money(summary.value?.estimated_economic_benefit)));
-const compensationDisplay = computed(() => (suspectMoney('export_value')
-  ? '—' : money(compensation.value)));
+// Dinero PARTIAL: preferir la métrica válida sobre el escalar legacy
+// (strict queda null con cobertura parcial aunque el valor observado
+// exista). PARTIAL muestra valor + cobertura con el patrón existente;
+// null mantiene —; SUSPECT conserva la supresión actual. Nunca se usa el
+// legacy para contradecir una métrica válida.
+function metricMoney(field, legacyValue) {
+  if (suspectMoney(field)) return '—';
+  const entry = summary.value?.metrics?.[field] ?? null;
+  if (entry && entry.value !== null && entry.value !== undefined) return money(entry.value);
+  return money(legacyValue);
+}
+function metricMoneyCoverage(field) {
+  const entry = summary.value?.metrics?.[field] ?? null;
+  return entry && entry.quality === 'PARTIAL' ? metricCoverage(entry) : '';
+}
+const savingsDisplay = computed(() => metricMoney('self_consumption_savings', summary.value?.self_consumption_savings));
+const savingsCoverage = computed(() => metricMoneyCoverage('self_consumption_savings'));
+const benefitDisplay = computed(() => metricMoney('estimated_economic_benefit', summary.value?.estimated_economic_benefit));
+const benefitCoverage = computed(() => metricMoneyCoverage('estimated_economic_benefit'));
+const compensationDisplay = computed(() => metricMoney('export_value', compensation.value));
+const compensationCoverage = computed(() => metricMoneyCoverage('export_value'));
 const creditDisplay = computed(() => (suspectMoney('export_value')
   ? '—' : energy(summary.value?.export_credit_kwh)));
 const creditValueDisplay = computed(() => {
@@ -425,7 +440,7 @@ onBeforeUnmount(() => {
           <dl class="economics-list">
             <div><dt>Autoconsumo</dt><dd>{{ metricDisplay.self_consumption_kwh.text }}</dd></div>
             <div><dt>Tarifa compra</dt><dd>{{ rate(summary.purchase_energy_rate, summary.currency) }}</dd></div>
-            <div><dt>Ahorro</dt><dd>{{ savingsDisplay }}</dd></div>
+            <div><dt>Ahorro</dt><dd>{{ savingsDisplay }}<span v-if="savingsCoverage" class="metric-coverage">{{ savingsCoverage }}</span></dd></div>
           </dl>
           <h3>Compensación por inyección</h3>
           <dl class="economics-list">
@@ -435,7 +450,7 @@ onBeforeUnmount(() => {
               <dt>Tarifa compensación</dt><dd>{{ rate(summary.export_energy_rate, summary.currency) }}</dd>
             </div>
             <div v-if="summary.compensation_type === 'monetary'">
-              <dt>Compensación</dt><dd>{{ compensationDisplay }}</dd>
+              <dt>Compensación</dt><dd>{{ compensationDisplay }}<span v-if="compensationCoverage" class="metric-coverage">{{ compensationCoverage }}</span></dd>
             </div>
             <div v-if="showCredit"><dt>Crédito generado</dt><dd>{{ creditDisplay }}</dd></div>
             <div v-if="showCredit">
@@ -445,7 +460,7 @@ onBeforeUnmount(() => {
           </dl>
           <h3>Beneficio económico total</h3>
           <dl class="economics-list">
-            <div class="benefit"><dt>Total</dt><dd>{{ benefitDisplay }}</dd></div>
+            <div class="benefit"><dt>Total</dt><dd>{{ benefitDisplay }}<span v-if="benefitCoverage" class="metric-coverage">{{ benefitCoverage }}</span></dd></div>
           </dl>
           <p class="compensation-label">Ahorro por autoconsumo + compensación o valor estimado de inyección.</p>
         </div>

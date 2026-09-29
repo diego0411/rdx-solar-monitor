@@ -305,7 +305,7 @@ test('Q: Otto-like sin meter usa fallback MIN sin regresión', () => {
   assert.equal(sum(rows, 'grid_export_kwh'), 0);
 });
 
-test('R: Huang-like parcial sin meter conserva detección de inconsistencia', () => {  const powerRows = [
+test('R: Huang-like parcial sin meter usa agregado observado coherente (no inconsistente)', () => {  const powerRows = [
     minRow('2026-09-27T10:00:00.000Z', 10),
     minRow('2026-09-27T14:00:00.000Z', 20),
     { ...minRow('2026-09-27T18:00:00.000Z', 30), raw_data: { devices: [{ device_id: 'device-1', serial_number: 'MIN-1', data: { time: wallOf('2026-09-27T18:00:00.000Z'), eacToday: null, etoGridToday: 0 } }] } },
@@ -316,7 +316,7 @@ test('R: Huang-like parcial sin meter conserva detección de inconsistencia', ()
   const result = calculatePlantEconomics(rows, [tariff], {
     period: 'day', start: '2026-09-27', end: '2026-09-28',
   });
-  assert.equal(result.coverage.inconsistent_intervals, 1);
+  assert.equal(result.coverage.inconsistent_intervals, 0);
   assert.equal(result.coverage.status, 'partial');
 });
 
