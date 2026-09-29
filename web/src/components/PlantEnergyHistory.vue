@@ -6,6 +6,7 @@ import { GridComponent, TooltipComponent, LegendComponent } from 'echarts/compon
 import { CanvasRenderer } from 'echarts/renderers';
 import { apiFetch } from '../services/api.js';
 import { rdxColor, CHART_SERIES_COLORS } from '../utils/rdxTokens.js';
+import { resolveChartTimeZone } from '../utils/chartTimezone.js';
 import { toVisualEnergyPoint } from '../utils/energyHistoryChart.js';
 
 echarts.use([BarChart, GridComponent, TooltipComponent, LegendComponent, CanvasRenderer]);
@@ -41,18 +42,19 @@ function render() {
     observer.observe(container.value);
   }
   let formatter;
+  const timeZone = resolveChartTimeZone(props.timezone);
   try {
-    formatter = new Intl.DateTimeFormat('es-BO', { timeZone: props.timezone || undefined, hour: '2-digit', minute: '2-digit' });
+    formatter = new Intl.DateTimeFormat('es-BO', { timeZone, hour: '2-digit', minute: '2-digit' });
   } catch {
     formatter = new Intl.DateTimeFormat('es-BO', { hour: '2-digit', minute: '2-digit' });
   }
   const labelFormatter = value => {
     const instant = new Date(value);
     if (period.value === 'year') {
-      return new Intl.DateTimeFormat('es-BO', { month: 'short', timeZone: props.timezone || undefined }).format(instant);
+      return new Intl.DateTimeFormat('es-BO', { month: 'short', timeZone }).format(instant);
     }
     if (period.value === 'month') {
-      return new Intl.DateTimeFormat('es-BO', { day: '2-digit', month: 'short', timeZone: props.timezone || undefined }).format(instant);
+      return new Intl.DateTimeFormat('es-BO', { day: '2-digit', month: 'short', timeZone }).format(instant);
     }
     if (period.value === 'day') return formatter.format(instant);
     return new Intl.DateTimeFormat('es-BO', { day: '2-digit', month: 'short', timeZone: 'UTC' }).format(instant);

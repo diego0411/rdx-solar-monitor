@@ -6,6 +6,7 @@ import { GridComponent, TooltipComponent, LegendComponent } from 'echarts/compon
 import { CanvasRenderer } from 'echarts/renderers';
 import { apiFetch } from '../services/api.js';
 import { rdxColor, CHART_SERIES_COLORS } from '../utils/rdxTokens.js';
+import { resolveChartTimeZone } from '../utils/chartTimezone.js';
 
 echarts.use([LineChart, GridComponent, TooltipComponent, LegendComponent, CanvasRenderer]);
 const props = defineProps({ plantId: { type: String, required: true }, timezone: String });
@@ -40,13 +41,14 @@ function render() {
   }
   let timeFormatter;
   let dateTimeFormatter;
+  const timeZone = resolveChartTimeZone(props.timezone);
   try {
     timeFormatter = new Intl.DateTimeFormat('es-BO', {
-      timeZone: props.timezone || undefined,
+      timeZone,
       hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
     });
     dateTimeFormatter = new Intl.DateTimeFormat('es-BO', {
-      timeZone: props.timezone || undefined,
+      timeZone,
       day: '2-digit', month: '2-digit', year: 'numeric',
       hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
     });
