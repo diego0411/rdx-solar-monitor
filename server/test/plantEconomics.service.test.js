@@ -379,8 +379,9 @@ test('metrics 11: escalares legacy (consumption por balance cuando aplica)', () 
   approx(result.export_value, 13.8);
   approx(result.estimated_economic_benefit, 17.08);
   assert.deepEqual(Object.keys(result.metrics).sort(), [
-    'consumption_kwh', 'estimated_economic_benefit', 'export_value', 'generation_kwh',
-    'grid_export_kwh', 'grid_import_kwh', 'self_consumption_kwh', 'self_consumption_savings',
+    'consumption_kwh', 'energy_credit_generated_kwh', 'estimated_economic_benefit', 'export_value',
+    'generation_kwh', 'grid_export_kwh', 'grid_import_kwh', 'self_consumption_kwh',
+    'self_consumption_savings',
   ]);
 });
 

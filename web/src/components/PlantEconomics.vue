@@ -208,8 +208,24 @@ const benefitDisplay = computed(() => metricMoney('estimated_economic_benefit', 
 const benefitCoverage = computed(() => metricMoneyCoverage('estimated_economic_benefit'));
 const compensationDisplay = computed(() => metricMoney('export_value', compensation.value));
 const compensationCoverage = computed(() => metricMoneyCoverage('export_value'));
-const creditDisplay = computed(() => (suspectMoney('export_value')
-  ? '—' : energy(summary.value?.export_credit_kwh)));
+// Crédito generado (energy_credit): kWh desde la métrica explícita, con el
+// mismo patrón PARTIAL. Otras modalidades conservan el legacy intacto.
+const creditMetric = computed(() => summary.value?.compensation_type === 'energy_credit'
+  ? (summary.value?.metrics?.energy_credit_generated_kwh ?? null) : null);
+const creditDisplay = computed(() => {
+  if (creditMetric.value) {
+    if (creditMetric.value.quality === 'SUSPECT') return '—';
+    if (creditMetric.value.value !== null && creditMetric.value.value !== undefined) {
+      return energy(creditMetric.value.value);
+    }
+    return '—';
+  }
+  return suspectMoney('export_value') ? '—' : energy(summary.value?.export_credit_kwh);
+});
+const creditCoverage = computed(() => {
+  const entry = creditMetric.value;
+  return entry && entry.quality === 'PARTIAL' ? metricCoverage(entry) : '';
+});
 const creditValueDisplay = computed(() => {
   if (suspectMoney('export_value')) return 'No disponible';
   const value = creditValue.value;
@@ -452,7 +468,7 @@ onBeforeUnmount(() => {
             <div v-if="summary.compensation_type === 'monetary'">
               <dt>Compensación</dt><dd>{{ compensationDisplay }}<span v-if="compensationCoverage" class="metric-coverage">{{ compensationCoverage }}</span></dd>
             </div>
-            <div v-if="showCredit"><dt>Crédito generado</dt><dd>{{ creditDisplay }}</dd></div>
+            <div v-if="showCredit"><dt>Crédito generado</dt><dd>{{ creditDisplay }}<span v-if="creditCoverage" class="metric-coverage">{{ creditCoverage }}</span></dd></div>
             <div v-if="showCredit">
               <dt>Valor económico estimado</dt>
               <dd>{{ creditValueDisplay }}</dd>

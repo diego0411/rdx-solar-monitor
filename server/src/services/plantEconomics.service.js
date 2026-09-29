@@ -341,6 +341,22 @@ export function calculatePlantEconomics(rows, tariffs, { period, start, end, now
       : suspectMetric(exportValueMetric, { nullable: true, monetary: true }),
     estimated_economic_benefit: suspectMetric(benefitMetric, { nullable: true, monetary: true }),
   };
+  // Crédito generado (energy_credit): ENERGÍA, no dinero. Reutiliza la
+  // inyección válida ya calculada (mismo value/quality/conteos, incluido
+  // SUSPECT cuando la medición no está confirmada). Solo modalidad
+  // energy_credit; otras modalidades conservan el comportamiento legacy.
+  // Sin estimación de nulos ni valoración monetaria nueva.
+  const energyCreditCompensation = commonValue(intervalResults
+    .map(row => row.tariff?.export_compensation_type ?? null)) === 'energy_credit';
+  metrics.energy_credit_generated_kwh = energyCreditCompensation
+    ? { ...metrics.grid_export_kwh }
+    : {
+      value: null,
+      valid_intervals: 0,
+      total_intervals: intervalResults.length,
+      complete: false,
+      quality: 'UNAVAILABLE',
+    };
   // Legacy consumption refleja el balance cuando aplica (nunca el strict
   // parcial); si no aplica, se preserva strictSum.
   const consumptionTotal = balanceApplies ? balancedConsumption : total('consumption_kwh');
