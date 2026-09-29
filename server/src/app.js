@@ -10,6 +10,7 @@ import growattRoutes from './routes/growatt.routes.js';
 import usersRoutes from './routes/users.routes.js';
 import clientsRoutes from './routes/clients.routes.js';
 import maintenanceRoutes from './routes/maintenance.routes.js';
+import inventoryRoutes from './routes/inventory.routes.js';
 import { requireAuth } from './middleware/auth.middleware.js';
 import { loadProfile } from './middleware/authorization.middleware.js';
 import { apiLimiter, sensitiveLimiter } from './middleware/rateLimit.middleware.js';
@@ -35,5 +36,6 @@ app.use('/api/integrations/growatt', growattRoutes);
 app.use('/api/users', usersRoutes);
 app.use('/api/clients', clientsRoutes);
 app.use('/api/maintenance', requireAuth, loadProfile, maintenanceRoutes);
+app.use('/api/inventory', requireAuth, loadProfile, inventoryRoutes);
 
 export default app;
