@@ -21,6 +21,7 @@ let syncRunning = false;
 
 function scheduleNextSync(result) {
   if (scheduledSync || result.skipped) return;
+  logSyncPass(result);
   if (result.remaining_users === 0 && result.errors.length === 0 && result.processed_user == null) {
     writeProgress({});
   }
@@ -48,6 +49,39 @@ function writeProgress(progress) {
 
 function sanitizedMessage(error) {
   return error instanceof Error ? error.message : 'Error de consulta Growatt';
+}
+
+/*
+ * Observabilidad: una sola línea por pasada real (éxito, fallo o fin de
+ * ronda) con campos ya presentes en result. Los errores se reducen a
+ * texto/campos seguros: nunca tokens, headers ni respuestas completas.
+ */
+function sanitizeLogErrors(errors) {
+  return (Array.isArray(errors) ? errors : []).map(error => {
+    if (typeof error === 'string') return error.slice(0, 300);
+    if (error && typeof error === 'object') {
+      const safe = {};
+      if (error.message != null) safe.message = String(error.message).slice(0, 300);
+      for (const [from, to] of [
+        ['provider_code', 'provider_code'], ['providerCode', 'provider_code'],
+        ['http_status', 'http_status'], ['httpStatus', 'http_status'],
+        ['statusCode', 'statusCode'], ['user_name', 'user_name'], ['userName', 'user_name'],
+      ]) {
+        if (error[from] != null) safe[to] = error[from];
+      }
+      return Object.keys(safe).length ? safe : 'Growatt sync error';
+    }
+    return 'Growatt sync error';
+  });
+}
+
+function logSyncPass(result) {
+  console.info('Growatt automatic plants sync pass', {
+    processed_user: result.processed_user ?? null,
+    remaining_users: result.remaining_users ?? null,
+    failed: result.failed ?? 0,
+    errors: sanitizeLogErrors(result.errors),
+  });
 }
 
 async function markGrowattUserSyncErrors(userName, message) {
