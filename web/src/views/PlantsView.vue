@@ -6,13 +6,20 @@ import {
   ref,
   watch,
 } from 'vue';
-import { apiFetch } from '../services/api.js';
+import { apiFetch, getMyProfile } from '../services/api.js';
 
 const PAGE_SIZE = 6;
 
 const plants = ref([]);
 const loading = ref(true);
 const error = ref('');
+
+const myRole = ref(null);
+const syncingDetails = ref(false);
+const syncMessage = ref('');
+const syncFailed = ref(false);
+
+const isRdxAdmin = computed(() => myRole.value === 'rdx_admin');
 
 const search = ref('');
 const provider = ref('');
@@ -206,7 +213,9 @@ watch(totalPages, pages => {
   }
 });
 
-onMounted(async () => {
+async function loadPlants() {
+  loading.value = true;
+  error.value = '';
   try {
     const data = await apiFetch('/plants/overview', {
       signal: controller.signal,
@@ -227,6 +236,45 @@ onMounted(async () => {
   } finally {
     loading.value = false;
   }
+}
+
+async function syncHyxiDetails() {
+  if (syncingDetails.value) return;
+  syncingDetails.value = true;
+  syncMessage.value = '';
+  syncFailed.value = false;
+  try {
+    const result = await apiFetch('/integrations/hyxi/sync/plant-details', {
+      method: 'POST',
+      signal: controller.signal,
+    });
+    const updated = Number(result?.updated ?? 0);
+    const failed = Number(result?.failed ?? 0);
+    syncFailed.value = failed > 0;
+    syncMessage.value =
+      `Detalles HYXi sincronizados: ${updated} actualizadas, ${failed} con error.`;
+    if (!controller.signal.aborted) await loadPlants();
+  } catch {
+    if (!controller.signal.aborted) {
+      syncFailed.value = true;
+      syncMessage.value =
+        'No se pudieron sincronizar los detalles HYXi. '
+        + 'Comprueba la conexión con el servidor '
+        + 'y vuelve a intentarlo.';
+    }
+  } finally {
+    if (!controller.signal.aborted) syncingDetails.value = false;
+  }
+}
+
+onMounted(async () => {
+  loadPlants();
+  try {
+    const me = await getMyProfile();
+    if (!controller.signal.aborted) myRole.value = me?.profile?.role ?? null;
+  } catch {
+    if (!controller.signal.aborted) myRole.value = null;
+  }
 });
 
 onUnmounted(() => controller.abort());
@@ -235,8 +283,27 @@ onUnmounted(() => controller.abort());
 <template>
   <div class="plants-view">
     <header class="plants-header">
-      <h1>Plantas</h1>
-      <p>Monitorea todas tus instalaciones solares</p>
+      <div>
+        <h1>Plantas</h1>
+        <p>Monitorea todas tus instalaciones solares</p>
+      </div>
+      <div v-if="isRdxAdmin" class="header-actions">
+        <button
+          class="admin-button"
+          type="button"
+          :disabled="syncingDetails"
+          @click="syncHyxiDetails"
+        >
+          {{ syncingDetails ? 'Sincronizando…' : 'Sincronizar detalles HYXi' }}
+        </button>
+        <p
+          v-if="syncMessage"
+          :class="syncFailed ? 'sync-message sync-error' : 'sync-message sync-ok'"
+          role="status"
+        >
+          {{ syncMessage }}
+        </p>
+      </div>
     </header>
 
     <div v-if="loading" class="card page-state" role="status">
@@ -452,9 +519,15 @@ onUnmounted(() => controller.abort());
 
 <style scoped>
 .plants-view { width: 100%; }
-.plants-header { margin-bottom: 20px; }
+.plants-header { display: flex; align-items: flex-start; justify-content: space-between; flex-wrap: wrap; gap: 12px; margin-bottom: 20px; }
 .plants-header h1 { font-size: 31px; }
 .plants-header p { margin: 3px 0 0; font-size: 15px; }
+.header-actions { display: grid; gap: 6px; justify-items: end; }
+.admin-button { min-height: 40px; padding: 7px 16px; border: 1px solid var(--rdx-primary); border-radius: var(--rdx-radius-sm); background: var(--rdx-primary); color: white; font: inherit; font-size: 13px; font-weight: 700; cursor: pointer; white-space: nowrap; }
+.admin-button:disabled { opacity: .6; cursor: wait; }
+.sync-message { margin: 0; font-size: 11px; font-weight: 600; }
+.sync-ok { color: var(--rdx-success); }
+.sync-error { color: var(--rdx-danger); }
 .page-state { padding: 24px; color: var(--rdx-text-muted); }
 .error-state { border-color: var(--rdx-danger-soft); }
 .summary-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; margin-bottom: 16px; }
