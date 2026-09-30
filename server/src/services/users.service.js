@@ -4,9 +4,8 @@ import {
   getUserProfileById,
   createUserProfile,
   updateUserProfile,
-  clientExists,
 } from '../repositories/userProfiles.repository.js';
-import { listActiveClients } from '../repositories/clients.repository.js';
+import { getClientById, listActiveClients } from '../repositories/clients.repository.js';
 
 const MANAGED_ROLES = ['client_admin', 'client_user'];
 const PATCH_FIELDS = ['display_name', 'role'];
@@ -251,8 +250,9 @@ export async function createUser(actor, body) {
     resolved.client_id = await resolveSingleActiveClient();
   }
 
-  if (!(await clientExists(resolved.client_id))) {
-    throw codedError(400, 'client_id inexistente');
+  const client = await getClientById(resolved.client_id);
+  if (!client?.active) {
+    throw codedError(400, 'client_id inexistente o inactivo');
   }
 
   const { data, error } = await supabase.auth.admin.createUser({

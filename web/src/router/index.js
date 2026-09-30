@@ -18,6 +18,7 @@ const router = createRouter({
     { path: '/devices/:id', name: 'device-detail', component: DeviceDetailView },
     { path: '/plants/:id', name: 'plant-detail', component: () => import('../views/PlantDetailView.vue') },
     { path: '/users', name: 'users', component: () => import('../views/UsersView.vue') },
+    { path: '/clients', name: 'clients', component: () => import('../views/ClientsView.vue') },
     { path: '/maintenance', name: 'maintenance', component: () => import('../views/MaintenanceView.vue') },
     { path: '/maintenance/:id', name: 'maintenance-detail', component: () => import('../views/MaintenanceDetailView.vue') },
     { path: '/inventory', name: 'inventory', component: () => import('../views/InventoryView.vue') },
@@ -29,10 +30,14 @@ router.beforeEach(async to => {
   const session = await getSession();
   if (to.name !== 'login' && !session) return { name: 'login' };
   if (to.name === 'login' && session) return { name: 'dashboard' };
-  if (to.name === 'users' && session) {
+  if ((to.name === 'users' || to.name === 'clients') && session) {
     try {
       const me = await getMyProfile();
-      if (me?.profile?.role !== 'rdx_admin' && me?.profile?.role !== 'client_admin') {
+      const role = me?.profile?.role;
+      if (to.name === 'clients' && role !== 'rdx_admin') {
+        return { name: 'dashboard' };
+      }
+      if (to.name === 'users' && role !== 'rdx_admin' && role !== 'client_admin') {
         return { name: 'dashboard' };
       }
     } catch {

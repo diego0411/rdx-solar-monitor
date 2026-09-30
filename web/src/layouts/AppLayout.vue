@@ -5,14 +5,17 @@ import { supabase } from '../services/supabase.js';
 import { getMyProfile } from '../services/api.js';
 const router = useRouter();
 const showUsers = ref(false);
+const showClients = ref(false);
 const displayName = ref('Usuario');
 onMounted(async () => {
   try {
     const me = await getMyProfile();
     showUsers.value = me?.profile?.role === 'rdx_admin' || me?.profile?.role === 'client_admin';
+    showClients.value = me?.profile?.role === 'rdx_admin';
     displayName.value = me?.profile?.display_name?.trim() || 'Usuario';
   } catch {
     showUsers.value = false;
+    showClients.value = false;
   }
 });
 const signingOut = ref(false), logoutError = ref('');
@@ -73,6 +76,10 @@ async function logout() {
           <RouterLink to="/users" class="nav-link" active-class="is-active">
             <svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="4" /><path d="M4 20c.7-4 3.4-6 8-6s7.3 2 8 6" /></svg>
             <span>Usuarios</span>
+          </RouterLink>
+          <RouterLink v-if="showClients" to="/clients" class="nav-link" active-class="is-active">
+            <svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16v12H4V6Zm3 3h4m-4 3h7m3-3h1m-1 3h1" /></svg>
+            <span>Clientes</span>
           </RouterLink>
         </template>
       </nav>

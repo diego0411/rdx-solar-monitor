@@ -1,6 +1,7 @@
 <script setup>
 import { computed, onMounted, onUnmounted, ref } from 'vue';
 import { getMyProfile } from '../services/api.js';
+import { listClients } from '../services/clients.js';
 import { listUsers, createUser, updateUser, setUserStatus } from '../services/users.js';
 
 const roleNames = { client_admin: 'Administrador', client_user: 'Usuario' };
@@ -10,6 +11,7 @@ const loading = ref(true);
 const error = ref('');
 const myRole = ref(null);
 const accessDenied = ref(false);
+const clients = ref([]);
 
 const search = ref('');
 const statusFilter = ref('all');
@@ -17,7 +19,7 @@ const roleFilter = ref('all');
 
 const showForm = ref(false);
 const editing = ref(null);
-const form = ref({ display_name: '', email: '', role: 'client_user' });
+const form = ref({ display_name: '', email: '', role: 'client_user', client_id: '' });
 const formError = ref('');
 const formSaving = ref(false);
 
@@ -37,6 +39,8 @@ const statusSaving = ref(false);
 const controller = new AbortController();
 
 const canManageRoles = computed(() => myRole.value === 'rdx_admin');
+const requiresClient = computed(() => !editing.value && myRole.value === 'rdx_admin'
+  && ['client_admin', 'client_user'].includes(form.value.role));
 
 const filtered = computed(() => {
   const term = search.value.trim().toLowerCase();
@@ -73,9 +77,12 @@ async function load() {
       accessDenied.value = true;
       return;
     }
-    const data = await listUsers({ signal: controller.signal });
-    if (!Array.isArray(data)) throw new Error('Respuesta inválida');
-    users.value = data;
+    const requests = [listUsers({ signal: controller.signal })];
+    if (myRole.value === 'rdx_admin') requests.push(listClients({ signal: controller.signal }));
+    const [userData, clientData = []] = await Promise.all(requests);
+    if (!Array.isArray(userData) || !Array.isArray(clientData)) throw new Error('Respuesta inválida');
+    users.value = userData;
+    clients.value = clientData;
   } catch (failure) {
     if (!controller.signal.aborted) {
       if (failure?.status === 403) accessDenied.value = true;
@@ -89,7 +96,7 @@ async function load() {
 function openCreate() {
   clearPassword();
   editing.value = null;
-  form.value = { display_name: '', email: '', role: 'client_user' };
+  form.value = { display_name: '', email: '', role: 'client_user', client_id: '' };
   formError.value = '';
   showForm.value = true;
 }
@@ -97,7 +104,7 @@ function openCreate() {
 function openEdit(user) {
   clearPassword();
   editing.value = user;
-  form.value = { display_name: user.display_name ?? '', email: user.email ?? '', role: user.role };
+  form.value = { display_name: user.display_name ?? '', email: user.email ?? '', role: user.role, client_id: '' };
   formError.value = '';
   showForm.value = true;
 }
@@ -128,6 +135,10 @@ async function saveForm() {
       formError.value = 'Las contraseñas no coinciden.';
       return;
     }
+    if (requiresClient.value && !form.value.client_id) {
+      formError.value = 'El cliente es obligatorio.';
+      return;
+    }
   }
   formSaving.value = true;
   try {
@@ -140,6 +151,7 @@ async function saveForm() {
       closeForm();
     } else {
       const payload = { name: displayName, email: form.value.email.trim(), role: form.value.role, password: password.value };
+      if (requiresClient.value) payload.client_id = form.value.client_id;
       const result = await createUser(payload, { signal: controller.signal });
       users.value = [result, ...users.value];
       formSaving.value = false;
@@ -291,6 +303,13 @@ onUnmounted(() => { controller.abort(); clearPassword(); });
           <option value="client_user">Usuario</option>
           <option value="client_admin">Administrador</option>
         </select>
+        <template v-if="requiresClient">
+          <label for="user-client">Cliente *</label>
+          <select id="user-client" v-model="form.client_id" required :disabled="formSaving">
+            <option value="" disabled>Selecciona un cliente</option>
+            <option v-for="client in clients" :key="client.id" :value="client.id">{{ client.name }}</option>
+          </select>
+        </template>
         <p v-if="formError" class="form-error" role="alert">{{ formError }}</p>
         <div class="modal-actions">
           <button class="secondary-button" type="button" :disabled="formSaving" @click="closeForm">Cancelar</button>

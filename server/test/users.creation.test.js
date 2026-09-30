@@ -60,7 +60,12 @@ async function transport(input, options = {}) {
       token_type: 'bearer', expires_in: 3600 });
   }
   if (url.pathname === '/rest/v1/clients') {
-    return json(url.searchParams.has('id') ? { id: 'nexora' } : [{ id: 'nexora', name: 'Nexora' }]);
+    if (url.searchParams.has('id')) {
+      const requested = url.searchParams.get('id')?.replace('eq.', '');
+      if (requested && requested !== 'nexora') return json(null);
+      return json({ id: 'nexora', name: 'Nexora', active: true });
+    }
+    return json([{ id: 'nexora', name: 'Nexora' }]);
   }
   if (url.pathname === '/rest/v1/client_plants') return json([]);
   if (url.pathname === '/rest/v1/user_profiles') {

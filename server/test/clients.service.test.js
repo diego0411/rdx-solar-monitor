@@ -17,22 +17,104 @@ function json(body, status = 200, headers = {}) {
   });
 }
 
+function fullClient(client) {
+  return {
+    id: client.id,
+    name: client.name,
+    active: client.active,
+    created_at: client.created_at ?? '2026-01-01T00:00:00Z',
+    updated_at: client.updated_at ?? '2026-01-01T00:00:00Z',
+  };
+}
+
+function eqParam(url, name) {
+  const raw = url.searchParams.get(name);
+  if (!raw) return null;
+  return decodeURIComponent(raw).replace(/^eq\./, '');
+}
+
 async function transport(input, options = {}) {
   const url = new URL(input);
+  const method = options.method ?? 'GET';
   if (url.pathname === '/auth/v1/user') {
     const token = new Headers(options.headers).get('authorization')?.replace('Bearer ', '');
     return actors[token] ? json({ id: token }) : json({ message: 'Unauthorized' }, 401);
   }
   if (url.pathname === '/rest/v1/user_profiles') {
-    const id = url.searchParams.get('id')?.replace('eq.', '');
+    const id = eqParam(url, 'id');
     return json(actors[id] ?? null);
+  }
+  if (url.pathname === '/rest/v1/plants') {
+    if (method === 'GET' && url.searchParams.has('id')) {
+      const id = eqParam(url, 'id');
+      const plant = state.plants.find(item => item.id === id);
+      return json(plant ? { id: plant.id } : null);
+    }
+    return json(state.plants.map(({ id }) => ({ id })));
   }
   if (url.pathname === '/rest/v1/clients') {
     if (state.clientsError) return json({ message: 'database secret' }, 500);
-    return json(state.clients.filter(client => client.active).map(({ id, name }) => ({ id, name })));
+    if (method === 'POST') {
+      const body = options.body ? JSON.parse(options.body) : {};
+      const payload = Array.isArray(body) ? body[0] : body;
+      state.clientSeq += 1;
+      const created = {
+        id: `00000000-0000-4000-8000-${String(state.clientSeq).padStart(12, '0')}`,
+        name: payload?.name,
+        active: true,
+        created_at: '2026-01-01T00:00:00Z',
+        updated_at: '2026-01-01T00:00:00Z',
+      };
+      state.clients.push(created);
+      return json(fullClient(created), 201);
+    }
+    if (method === 'PATCH') {
+      const id = eqParam(url, 'id');
+      const body = options.body ? JSON.parse(options.body) : {};
+      const target = state.clients.find(client => client.id === id);
+      if (!target) return json(null);
+      if (body.name !== undefined) target.name = body.name;
+      if (body.active !== undefined) target.active = body.active;
+      target.updated_at = '2026-01-02T00:00:00Z';
+      return json(fullClient(target));
+    }
+    if (method === 'GET' && url.searchParams.has('id')) {
+      const id = eqParam(url, 'id');
+      const found = state.clients.find(client => client.id === id);
+      return json(found ? fullClient(found) : null);
+    }
+    if (url.searchParams.has('active')) {
+      return json(state.clients.filter(client => client.active).map(({ id, name }) => ({ id, name })));
+    }
+    const rows = [...state.clients].sort((left, right) =>
+      left.name.localeCompare(right.name) || left.id.localeCompare(right.id));
+    const start = Number(url.searchParams.get('offset') ?? 0);
+    const limit = Number(url.searchParams.get('limit') ?? 1000);
+    const end = start + limit - 1;
+    const page = rows.slice(start, end + 1).map(fullClient);
+    return json(page, 200, { 'Content-Range': `${start}-${start + page.length - 1}/${rows.length}` });
   }
   if (url.pathname === '/rest/v1/client_plants') {
-    if (url.searchParams.has('client_id')) return json([]);
+    if (method === 'POST') {
+      const body = options.body ? JSON.parse(options.body) : {};
+      const payload = Array.isArray(body) ? body[0] : body;
+      const existing = state.assignments.find(item =>
+        item.client_id === payload?.client_id && item.plant_id === payload?.plant_id);
+      if (existing) return json(existing, 201);
+      const created = {
+        client_id: payload?.client_id,
+        plant_id: payload?.plant_id,
+        assigned_at: '2026-01-01T00:00:00Z',
+      };
+      state.assignments.push(created);
+      return json(created, 201);
+    }
+    if (url.searchParams.has('client_id')) {
+      const clientId = eqParam(url, 'client_id');
+      return json(state.assignments
+        .filter(item => item.client_id === clientId)
+        .map(({ plant_id }) => ({ plant_id })));
+    }
     state.assignmentRequests += 1;
     if (state.assignmentsError) return json({ message: 'database secret' }, 500);
     const rows = [...state.assignments].sort((left, right) =>
@@ -43,7 +125,7 @@ async function transport(input, options = {}) {
     const page = rows.slice(start, end + 1);
     return json(page, 200, { 'Content-Range': `${start}-${start + page.length - 1}/${rows.length}` });
   }
-  throw new Error(`Unexpected test transport request: ${url.pathname}`);
+  throw new Error(`Unexpected test transport request: ${method} ${url.pathname}`);
 }
 
 const supabase = createClient('https://supabase.invalid', 'test-service-role', {
@@ -53,38 +135,55 @@ const supabase = createClient('https://supabase.invalid', 'test-service-role', {
 mock.module('../src/config/supabase.js', { exports: { supabase } });
 const { default: clientsRoutes } = await import('../src/routes/clients.routes.js');
 const app = express();
+app.use(express.json());
 app.use('/api/clients', clientsRoutes);
 
 beforeEach(() => {
   state = {
     clients: [
-      { id: 'client-a', name: 'Cliente A', active: true },
-      { id: 'client-b', name: 'Cliente B', active: true },
-      { id: 'client-off', name: 'Inactivo', active: false },
+      { id: '11111111-1111-4111-8111-000000000001', name: 'Cliente A', active: true },
+      { id: '11111111-1111-4111-8111-000000000002', name: 'Cliente B', active: true },
+      { id: '11111111-1111-4111-8111-000000000003', name: 'Inactivo', active: false },
+    ],
+    plants: [
+      { id: '22222222-2222-4222-8222-000000000001' },
+      { id: '22222222-2222-4222-8222-000000000002' },
     ],
     assignments: [],
     assignmentRequests: 0,
     clientsError: false,
     assignmentsError: false,
+    clientSeq: 100,
   };
+  actors.manager.client_id = '11111111-1111-4111-8111-000000000001';
+  actors.reader.client_id = '11111111-1111-4111-8111-000000000001';
 });
 
-async function request(t, actor, path = '/api/clients') {
+async function request(t, actor, path = '/api/clients', options = {}) {
   const server = app.listen(0, '127.0.0.1');
   t.after(() => new Promise(resolve => server.close(resolve)));
   await new Promise(resolve => server.once('listening', resolve));
   const response = await fetch(`http://127.0.0.1:${server.address().port}${path}`, {
-    headers: actor ? { Authorization: `Bearer ${actor}` } : {},
+    method: options.method ?? 'GET',
+    headers: {
+      ...(actor ? { Authorization: `Bearer ${actor}` } : {}),
+      ...(options.body ? { 'Content-Type': 'application/json' } : {}),
+    },
+    ...(options.body ? { body: JSON.stringify(options.body) } : {}),
   });
   return { status: response.status, body: await response.json() };
 }
+
+const CLIENT_A = '11111111-1111-4111-8111-000000000001';
+const CLIENT_B = '11111111-1111-4111-8111-000000000002';
+const CLIENT_OFF = '11111111-1111-4111-8111-000000000003';
 
 test('GET /clients conserva exactamente id,name y no consulta relaciones', async t => {
   const result = await request(t, 'admin');
   assert.equal(result.status, 200);
   assert.deepEqual(result.body, [
-    { id: 'client-a', name: 'Cliente A' },
-    { id: 'client-b', name: 'Cliente B' },
+    { id: CLIENT_A, name: 'Cliente A' },
+    { id: CLIENT_B, name: 'Cliente B' },
   ]);
   assert.ok(result.body.every(client => Object.keys(client).sort().join(',') === 'id,name'));
   assert.equal(state.assignmentRequests, 0);
@@ -92,16 +191,16 @@ test('GET /clients conserva exactamente id,name y no consulta relaciones', async
 
 test('include=plant_ids usa client_plants, soporta relación compartida y cliente vacío', async t => {
   state.assignments = [
-    { client_id: 'client-b', plant_id: 'plant-shared' },
-    { client_id: 'client-a', plant_id: 'plant-z' },
-    { client_id: 'client-a', plant_id: 'plant-shared' },
-    { client_id: 'client-off', plant_id: 'plant-hidden' },
+    { client_id: CLIENT_B, plant_id: 'plant-shared' },
+    { client_id: CLIENT_A, plant_id: 'plant-z' },
+    { client_id: CLIENT_A, plant_id: 'plant-shared' },
+    { client_id: CLIENT_OFF, plant_id: 'plant-hidden' },
   ];
   const result = await request(t, 'admin', '/api/clients?include=plant_ids');
   assert.equal(result.status, 200);
   assert.deepEqual(result.body, [
-    { id: 'client-a', name: 'Cliente A', plant_ids: ['plant-shared', 'plant-z'] },
-    { id: 'client-b', name: 'Cliente B', plant_ids: ['plant-shared'] },
+    { id: CLIENT_A, name: 'Cliente A', plant_ids: ['plant-shared', 'plant-z'] },
+    { id: CLIENT_B, name: 'Cliente B', plant_ids: ['plant-shared'] },
   ]);
 
   state.assignments = [];
@@ -110,9 +209,9 @@ test('include=plant_ids usa client_plants, soporta relación compartida y client
 });
 
 test('client_plants se pagina sin truncar relaciones', async t => {
-  state.clients = [{ id: 'client-a', name: 'Cliente A', active: true }];
+  state.clients = [{ id: CLIENT_A, name: 'Cliente A', active: true }];
   state.assignments = Array.from({ length: 1001 }, (_, index) => ({
-    client_id: 'client-a', plant_id: `plant-${String(index).padStart(4, '0')}`,
+    client_id: CLIENT_A, plant_id: `plant-${String(index).padStart(4, '0')}`,
   }));
   const result = await request(t, 'admin', '/api/clients?include=plant_ids');
   assert.equal(result.status, 200);
@@ -146,4 +245,122 @@ test('errores de repository se sanitizan', async t => {
 test('router de clientes exige autenticación', async t => {
   const result = await request(t, null);
   assert.equal(result.status, 401);
+});
+
+const PLANT_1 = '22222222-2222-4222-8222-000000000001';
+const PLANT_2 = '22222222-2222-4222-8222-000000000002';
+
+test('status=all incluye activos e inactivos con active y plant_ids', async t => {
+  state.assignments = [{ client_id: CLIENT_A, plant_id: PLANT_1 }];
+  const result = await request(t, 'admin', '/api/clients?status=all&include=plant_ids');
+  assert.equal(result.status, 200);
+  assert.equal(result.body.length, 3);
+  const byId = Object.fromEntries(result.body.map(client => [client.id, client]));
+  assert.deepEqual(byId[CLIENT_A].plant_ids, [PLANT_1]);
+  assert.deepEqual(byId[CLIENT_B].plant_ids, []);
+  assert.equal(byId[CLIENT_OFF].active, false);
+  assert.ok(result.body.every(client =>
+    ['active', 'id', 'name', 'plant_ids'].every(key => key in client)));
+});
+
+test('status inválido devuelve 400', async t => {
+  const result = await request(t, 'admin', '/api/clients?status=inactive');
+  assert.equal(result.status, 400);
+  assert.deepEqual(result.body, { error: 'status inválido' });
+});
+
+test('POST crea cliente con trim y activo', async t => {
+  const result = await request(t, 'admin', '/api/clients', {
+    method: 'POST', body: { name: '  Nuevo  ' },
+  });
+  assert.equal(result.status, 201);
+  assert.equal(result.body.name, 'Nuevo');
+  assert.equal(result.body.active, true);
+});
+
+test('POST rechaza nombre vacío, largo y duplicado case-insensitive', async t => {
+  for (const name of ['', '   ', 'a'.repeat(121)]) {
+    const result = await request(t, 'admin', '/api/clients', { method: 'POST', body: { name } });
+    assert.equal(result.status, 400);
+  }
+  const dupe = await request(t, 'admin', '/api/clients', { method: 'POST', body: { name: 'cliente a' } });
+  assert.equal(dupe.status, 409);
+  assert.doesNotMatch(JSON.stringify(dupe.body), /database secret/i);
+});
+
+test('PATCH renombra y 404 si no existe', async t => {
+  const renamed = await request(t, 'admin', `/api/clients/${CLIENT_A}`, {
+    method: 'PATCH', body: { name: 'Renombrado' },
+  });
+  assert.equal(renamed.status, 200);
+  assert.equal(renamed.body.name, 'Renombrado');
+  const missing = await request(t, 'admin', '/api/clients/33333333-3333-4333-8333-000000000099', {
+    method: 'PATCH', body: { name: 'X' },
+  });
+  assert.equal(missing.status, 404);
+  const badId = await request(t, 'admin', '/api/clients/no-uuid', {
+    method: 'PATCH', body: { name: 'X' },
+  });
+  assert.equal(badId.status, 400);
+});
+
+test('PATCH status desactiva conservando relaciones y permite reactivar', async t => {
+  state.assignments = [{ client_id: CLIENT_A, plant_id: PLANT_1, assigned_at: '2026-01-01T00:00:00Z' }];
+  const off = await request(t, 'admin', `/api/clients/${CLIENT_A}/status`, {
+    method: 'PATCH', body: { active: false },
+  });
+  assert.equal(off.status, 200);
+  assert.equal(off.body.active, false);
+  assert.equal(state.assignments.length, 1);
+  const on = await request(t, 'admin', `/api/clients/${CLIENT_A}/status`, {
+    method: 'PATCH', body: { active: true },
+  });
+  assert.equal(on.status, 200);
+  assert.equal(on.body.active, true);
+  const bad = await request(t, 'admin', `/api/clients/${CLIENT_A}/status`, {
+    method: 'PATCH', body: { active: 'si' },
+  });
+  assert.equal(bad.status, 400);
+});
+
+test('PUT asigna planta idempotente y permite planta compartida', async t => {
+  const first = await request(t, 'admin', `/api/clients/${CLIENT_A}/plants/${PLANT_1}`, { method: 'PUT' });
+  assert.equal(first.status, 200);
+  const repeat = await request(t, 'admin', `/api/clients/${CLIENT_A}/plants/${PLANT_1}`, { method: 'PUT' });
+  assert.equal(repeat.status, 200);
+  assert.equal(state.assignments.length, 1);
+  const shared = await request(t, 'admin', `/api/clients/${CLIENT_B}/plants/${PLANT_1}`, { method: 'PUT' });
+  assert.equal(shared.status, 200);
+  assert.equal(state.assignments.length, 2);
+});
+
+test('PUT rechaza cliente inactivo, planta y cliente inexistentes', async t => {
+  const inactive = await request(t, 'admin', `/api/clients/${CLIENT_OFF}/plants/${PLANT_1}`, { method: 'PUT' });
+  assert.equal(inactive.status, 409);
+  const noPlant = await request(t, 'admin', `/api/clients/${CLIENT_A}/plants/33333333-3333-4333-8333-000000000099`, { method: 'PUT' });
+  assert.equal(noPlant.status, 404);
+  const noClient = await request(t, 'admin', '/api/clients/33333333-3333-4333-8333-000000000099/plants/' + PLANT_1, { method: 'PUT' });
+  assert.equal(noClient.status, 404);
+});
+
+test('usuario de cliente inactivo recibe 403', async t => {
+  actors.reader.client_id = CLIENT_OFF;
+  const result = await request(t, 'reader', '/api/clients?include=plant_ids');
+  assert.equal(result.status, 403);
+  assert.deepEqual(result.body, { error: 'Cliente inactivo' });
+});
+
+test('mutaciones exigen rdx_admin', async t => {
+  const cases = [
+    ['/api/clients', { method: 'POST', body: { name: 'X' } }],
+    [`/api/clients/${CLIENT_A}`, { method: 'PATCH', body: { name: 'X' } }],
+    [`/api/clients/${CLIENT_A}/status`, { method: 'PATCH', body: { active: false } }],
+    [`/api/clients/${CLIENT_A}/plants/${PLANT_1}`, { method: 'PUT' }],
+  ];
+  for (const actor of ['manager', 'reader']) {
+    for (const [path, options] of cases) {
+      const result = await request(t, actor, path, options);
+      assert.equal(result.status, 403);
+    }
+  }
 });

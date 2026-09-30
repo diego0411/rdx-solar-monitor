@@ -1,4 +1,5 @@
 import { supabase } from '../config/supabase.js';
+import { getClientById } from '../repositories/clients.repository.js';
 
 /*
  * Carga el perfil del usuario autenticado (user_profiles) y
@@ -37,6 +38,15 @@ export async function loadProfile(req, res, next) {
     if (data.role === 'rdx_admin') {
       req.scope = { client_id: null, plantIds: null };
       return next();
+    }
+
+    if (!['client_admin', 'client_user'].includes(data.role)) {
+      return res.status(403).json({ error: 'Acceso denegado' });
+    }
+
+    const client = data.client_id ? await getClientById(data.client_id) : null;
+    if (!client?.active) {
+      return res.status(403).json({ error: 'Cliente inactivo' });
     }
 
     const { data: assignments, error: scopingError } =
