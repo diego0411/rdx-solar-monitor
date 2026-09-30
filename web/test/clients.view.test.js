@@ -60,7 +60,7 @@ test('/clients disponible solo para rdx_admin y enlace Clientes solo rdx_admin',
 test('vista Clientes es catálogo comercial sin plantas ni gestionar', () => {
   assert.match(clientsSource, /<h1>Clientes<\/h1>/);
   assert.match(clientsSource, /Nuevo cliente/);
-  for (const header of ['Cliente', 'Estado', 'Acciones']) {
+  for (const header of ['Cliente', 'Celular', 'Email', 'Estado', 'Acciones']) {
     assert.ok(clientsSource.includes(header));
   }
   for (const action of ['Editar', 'Activar', 'Desactivar']) {
@@ -98,6 +98,41 @@ test('crear y editar refrescan desde backend con trim y validación visible', as
   view.form.value = { name: 'Nuevo nombre' };
   await view.saveForm();
   assert.deepEqual(calls.update[0], ['c1', { name: 'Nuevo nombre' }]);
+});
+
+test('contacto: crear con 3 campos, solo nombre, editar y trim', async () => {
+  const { view, calls } = setupClients();
+  view.openCreate();
+  assert.deepEqual(view.form.value, { name: '', phone: '', email: '' });
+  view.form.value = { name: '  Comercial  ', phone: '  70000000  ', email: '  ventas@example.test  ' };
+  await view.saveForm();
+  assert.deepEqual(calls.create[0], { name: 'Comercial', phone: '70000000', email: 'ventas@example.test' });
+
+  const minimal = setupClients();
+  minimal.view.openCreate();
+  minimal.view.form.value = { name: 'Solo nombre' };
+  await minimal.view.saveForm();
+  assert.deepEqual(minimal.calls.create[0], { name: 'Solo nombre' });
+
+  const editor = setupClients();
+  editor.view.openEdit({ id: 'c1', name: 'Viejo', phone: null, email: null, active: true });
+  assert.deepEqual(editor.view.form.value, { name: 'Viejo', phone: '', email: '' });
+  editor.view.form.value = { name: 'Viejo', phone: '71000000', email: 'nuevo@example.test' };
+  await editor.view.saveForm();
+  assert.deepEqual(editor.calls.update[0], ['c1', { name: 'Viejo', phone: '71000000', email: 'nuevo@example.test' }]);
+});
+
+test('contacto: email inválido no llama API y NULL se muestra como —', async () => {
+  const { view, calls } = setupClients();
+  view.openCreate();
+  view.form.value = { name: 'X', phone: '', email: 'no-es-email' };
+  await view.saveForm();
+  assert.equal(calls.create.length, 0);
+  assert.match(view.formError.value, /email/i);
+
+  assert.match(clientsSource, /Celular/);
+  assert.match(clientsSource, /Email/);
+  assert.ok(clientsSource.includes("|| '—'"));
 });
 
 test('doble submit bloqueado y errores visibles; activar/desactivar confirma', async () => {

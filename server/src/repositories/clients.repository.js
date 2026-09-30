@@ -1,6 +1,6 @@
 import { supabase } from '../config/supabase.js';
 
-const managementSelect = 'id, name, active, created_at, updated_at';
+const managementSelect = 'id, name, phone, email, active, created_at, updated_at';
 
 export async function listActiveClients() {
   const { data, error } = await supabase.from('clients')
@@ -54,9 +54,9 @@ export async function getClientById(id) {
   return data;
 }
 
-export async function insertClient(name) {
+export async function insertClient({ name, phone = null, email = null }) {
   const { data, error } = await supabase.from('clients')
-    .insert({ name, active: true }).select(managementSelect).single();
+    .insert({ name, phone, email, active: true }).select(managementSelect).single();
   if (error || !data) throw new Error('No se pudo crear el cliente');
   return data;
 }

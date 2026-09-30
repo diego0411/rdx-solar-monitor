@@ -21,6 +21,8 @@ function fullClient(client) {
   return {
     id: client.id,
     name: client.name,
+    phone: client.phone ?? null,
+    email: client.email ?? null,
     active: client.active,
     created_at: client.created_at ?? '2026-01-01T00:00:00Z',
     updated_at: client.updated_at ?? '2026-01-01T00:00:00Z',
@@ -61,6 +63,8 @@ async function transport(input, options = {}) {
       const created = {
         id: `00000000-0000-4000-8000-${String(state.clientSeq).padStart(12, '0')}`,
         name: payload?.name,
+        phone: payload?.phone ?? null,
+        email: payload?.email ?? null,
         active: true,
         created_at: '2026-01-01T00:00:00Z',
         updated_at: '2026-01-01T00:00:00Z',
@@ -74,6 +78,8 @@ async function transport(input, options = {}) {
       const target = state.clients.find(client => client.id === id);
       if (!target) return json(null);
       if (body.name !== undefined) target.name = body.name;
+      if (body.phone !== undefined) target.phone = body.phone;
+      if (body.email !== undefined) target.email = body.email;
       if (body.active !== undefined) target.active = body.active;
       target.updated_at = '2026-01-02T00:00:00Z';
       return json(fullClient(target));
@@ -360,4 +366,100 @@ test('mutaciones exigen rdx_admin', async t => {
       assert.equal(result.status, 403);
     }
   }
+});
+
+test('POST crea con name + phone + email aplicando trim', async t => {
+  const result = await request(t, 'admin', '/api/clients', {
+    method: 'POST',
+    body: { name: '  Comercial  ', phone: '  70000000  ', email: '  VENTAS@example.test  ' },
+  });
+  assert.equal(result.status, 201);
+  assert.equal(result.body.name, 'Comercial');
+  assert.equal(result.body.phone, '70000000');
+  assert.equal(result.body.email, 'VENTAS@example.test');
+  assert.equal(result.body.active, true);
+});
+
+test('POST solo name deja phone/email en null', async t => {
+  const result = await request(t, 'admin', '/api/clients', {
+    method: 'POST', body: { name: 'Solo nombre' },
+  });
+  assert.equal(result.status, 201);
+  assert.equal(result.body.phone, null);
+  assert.equal(result.body.email, null);
+});
+
+test('POST normaliza "" a null y rechaza contacto inválido', async t => {
+  const blank = await request(t, 'admin', '/api/clients', {
+    method: 'POST', body: { name: 'Blanco', phone: '   ', email: '' },
+  });
+  assert.equal(blank.status, 201);
+  assert.equal(blank.body.phone, null);
+  assert.equal(blank.body.email, null);
+  for (const body of [
+    { name: 'X1', email: 'sin-arroba' },
+    { name: 'X2', email: 'a@b' },
+    { name: 'X3', email: 'a @b.test' },
+    { name: 'X4', email: `${'a'.repeat(250)}@b.test` },
+    { name: 'X5', phone: '1'.repeat(41) },
+    { name: 'X6', phone: 70000000 },
+    { name: 'X7', email: 42 },
+  ]) {
+    const result = await request(t, 'admin', '/api/clients', { method: 'POST', body });
+    assert.equal(result.status, 400);
+  }
+});
+
+test('POST rechaza campo desconocido y exige name', async t => {
+  const extra = await request(t, 'admin', '/api/clients', {
+    method: 'POST', body: { name: 'X', nit: '123' },
+  });
+  assert.equal(extra.status, 400);
+  const missing = await request(t, 'admin', '/api/clients', {
+    method: 'POST', body: { phone: '70000000' },
+  });
+  assert.equal(missing.status, 400);
+  const empty = await request(t, 'admin', '/api/clients', { method: 'POST', body: {} });
+  assert.equal(empty.status, 400);
+});
+
+test('PATCH acepta solo phone o solo email sin exigir name', async t => {
+  const phone = await request(t, 'admin', `/api/clients/${CLIENT_A}`, {
+    method: 'PATCH', body: { phone: '  71000000 ' },
+  });
+  assert.equal(phone.status, 200);
+  assert.equal(phone.body.phone, '71000000');
+  assert.equal(phone.body.name, 'Cliente A');
+  const email = await request(t, 'admin', `/api/clients/${CLIENT_A}`, {
+    method: 'PATCH', body: { email: 'contacto@example.test' },
+  });
+  assert.equal(email.status, 200);
+  assert.equal(email.body.email, 'contacto@example.test');
+});
+
+test('PATCH contacto a "" lo deja en null y valida formato', async t => {
+  state.clients.find(client => client.id === CLIENT_A).phone = '71000000';
+  const cleared = await request(t, 'admin', `/api/clients/${CLIENT_A}`, {
+    method: 'PATCH', body: { phone: '', email: '   ' },
+  });
+  assert.equal(cleared.status, 200);
+  assert.equal(cleared.body.phone, null);
+  assert.equal(cleared.body.email, null);
+  const bad = await request(t, 'admin', `/api/clients/${CLIENT_A}`, {
+    method: 'PATCH', body: { email: 'no-es-email' },
+  });
+  assert.equal(bad.status, 400);
+});
+
+test('PATCH name conserva validación de duplicado aunque cambien contactos', async t => {
+  const dupe = await request(t, 'admin', `/api/clients/${CLIENT_A}`, {
+    method: 'PATCH', body: { name: 'cliente b', phone: '72000000' },
+  });
+  assert.equal(dupe.status, 409);
+  const renamed = await request(t, 'admin', `/api/clients/${CLIENT_A}`, {
+    method: 'PATCH', body: { name: 'Cliente A Unico', phone: '72000000' },
+  });
+  assert.equal(renamed.status, 200);
+  assert.equal(renamed.body.name, 'Cliente A Unico');
+  assert.equal(renamed.body.phone, '72000000');
 });

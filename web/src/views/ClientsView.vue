@@ -48,15 +48,18 @@ function actionMessage(failure, fallback) {
 
 const showForm = ref(false);
 const editing = ref(null);
-const form = ref({ name: '' });
+const form = ref({ name: '', phone: '', email: '' });
 const formError = ref('');
 const formSaving = ref(false);
+const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 function openCreate() {
-  editing.value = null; form.value = { name: '' }; formError.value = ''; showForm.value = true;
+  editing.value = null; form.value = { name: '', phone: '', email: '' }; formError.value = ''; showForm.value = true;
 }
 function openEdit(client) {
-  editing.value = client; form.value = { name: client.name }; formError.value = ''; showForm.value = true;
+  editing.value = client;
+  form.value = { name: client.name, phone: client.phone ?? '', email: client.email ?? '' };
+  formError.value = ''; showForm.value = true;
 }
 function closeForm() {
   if (formSaving.value) return;
@@ -64,14 +67,21 @@ function closeForm() {
 }
 async function saveForm() {
   if (formSaving.value) return;
-  const name = form.value.name.trim();
+  const name = (form.value.name ?? '').trim();
   if (!name) { formError.value = 'El nombre es obligatorio.'; return; }
   if (name.length > 120) { formError.value = 'El nombre no puede superar 120 caracteres.'; return; }
+  const payload = { name };
+  if (typeof form.value.phone === 'string') payload.phone = form.value.phone.trim();
+  if (typeof form.value.email === 'string') {
+    const email = form.value.email.trim();
+    if (email && !emailPattern.test(email)) { formError.value = 'El email no es válido.'; return; }
+    payload.email = email;
+  }
   formSaving.value = true; formError.value = '';
   try {
     const wasEditing = !!editing.value;
-    if (editing.value) await updateClient(editing.value.id, { name }, { signal: controller.signal });
-    else await createClient({ name }, { signal: controller.signal });
+    if (editing.value) await updateClient(editing.value.id, payload, { signal: controller.signal });
+    else await createClient(payload, { signal: controller.signal });
     await loadClients();
     showForm.value = false; editing.value = null;
     notice.value = wasEditing ? 'Cliente actualizado.' : 'Cliente creado.';
@@ -115,13 +125,13 @@ onUnmounted(() => controller.abort());
     <section v-else class="card table-card">
       <div v-if="!clients.length" class="page-state">No hay clientes para mostrar.</div>
       <div v-else class="table-wrapper">
-        <table><thead><tr><th>Cliente</th><th>Estado</th><th>Acciones</th></tr></thead><tbody>
-          <tr v-for="client in clients" :key="client.id"><td class="client-name">{{ client.name }}</td><td><span class="badge" :class="client.active ? 'active' : 'inactive'">{{ client.active ? 'Activo' : 'Inactivo' }}</span></td><td><div class="actions"><button class="link-button" type="button" @click="openEdit(client)">Editar</button><button class="link-button" type="button" @click="askStatus(client)">{{ client.active ? 'Desactivar' : 'Activar' }}</button></div></td></tr>
+        <table><thead><tr><th>Cliente</th><th>Celular</th><th>Email</th><th>Estado</th><th>Acciones</th></tr></thead><tbody>
+          <tr v-for="client in clients" :key="client.id"><td class="client-name">{{ client.name }}</td><td>{{ client.phone || '—' }}</td><td>{{ client.email || '—' }}</td><td><span class="badge" :class="client.active ? 'active' : 'inactive'">{{ client.active ? 'Activo' : 'Inactivo' }}</span></td><td><div class="actions"><button class="link-button" type="button" @click="openEdit(client)">Editar</button><button class="link-button" type="button" @click="askStatus(client)">{{ client.active ? 'Desactivar' : 'Activar' }}</button></div></td></tr>
         </tbody></table>
       </div>
     </section>
 
-    <div v-if="showForm" class="modal-backdrop" @click.self="closeForm"><section class="card modal" role="dialog" aria-modal="true" :aria-label="editing ? 'Editar cliente' : 'Nuevo cliente'"><h2>{{ editing ? 'Editar cliente' : 'Nuevo cliente' }}</h2><form @submit.prevent="saveForm"><label>Nombre *<input v-model="form.name" maxlength="120" required :disabled="formSaving" /></label><p v-if="formError" class="form-error" role="alert">{{ formError }}</p><div class="modal-actions"><button class="secondary-button" type="button" :disabled="formSaving" @click="closeForm">Cancelar</button><button class="primary-button" type="submit" :disabled="formSaving">{{ formSaving ? 'Guardando…' : 'Guardar' }}</button></div></form></section></div>
+    <div v-if="showForm" class="modal-backdrop" @click.self="closeForm"><section class="card modal" role="dialog" aria-modal="true" :aria-label="editing ? 'Editar cliente' : 'Nuevo cliente'"><h2>{{ editing ? 'Editar cliente' : 'Nuevo cliente' }}</h2><form @submit.prevent="saveForm"><label>Nombre *<input v-model="form.name" maxlength="120" required :disabled="formSaving" /></label><label>Celular<input v-model="form.phone" maxlength="40" inputmode="tel" :disabled="formSaving" /></label><label>Email<input v-model="form.email" maxlength="254" inputmode="email" :disabled="formSaving" /></label><p v-if="formError" class="form-error" role="alert">{{ formError }}</p><div class="modal-actions"><button class="secondary-button" type="button" :disabled="formSaving" @click="closeForm">Cancelar</button><button class="primary-button" type="submit" :disabled="formSaving">{{ formSaving ? 'Guardando…' : 'Guardar' }}</button></div></form></section></div>
 
     <div v-if="confirming" class="modal-backdrop" @click.self="closeStatus"><section class="card modal" role="dialog" aria-modal="true" aria-label="Confirmar estado"><h2>{{ confirming.active ? 'Desactivar cliente' : 'Activar cliente' }}</h2><p>{{ confirming.active ? 'El cliente quedará inactivo, pero sus registros de inventario se conservarán.' : 'El cliente volverá a estar disponible para asociar inventario.' }}</p><p v-if="statusError" class="form-error" role="alert">{{ statusError }}</p><div class="modal-actions"><button class="secondary-button" type="button" :disabled="statusSaving" @click="closeStatus">Cancelar</button><button class="primary-button" type="button" :disabled="statusSaving" @click="applyStatus">{{ statusSaving ? 'Guardando…' : 'Confirmar' }}</button></div></section></div>
   </div>
