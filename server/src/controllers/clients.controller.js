@@ -1,5 +1,4 @@
 import {
-  assignPlant,
   createClient,
   listClients,
   renameClient,
@@ -53,14 +52,6 @@ export async function patchClient(req, res) {
 export async function patchClientStatus(req, res) {
   try {
     return res.json(await setClientStatus(req.params.id, req.body));
-  } catch (error) {
-    return sendError(res, error);
-  }
-}
-
-export async function putClientPlant(req, res) {
-  try {
-    return res.json(await assignPlant(req.params.id, req.params.plantId));
   } catch (error) {
     return sendError(res, error);
   }

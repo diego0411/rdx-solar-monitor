@@ -441,7 +441,8 @@ export function mapInventoryDatabaseError(error) {
     INVALID_TRACKING_MODE: [409, 'Modo de seguimiento incompatible'],
     INVALID_TRANSITION: [409, 'Transición de inventario no permitida'],
     INSUFFICIENT_STOCK: [409, 'Stock insuficiente'],
-    INVALID_CLIENT_PLANT: [400, 'Cliente y planta inválidos'],
+    INVALID_CLIENT_PLANT: [400, 'Cliente o planta inválidos'],
+    INACTIVE_CLIENT: [409, 'El cliente está inactivo'],
     DEVICE_PLANT_MISMATCH: [409, 'El dispositivo no pertenece a la planta'],
   };
   for (const [token, [status, publicMessage]] of Object.entries(mappings)) {

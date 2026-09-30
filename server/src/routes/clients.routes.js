@@ -6,7 +6,6 @@ import {
   patchClient,
   patchClientStatus,
   postClient,
-  putClientPlant,
 } from '../controllers/clients.controller.js';
 
 const router = Router();
@@ -17,6 +16,5 @@ router.get('/', getClients);
 router.post('/', postClient);
 router.patch('/:id/status', patchClientStatus);
 router.patch('/:id', patchClient);
-router.put('/:id/plants/:plantId', putClientPlant);
 
 export default router;

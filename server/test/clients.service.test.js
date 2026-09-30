@@ -323,24 +323,22 @@ test('PATCH status desactiva conservando relaciones y permite reactivar', async 
   assert.equal(bad.status, 400);
 });
 
-test('PUT asigna planta idempotente y permite planta compartida', async t => {
-  const first = await request(t, 'admin', `/api/clients/${CLIENT_A}/plants/${PLANT_1}`, { method: 'PUT' });
-  assert.equal(first.status, 200);
-  const repeat = await request(t, 'admin', `/api/clients/${CLIENT_A}/plants/${PLANT_1}`, { method: 'PUT' });
-  assert.equal(repeat.status, 200);
-  assert.equal(state.assignments.length, 1);
-  const shared = await request(t, 'admin', `/api/clients/${CLIENT_B}/plants/${PLANT_1}`, { method: 'PUT' });
-  assert.equal(shared.status, 200);
-  assert.equal(state.assignments.length, 2);
-});
-
-test('PUT rechaza cliente inactivo, planta y cliente inexistentes', async t => {
-  const inactive = await request(t, 'admin', `/api/clients/${CLIENT_OFF}/plants/${PLANT_1}`, { method: 'PUT' });
-  assert.equal(inactive.status, 409);
-  const noPlant = await request(t, 'admin', `/api/clients/${CLIENT_A}/plants/33333333-3333-4333-8333-000000000099`, { method: 'PUT' });
-  assert.equal(noPlant.status, 404);
-  const noClient = await request(t, 'admin', '/api/clients/33333333-3333-4333-8333-000000000099/plants/' + PLANT_1, { method: 'PUT' });
-  assert.equal(noClient.status, 404);
+test('PUT client→plant ya no existe (catálogo comercial)', async t => {
+  const server = app.listen(0, '127.0.0.1');
+  t.after(() => new Promise(resolve => server.close(resolve)));
+  await new Promise(resolve => server.once('listening', resolve));
+  const adminResponse = await fetch(
+    `http://127.0.0.1:${server.address().port}/api/clients/${CLIENT_A}/plants/${PLANT_1}`,
+    { method: 'PUT', headers: { Authorization: 'Bearer admin' } },
+  );
+  assert.equal(adminResponse.status, 404);
+  await adminResponse.text();
+  const managerResponse = await fetch(
+    `http://127.0.0.1:${server.address().port}/api/clients/${CLIENT_A}/plants/${PLANT_1}`,
+    { method: 'PUT', headers: { Authorization: 'Bearer manager' } },
+  );
+  assert.equal(managerResponse.status, 403);
+  await managerResponse.text();
 });
 
 test('usuario de cliente inactivo recibe 403', async t => {
@@ -355,7 +353,6 @@ test('mutaciones exigen rdx_admin', async t => {
     ['/api/clients', { method: 'POST', body: { name: 'X' } }],
     [`/api/clients/${CLIENT_A}`, { method: 'PATCH', body: { name: 'X' } }],
     [`/api/clients/${CLIENT_A}/status`, { method: 'PATCH', body: { active: false } }],
-    [`/api/clients/${CLIENT_A}/plants/${PLANT_1}`, { method: 'PUT' }],
   ];
   for (const actor of ['manager', 'reader']) {
     for (const [path, options] of cases) {

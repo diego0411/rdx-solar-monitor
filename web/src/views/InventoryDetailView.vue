@@ -79,18 +79,8 @@ function clientName(id) { return id ? clientsById.value[id] ?? 'Cliente asignado
 function deviceName(id) { return id ? devicesById.value[id] ?? `Dispositivo ${String(id).slice(0, 8)}` : '—'; }
 function manufacturerModel(value) { return [value?.manufacturer, value?.model].filter(Boolean).join(' · ') || '—'; }
 
-function plantsForClient(clientId) {
-  if (!clientId) return [];
-  const client = clients.value.find(entry => entry.id === clientId);
-  const allowed = new Set(Array.isArray(client?.plant_ids) ? client.plant_ids : []);
-  return plants.value.filter(plant => allowed.has(plant.id));
-}
-
 const itemFilters = ref({ status: '', search: '', clientId: '', plantId: '' });
-const itemAvailablePlants = computed(() => canWrite.value
-  ? plantsForClient(itemFilters.value.clientId)
-  : plants.value);
-watch(() => itemFilters.value.clientId, () => { itemFilters.value.plantId = null; });
+const itemAvailablePlants = computed(() => plants.value);
 
 async function loadItems() {
   if (!isSerialized.value) { items.value = []; itemsError.value = ''; return; }
@@ -159,7 +149,6 @@ async function load() {
     const supporting = [apiFetch('/plants', { signal: requestController.signal }).catch(() => [])];
     if (role.value === 'rdx_admin') {
       supporting.push(listClients({
-        includePlantIds: true,
         signal: requestController.signal,
       }).catch(() => []));
       supporting.push(apiFetch('/devices', { signal: requestController.signal }).catch(() => []));
@@ -275,8 +264,7 @@ const transitionSaving = ref(false);
 const transitionError = ref('');
 const transitionForm = ref({ client_id: '', plant_id: '', device_id: '', notes: '', use_context: false });
 const installDevices = computed(() => devices.value.filter(device => device.plant_id === transitionItem.value?.plant_id));
-const transitionAvailablePlants = computed(() => plantsForClient(transitionForm.value.client_id));
-watch(() => transitionForm.value.client_id, () => { transitionForm.value.plant_id = null; });
+const transitionAvailablePlants = computed(() => plants.value);
 
 function openTransition(item, type) {
   transitionItem.value = item; transitionType.value = type; transitionError.value = '';
@@ -293,20 +281,28 @@ async function applyTransition() {
   if (!transitionItem.value || transitionSaving.value) return;
   const payload = { movement_type: transitionType.value, notes: transitionForm.value.notes.trim() || null };
   if (transitionType.value === 'assign') {
-    if (!transitionForm.value.client_id || !transitionForm.value.plant_id) {
-      transitionError.value = 'Selecciona cliente y planta.'; return;
+    if (!transitionForm.value.client_id && !transitionForm.value.plant_id) {
+      transitionError.value = 'Selecciona cliente o planta.'; return;
     }
-    payload.client_id = transitionForm.value.client_id; payload.plant_id = transitionForm.value.plant_id;
+    payload.client_id = transitionForm.value.client_id || null;
+    payload.plant_id = transitionForm.value.plant_id || null;
   }
-  if (transitionType.value === 'install' && transitionForm.value.device_id) {
-    payload.device_id = transitionForm.value.device_id;
+  if (transitionType.value === 'install') {
+    if (!transitionItem.value.plant_id) {
+      if (!transitionForm.value.plant_id) {
+        transitionError.value = 'Selecciona la planta de instalación.'; return;
+      }
+      payload.plant_id = transitionForm.value.plant_id;
+    }
+    if (transitionForm.value.device_id) payload.device_id = transitionForm.value.device_id;
   }
   if (transitionType.value === 'sell' && transitionItem.value.status === 'available'
     && transitionForm.value.use_context) {
-    if (!transitionForm.value.client_id || !transitionForm.value.plant_id) {
-      transitionError.value = 'Para agregar contexto selecciona cliente y planta.'; return;
+    if (!transitionForm.value.client_id && !transitionForm.value.plant_id) {
+      transitionError.value = 'Para agregar contexto selecciona cliente o planta.'; return;
     }
-    payload.client_id = transitionForm.value.client_id; payload.plant_id = transitionForm.value.plant_id;
+    payload.client_id = transitionForm.value.client_id || null;
+    payload.plant_id = transitionForm.value.plant_id || null;
   }
   transitionSaving.value = true; transitionError.value = '';
   try {
@@ -324,8 +320,7 @@ function emptyMovement() {
   return { movement_type: 'in', quantity: '', source_status: '', client_id: '', plant_id: '', notes: '', use_context: false };
 }
 const quantityForm = ref(emptyMovement());
-const quantityAvailablePlants = computed(() => plantsForClient(quantityForm.value.client_id));
-watch(() => quantityForm.value.client_id, () => { quantityForm.value.plant_id = null; });
+const quantityAvailablePlants = computed(() => plants.value);
 function openQuantity() { quantityForm.value = emptyMovement(); quantityError.value = ''; showQuantity.value = true; }
 function closeQuantity() { if (!quantitySaving.value) showQuantity.value = false; }
 const quantityNeedsSource = computed(() => ['sell', 'write_off'].includes(quantityForm.value.movement_type));
@@ -344,8 +339,11 @@ async function saveQuantity() {
   }
   const needsContext = quantityNeedsContext.value
     || quantityMayUseSaleContext.value && quantityForm.value.use_context;
-  if (needsContext && (!quantityForm.value.client_id || !quantityForm.value.plant_id)) {
-    quantityError.value = 'Selecciona cliente y planta.'; return;
+  if (needsContext && !quantityForm.value.client_id && !quantityForm.value.plant_id) {
+    quantityError.value = 'Selecciona cliente o planta.'; return;
+  }
+  if (quantityForm.value.movement_type === 'install' && !quantityForm.value.plant_id) {
+    quantityError.value = 'Selecciona la planta de instalación.'; return;
   }
   const payload = {
     movement_type: quantityForm.value.movement_type,
@@ -354,8 +352,8 @@ async function saveQuantity() {
   };
   if (quantityNeedsSource.value) payload.source_status = quantityForm.value.source_status;
   if (needsContext) {
-    payload.client_id = quantityForm.value.client_id;
-    payload.plant_id = quantityForm.value.plant_id;
+    payload.client_id = quantityForm.value.client_id || null;
+    payload.plant_id = quantityForm.value.plant_id || null;
   }
   quantitySaving.value = true; quantityError.value = '';
   try {
@@ -395,7 +393,7 @@ onUnmounted(() => controller.abort());
 
       <section v-if="isSerialized" class="card data-card">
         <div class="section-head"><div><p>UNIDADES</p><h2>Unidades serializadas</h2></div><button v-if="canWrite" class="primary-button" type="button" @click="openNewItem">+ Registrar unidad</button></div>
-        <form class="inline-filters" @submit.prevent="loadItems"><input v-model="itemFilters.search" type="search" placeholder="Buscar número de serie" /><select v-model="itemFilters.status"><option value="">Todos los estados</option><option v-for="(label, key) in statusLabels" :key="key" :value="key">{{ label }}</option></select><select v-if="canWrite" v-model="itemFilters.clientId"><option value="">Todos los clientes</option><option v-for="client in clients" :key="client.id" :value="client.id">{{ client.name }}</option></select><select v-model="itemFilters.plantId" :disabled="canWrite && !itemFilters.clientId"><option value="">Todas las plantas</option><option v-for="plant in itemAvailablePlants" :key="plant.id" :value="plant.id">{{ plant.name }}</option></select><small v-if="canWrite && itemFilters.clientId && !itemAvailablePlants.length" class="muted">Este cliente no tiene plantas disponibles.</small><button class="secondary-button" type="submit" :disabled="itemsLoading">{{ itemsLoading ? 'Filtrando…' : 'Filtrar' }}</button></form>
+        <form class="inline-filters" @submit.prevent="loadItems"><input v-model="itemFilters.search" type="search" placeholder="Buscar número de serie" /><select v-model="itemFilters.status"><option value="">Todos los estados</option><option v-for="(label, key) in statusLabels" :key="key" :value="key">{{ label }}</option></select><select v-if="canWrite" v-model="itemFilters.clientId"><option value="">Todos los clientes</option><option v-for="client in clients" :key="client.id" :value="client.id">{{ client.name }}</option></select><select v-model="itemFilters.plantId"><option value="">Todas las plantas</option><option v-for="plant in itemAvailablePlants" :key="plant.id" :value="plant.id">{{ plant.name }}</option></select><button class="secondary-button" type="submit" :disabled="itemsLoading">{{ itemsLoading ? 'Filtrando…' : 'Filtrar' }}</button></form>
         <div v-if="itemsLoading" class="empty-state" role="status">Cargando unidades…</div>
         <div v-else-if="itemsError" class="empty-state error-state" role="alert">{{ itemsError }}</div>
         <div v-else-if="!items.length" class="empty-state">No hay unidades para los filtros seleccionados.</div>
@@ -413,9 +411,9 @@ onUnmounted(() => controller.abort());
 
     <div v-if="showNewItem" class="modal-backdrop" @click.self="closeNewItem"><section class="card modal narrow" role="dialog" aria-modal="true" aria-label="Registrar unidad"><h2>Registrar unidad</h2><form @submit.prevent="saveNewItem"><label>Número de serie *<input v-model="itemForm.serial_number" required :disabled="itemSaving" /></label><small class="muted">El backend elimina espacios externos y convierte el serial a mayúsculas.</small><label>Notas<textarea v-model="itemForm.notes" rows="3" :disabled="itemSaving"></textarea></label><p v-if="itemError" class="form-error" role="alert">{{ itemError }}</p><div class="modal-actions"><button class="secondary-button" type="button" :disabled="itemSaving" @click="closeNewItem">Cancelar</button><button class="primary-button" type="submit" :disabled="itemSaving">{{ itemSaving ? 'Registrando…' : 'Registrar unidad' }}</button></div></form></section></div>
 
-    <div v-if="transitionItem" class="modal-backdrop" @click.self="closeTransition"><section class="card modal narrow" role="dialog" aria-modal="true" :aria-label="transitionLabels[transitionType]"><h2>{{ transitionLabels[transitionType] }}</h2><p class="muted">Serie: {{ transitionItem.serial_number }}</p><form @submit.prevent="applyTransition"><template v-if="transitionType === 'assign'"><label>Cliente *<select v-model="transitionForm.client_id" required :disabled="transitionSaving"><option value="" disabled>Selecciona un cliente</option><option v-for="client in clients" :key="client.id" :value="client.id">{{ client.name }}</option></select></label><label>Planta *<select v-model="transitionForm.plant_id" required :disabled="transitionSaving || !transitionForm.client_id || !transitionAvailablePlants.length"><option value="" disabled>Selecciona una planta</option><option v-for="plant in transitionAvailablePlants" :key="plant.id" :value="plant.id">{{ plant.name }}</option></select></label><small v-if="transitionForm.client_id && !transitionAvailablePlants.length" class="muted">Este cliente no tiene plantas disponibles.</small></template><template v-if="transitionType === 'install'"><label>Planta<input :value="plantName(transitionItem.plant_id)" disabled /></label><label>Dispositivo opcional<select v-model="transitionForm.device_id" :disabled="transitionSaving"><option value="">Sin dispositivo</option><option v-for="device in installDevices" :key="device.id" :value="device.id">{{ device.name || device.serial_number }}</option></select></label></template><template v-if="transitionType === 'sell' && transitionItem.status === 'available'"><label class="check-row"><input v-model="transitionForm.use_context" type="checkbox" :disabled="transitionSaving" /> Agregar contexto comercial</label><template v-if="transitionForm.use_context"><label>Cliente *<select v-model="transitionForm.client_id" :disabled="transitionSaving"><option value="">Selecciona un cliente</option><option v-for="client in clients" :key="client.id" :value="client.id">{{ client.name }}</option></select></label><label>Planta *<select v-model="transitionForm.plant_id" :disabled="transitionSaving || !transitionForm.client_id || !transitionAvailablePlants.length"><option value="">Selecciona una planta</option><option v-for="plant in transitionAvailablePlants" :key="plant.id" :value="plant.id">{{ plant.name }}</option></select></label><small v-if="transitionForm.client_id && !transitionAvailablePlants.length" class="muted">Este cliente no tiene plantas disponibles.</small></template></template><p v-if="transitionDescription()" class="confirm-copy">{{ transitionDescription() }}</p><label>Notas<textarea v-model="transitionForm.notes" rows="3" :disabled="transitionSaving"></textarea></label><p v-if="transitionError" class="form-error" role="alert">{{ transitionError }}</p><div class="modal-actions"><button class="secondary-button" type="button" :disabled="transitionSaving" @click="closeTransition">Cancelar</button><button class="primary-button" type="submit" :disabled="transitionSaving">{{ transitionSaving ? 'Guardando…' : 'Confirmar' }}</button></div></form></section></div>
+    <div v-if="transitionItem" class="modal-backdrop" @click.self="closeTransition"><section class="card modal narrow" role="dialog" aria-modal="true" :aria-label="transitionLabels[transitionType]"><h2>{{ transitionLabels[transitionType] }}</h2><p class="muted">Serie: {{ transitionItem.serial_number }}</p><form @submit.prevent="applyTransition"><template v-if="transitionType === 'assign'"><label>Cliente<select v-model="transitionForm.client_id" :disabled="transitionSaving"><option value="">Sin cliente</option><option v-for="client in clients" :key="client.id" :value="client.id">{{ client.name }}</option></select></label><label>Planta<select v-model="transitionForm.plant_id" :disabled="transitionSaving"><option value="">Sin planta</option><option v-for="plant in transitionAvailablePlants" :key="plant.id" :value="plant.id">{{ plant.name }}</option></select></label></template><template v-if="transitionType === 'install'"><label v-if="transitionItem.plant_id">Planta<input :value="plantName(transitionItem.plant_id)" disabled /></label><label v-else>Planta *<select v-model="transitionForm.plant_id" required :disabled="transitionSaving"><option value="" disabled>Selecciona una planta</option><option v-for="plant in transitionAvailablePlants" :key="plant.id" :value="plant.id">{{ plant.name }}</option></select></label><label>Dispositivo opcional<select v-model="transitionForm.device_id" :disabled="transitionSaving"><option value="">Sin dispositivo</option><option v-for="device in installDevices" :key="device.id" :value="device.id">{{ device.name || device.serial_number }}</option></select></label></template><template v-if="transitionType === 'sell' && transitionItem.status === 'available'"><label class="check-row"><input v-model="transitionForm.use_context" type="checkbox" :disabled="transitionSaving" /> Agregar contexto comercial</label><template v-if="transitionForm.use_context"><label>Cliente<select v-model="transitionForm.client_id" :disabled="transitionSaving"><option value="">Sin cliente</option><option v-for="client in clients" :key="client.id" :value="client.id">{{ client.name }}</option></select></label><label>Planta<select v-model="transitionForm.plant_id" :disabled="transitionSaving"><option value="">Sin planta</option><option v-for="plant in transitionAvailablePlants" :key="plant.id" :value="plant.id">{{ plant.name }}</option></select></label></template></template><p v-if="transitionDescription()" class="confirm-copy">{{ transitionDescription() }}</p><label>Notas<textarea v-model="transitionForm.notes" rows="3" :disabled="transitionSaving"></textarea></label><p v-if="transitionError" class="form-error" role="alert">{{ transitionError }}</p><div class="modal-actions"><button class="secondary-button" type="button" :disabled="transitionSaving" @click="closeTransition">Cancelar</button><button class="primary-button" type="submit" :disabled="transitionSaving">{{ transitionSaving ? 'Guardando…' : 'Confirmar' }}</button></div></form></section></div>
 
-    <div v-if="showQuantity" class="modal-backdrop" @click.self="closeQuantity"><section class="card modal" role="dialog" aria-modal="true" aria-label="Registrar movimiento"><h2>Registrar movimiento</h2><form @submit.prevent="saveQuantity"><label>Tipo *<select v-model="quantityForm.movement_type" :disabled="quantitySaving"><option v-for="(label, key) in movementLabels" :key="key" :value="key">{{ label }}</option></select></label><label>Cantidad *<input v-model="quantityForm.quantity" inputmode="decimal" placeholder="0.00" required :disabled="quantitySaving" /></label><label v-if="quantityNeedsSource">Origen *<select v-model="quantityForm.source_status" :disabled="quantitySaving"><option value="" disabled>Selecciona origen</option><option value="available">Disponible</option><option value="assigned">Asignado</option><option v-if="quantityForm.movement_type === 'write_off'" value="installed">Instalado</option></select></label><label v-if="quantityMayUseSaleContext" class="check-row"><input v-model="quantityForm.use_context" type="checkbox" :disabled="quantitySaving" /> Agregar contexto comercial</label><template v-if="quantityNeedsContext || quantityMayUseSaleContext && quantityForm.use_context"><label>Cliente *<select v-model="quantityForm.client_id" :disabled="quantitySaving"><option value="" disabled>Selecciona un cliente</option><option v-for="client in clients" :key="client.id" :value="client.id">{{ client.name }}</option></select></label><label>Planta *<select v-model="quantityForm.plant_id" :disabled="quantitySaving || !quantityForm.client_id || !quantityAvailablePlants.length"><option value="" disabled>Selecciona una planta</option><option v-for="plant in quantityAvailablePlants" :key="plant.id" :value="plant.id">{{ plant.name }}</option></select></label><small v-if="quantityForm.client_id && !quantityAvailablePlants.length" class="muted">Este cliente no tiene plantas disponibles.</small></template><label>Notas<textarea v-model="quantityForm.notes" rows="3" :disabled="quantitySaving"></textarea></label><p class="muted">El backend valida el saldo disponible al confirmar.</p><p v-if="quantityError" class="form-error" role="alert">{{ quantityError }}</p><div class="modal-actions"><button class="secondary-button" type="button" :disabled="quantitySaving" @click="closeQuantity">Cancelar</button><button class="primary-button" type="submit" :disabled="quantitySaving">{{ quantitySaving ? 'Registrando…' : 'Registrar movimiento' }}</button></div></form></section></div>
+    <div v-if="showQuantity" class="modal-backdrop" @click.self="closeQuantity"><section class="card modal" role="dialog" aria-modal="true" aria-label="Registrar movimiento"><h2>Registrar movimiento</h2><form @submit.prevent="saveQuantity"><label>Tipo *<select v-model="quantityForm.movement_type" :disabled="quantitySaving"><option v-for="(label, key) in movementLabels" :key="key" :value="key">{{ label }}</option></select></label><label>Cantidad *<input v-model="quantityForm.quantity" inputmode="decimal" placeholder="0.00" required :disabled="quantitySaving" /></label><label v-if="quantityNeedsSource">Origen *<select v-model="quantityForm.source_status" :disabled="quantitySaving"><option value="" disabled>Selecciona origen</option><option value="available">Disponible</option><option value="assigned">Asignado</option><option v-if="quantityForm.movement_type === 'write_off'" value="installed">Instalado</option></select></label><label v-if="quantityMayUseSaleContext" class="check-row"><input v-model="quantityForm.use_context" type="checkbox" :disabled="quantitySaving" /> Agregar contexto comercial</label><template v-if="quantityNeedsContext || quantityMayUseSaleContext && quantityForm.use_context"><label>Cliente<select v-model="quantityForm.client_id" :disabled="quantitySaving"><option value="">Sin cliente</option><option v-for="client in clients" :key="client.id" :value="client.id">{{ client.name }}</option></select></label><label>Planta<select v-model="quantityForm.plant_id" :disabled="quantitySaving"><option value="">Sin planta</option><option v-for="plant in quantityAvailablePlants" :key="plant.id" :value="plant.id">{{ plant.name }}</option></select></label></template><label>Notas<textarea v-model="quantityForm.notes" rows="3" :disabled="quantitySaving"></textarea></label><p class="muted">El backend valida el saldo disponible al confirmar.</p><p v-if="quantityError" class="form-error" role="alert">{{ quantityError }}</p><div class="modal-actions"><button class="secondary-button" type="button" :disabled="quantitySaving" @click="closeQuantity">Cancelar</button><button class="primary-button" type="submit" :disabled="quantitySaving">{{ quantitySaving ? 'Registrando…' : 'Registrar movimiento' }}</button></div></form></section></div>
   </div>
 </template>
 

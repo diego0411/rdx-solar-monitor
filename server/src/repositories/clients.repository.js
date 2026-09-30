@@ -68,20 +68,3 @@ export async function updateClient(id, values) {
   if (error) throw new Error('No se pudo actualizar el cliente');
   return data;
 }
-
-export async function getPlantById(id) {
-  const { data, error } = await supabase.from('plants')
-    .select('id').eq('id', id).maybeSingle();
-  if (error) throw new Error('No se pudo consultar la planta');
-  return data;
-}
-
-export async function upsertClientPlant(clientId, plantId) {
-  const { data, error } = await supabase.from('client_plants')
-    .upsert({ client_id: clientId, plant_id: plantId }, {
-      onConflict: 'client_id,plant_id',
-    })
-    .select('client_id, plant_id, assigned_at').single();
-  if (error || !data) throw new Error('No se pudo asignar la planta');
-  return data;
-}

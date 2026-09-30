@@ -29,9 +29,3 @@ export function setClientStatus(id, active, options = {}) {
   return apiFetch(`/clients/${encodeURIComponent(id)}/status`,
     json('PATCH', { active }, options.signal));
 }
-
-export function assignClientPlant(id, plantId, options = {}) {
-  return apiFetch(`/clients/${encodeURIComponent(id)}/plants/${encodeURIComponent(plantId)}`, {
-    method: 'PUT', signal: options.signal,
-  });
-}

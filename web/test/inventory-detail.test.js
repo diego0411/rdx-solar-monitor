@@ -108,61 +108,54 @@ test('roles cliente son de solo lectura y no consultan clientes ni dispositivos'
   }
 });
 
-test('solicita plant_ids y ofrece solo la intersección cliente-plants', async () => {
+test('clientes y plantas son independientes: sin include=plant_ids ni filtrado', async () => {
   const clients = [
-    { id: 'client-a', name: 'Cliente A', plant_ids: ['plant-a', 'plant-shared', 'plant-missing'] },
-    { id: 'client-b', name: 'Cliente B', plant_ids: ['plant-b', 'plant-shared'] },
-    { id: 'client-empty', name: 'Sin plantas', plant_ids: [] },
+    { id: 'client-a', name: 'Cliente A' },
+    { id: 'client-b', name: 'Cliente B' },
   ];
   const plants = [
     { id: 'plant-a', name: 'Planta A' },
     { id: 'plant-b', name: 'Planta B' },
-    { id: 'plant-shared', name: 'Compartida' },
   ];
   const view = setup({ clients, plants });
   await view.load();
   assert.equal(view.__clientRequests.length, 1);
-  assert.equal(view.__clientRequests[0].includePlantIds, true);
-  assert.deepEqual(view.transitionAvailablePlants.value, []);
+  assert.ok(!('includePlantIds' in view.__clientRequests[0]));
 
   view.transitionForm.value.client_id = 'client-a';
-  assert.deepEqual(view.transitionAvailablePlants.value.map(plant => plant.id), ['plant-a', 'plant-shared']);
-  view.transitionForm.value.client_id = 'client-b';
-  assert.deepEqual(view.transitionAvailablePlants.value.map(plant => plant.id), ['plant-b', 'plant-shared']);
-  view.transitionForm.value.client_id = 'client-empty';
-  assert.deepEqual(view.transitionAvailablePlants.value, []);
+  assert.deepEqual(view.transitionAvailablePlants.value.map(plant => plant.id), ['plant-a', 'plant-b']);
+  view.transitionForm.value.client_id = '';
+  assert.deepEqual(view.quantityAvailablePlants.value.map(plant => plant.id), ['plant-a', 'plant-b']);
+  assert.deepEqual(view.itemAvailablePlants.value.map(plant => plant.id), ['plant-a', 'plant-b']);
 });
 
-test('cambiar cliente limpia siempre la planta dependiente', async () => {
+test('cambiar cliente no limpia planta y viceversa', async () => {
   const view = setup({
-    clients: [
-      { id: 'client-a', name: 'A', plant_ids: ['plant-a'] },
-      { id: 'client-b', name: 'B', plant_ids: ['plant-b'] },
-    ],
+    clients: [{ id: 'client-a', name: 'A' }, { id: 'client-b', name: 'B' }],
     plants: [{ id: 'plant-a' }, { id: 'plant-b' }],
   });
   await view.load();
 
-  view.itemFilters.value.plantId = 'plant-a';
-  view.itemFilters.value.clientId = 'client-b';
-  view.__watchers[0].callback();
-  assert.equal(view.itemFilters.value.plantId, null);
-
   view.transitionForm.value.plant_id = 'plant-a';
   view.transitionForm.value.client_id = 'client-b';
-  view.__watchers[1].callback();
-  assert.equal(view.transitionForm.value.plant_id, null);
+  assert.equal(view.transitionForm.value.plant_id, 'plant-a');
+
+  view.transitionForm.value.client_id = 'client-a';
+  view.transitionForm.value.plant_id = 'plant-b';
+  assert.equal(view.transitionForm.value.client_id, 'client-a');
 
   view.quantityForm.value.plant_id = 'plant-a';
   view.quantityForm.value.client_id = 'client-b';
-  view.__watchers[2].callback();
-  assert.equal(view.quantityForm.value.plant_id, null);
+  assert.equal(view.quantityForm.value.plant_id, 'plant-a');
 });
 
-test('selectores de planta se deshabilitan sin cliente y muestran el estado sin plantas', () => {
-  assert.match(source, /:disabled="transitionSaving \|\| !transitionForm\.client_id \|\| !transitionAvailablePlants\.length"/);
-  assert.match(source, /:disabled="quantitySaving \|\| !quantityForm\.client_id \|\| !quantityAvailablePlants\.length"/);
-  assert.match(source, /Este cliente no tiene plantas disponibles\./);
+test('selectores de planta independientes sin dependencia de cliente', () => {
+  assert.doesNotMatch(source, /plantsForClient/);
+  assert.doesNotMatch(source, /!transitionForm\.client_id/);
+  assert.doesNotMatch(source, /!quantityForm\.clientId/);
+  assert.doesNotMatch(source, /no tiene plantas disponibles/);
+  assert.match(source, /Sin cliente/);
+  assert.match(source, /Sin planta/);
 });
 
 test('transición serializada envía asignación con cliente y planta', async () => {
@@ -179,6 +172,28 @@ test('transición serializada envía asignación con cliente y planta', async ()
     payload: { movement_type: 'assign', notes: null, client_id: 'c1', plant_id: 'pl1' },
   });
   assert.equal(view.transitionItem.value, null);
+});
+
+test('assign admite cliente solo o planta solo sin exigir pareja', async () => {
+  const calls = [];
+  const view = setup({ transition: async (id, payload) => { calls.push(payload); return {}; } });
+  await view.load();
+  const available = { ...assignedItem, id: 'i2', status: 'available', client_id: null, plant_id: null };
+
+  view.openTransition(available, 'assign');
+  view.transitionForm.value.client_id = 'c1';
+  await view.applyTransition();
+  assert.deepEqual(calls.at(-1), { movement_type: 'assign', notes: null, client_id: 'c1', plant_id: null });
+
+  view.openTransition(available, 'assign');
+  view.transitionForm.value.plant_id = 'pl1';
+  await view.applyTransition();
+  assert.deepEqual(calls.at(-1), { movement_type: 'assign', notes: null, client_id: null, plant_id: 'pl1' });
+
+  view.openTransition(available, 'assign');
+  await view.applyTransition();
+  assert.match(view.transitionError.value, /cliente o planta/);
+  assert.equal(calls.length, 2);
 });
 
 test('venta serialized available mantiene contexto opcional y pareja dependiente completa', async () => {
@@ -219,6 +234,44 @@ test('install serialized conserva planta del item y filtra dispositivo sin reenv
   assert.deepEqual(sent, { movement_type: 'install', notes: null, device_id: 'device-a' });
   assert.equal('client_id' in sent, false);
   assert.equal('plant_id' in sent, false);
+});
+
+test('install completa la planta faltante sin cambiar el cliente', async () => {
+  const calls = [];
+  const view = setup({ transition: async (id, payload) => { calls.push(payload); return {}; } });
+  await view.load();
+  const clientOnly = { ...assignedItem, id: 'i9', client_id: 'c1', plant_id: null };
+
+  view.openTransition(clientOnly, 'install');
+  await view.applyTransition();
+  assert.match(view.transitionError.value, /planta de instalación/);
+  assert.equal(calls.length, 0);
+
+  view.transitionForm.value.plant_id = 'pl1';
+  view.transitionForm.value.device_id = 'd1';
+  await view.applyTransition();
+  assert.deepEqual(calls.at(-1), { movement_type: 'install', notes: null, plant_id: 'pl1', device_id: 'd1' });
+  assert.ok(!('client_id' in calls.at(-1)));
+});
+
+test('quantity install exige planta de instalación', async () => {
+  const calls = [];
+  const view = setup({
+    trackingMode: 'quantity',
+    quantityMovement: async (id, payload) => { calls.push(payload); return {}; },
+  });
+  await view.load();
+  view.openQuantity();
+  Object.assign(view.quantityForm.value, { movement_type: 'install', quantity: '1', client_id: 'c1' });
+  await view.saveQuantity();
+  assert.match(view.quantityError.value, /planta de instalación/);
+  assert.equal(calls.length, 0);
+
+  view.quantityForm.value.plant_id = 'pl1';
+  await view.saveQuantity();
+  assert.deepEqual(calls.at(-1), {
+    movement_type: 'install', quantity: '1', notes: null, client_id: 'c1', plant_id: 'pl1',
+  });
 });
 
 test('payloads serialized coinciden con cada transición permitida', async () => {

@@ -10,16 +10,14 @@ const clientsCode = compileScript(clientsDescriptor, { id: 'clients-view-test' }
   .replace(/^import[^;]*;$/gm, '').replace('export default', 'return');
 
 function setupClients(overrides = {}) {
-  const calls = { create: [], update: [], status: [], assign: [] };
+  const calls = { create: [], update: [], status: [] };
   const deps = {
     ref, computed, onMounted() {}, onUnmounted() {},
     getMyProfile: async () => ({ profile: { role: 'rdx_admin' } }),
-    apiFetch: async () => overrides.plants ?? [],
     listClients: async () => overrides.clients ?? [],
     createClient: async payload => { calls.create.push(payload); return { id: 'new', active: true, ...payload }; },
     updateClient: async (id, payload) => { calls.update.push([id, payload]); return { id, ...payload }; },
     setClientStatus: async (id, active) => { calls.status.push([id, active]); return { id, active }; },
-    assignClientPlant: async (id, plantId) => { calls.assign.push([id, plantId]); return { client_id: id, plant_id: plantId }; },
     ...overrides.deps,
   };
   const component = new Function(...Object.keys(deps), clientsCode)(...Object.values(deps));
@@ -59,18 +57,28 @@ test('/clients disponible solo para rdx_admin y enlace Clientes solo rdx_admin',
   assert.match(layout, /showClients\.value = me\?\.profile\?\.role === 'rdx_admin'/);
 });
 
-test('vista Clientes lista activos/inactivos con acciones y sin eliminar ni desasignar', () => {
+test('vista Clientes es catálogo comercial sin plantas ni gestionar', () => {
   assert.match(clientsSource, /<h1>Clientes<\/h1>/);
   assert.match(clientsSource, /Nuevo cliente/);
-  for (const header of ['Cliente', 'Estado', 'Plantas asignadas', 'Acciones']) {
+  for (const header of ['Cliente', 'Estado', 'Acciones']) {
     assert.ok(clientsSource.includes(header));
   }
-  for (const action of ['Editar', 'Activar', 'Desactivar', 'Gestionar plantas', 'Asignar planta']) {
+  for (const action of ['Editar', 'Activar', 'Desactivar']) {
     assert.ok(clientsSource.includes(action));
   }
+  assert.doesNotMatch(clientsSource, /Plantas asignadas/);
+  assert.doesNotMatch(clientsSource, /Gestionar plantas/);
+  assert.doesNotMatch(clientsSource, /Asignar planta/);
+  assert.doesNotMatch(clientsSource, /plant_ids/);
   assert.doesNotMatch(clientsSource, /eliminar/i);
-  assert.doesNotMatch(clientsSource, /desasignar/i);
-  assert.doesNotMatch(clientsSource, /DELETE/i);
+  assert.doesNotMatch(clientsSource, /plants\//);
+});
+
+test('PUT client→plant eliminado del módulo comercial', () => {
+  const routes = readFileSync(new URL('../../server/src/routes/clients.routes.js', import.meta.url), 'utf8');
+  assert.doesNotMatch(routes, /plants/);
+  const service = readFileSync(new URL('../src/services/clients.js', import.meta.url), 'utf8');
+  assert.doesNotMatch(service, /assignClientPlant/);
 });
 
 test('crear y editar refrescan desde backend con trim y validación visible', async () => {
@@ -85,14 +93,14 @@ test('crear y editar refrescan desde backend con trim y validación visible', as
   await view.saveForm();
   assert.equal(calls.create[0].name, 'Nuevo');
 
-  const client = { id: 'c1', name: 'Viejo', active: true, plant_ids: [] };
+  const client = { id: 'c1', name: 'Viejo', active: true };
   view.openEdit(client);
   view.form.value = { name: 'Nuevo nombre' };
   await view.saveForm();
   assert.deepEqual(calls.update[0], ['c1', { name: 'Nuevo nombre' }]);
 });
 
-test('doble submit bloqueado y errores visibles en guardar y asignar', async () => {
+test('doble submit bloqueado y errores visibles; activar/desactivar confirma', async () => {
   let release;
   const { view } = setupClients({
     deps: { createClient: () => new Promise(resolve => { release = resolve; }) },
@@ -116,25 +124,10 @@ test('doble submit bloqueado y errores visibles en guardar y asignar', async () 
   assert.equal(failing.view.showForm.value, true);
   assert.match(failing.view.formError.value, /Ya existe/);
 
-  const { view: plantView } = setupClients({
-    clients: [{ id: 'c1', name: 'C', active: true, plant_ids: [] }],
-    plants: [{ id: 'p1', name: 'P1' }],
-  });
-  plantView.clients.value = [{ id: 'c1', name: 'C', active: true, plant_ids: [] }];
-  plantView.plants.value = [{ id: 'p1', name: 'P1' }];
-  plantView.openPlants(plantView.clients.value[0]);
-  await plantView.assignPlant();
-  assert.match(plantView.plantError.value, /Selecciona/);
-});
-
-test('cliente inactivo no permite nuevas asignaciones en frontend', async () => {
-  const { view } = setupClients();
-  view.clients.value = [];
-  view.plants.value = [{ id: 'p1', name: 'P1' }];
-  view.openPlants({ id: 'c-off', name: 'Off', active: false, plant_ids: [] });
-  view.selectedPlantId.value = 'p1';
-  await view.assignPlant();
-  assert.match(view.plantError.value, /Activa el cliente/);
+  const { view: statusView, calls } = setupClients();
+  statusView.askStatus({ id: 'c1', name: 'C', active: true });
+  await statusView.applyStatus();
+  assert.deepEqual(calls.status[0], ['c1', false]);
 });
 
 test('UsersView muestra Cliente * para rdx_admin y envía client_id', async () => {
@@ -172,11 +165,10 @@ test('client_admin no puede seleccionar otro cliente', async () => {
   assert.ok(!('client_id' in calls[0]));
 });
 
-test('Inventario sigue consumiendo contrato existente sin regresión', () => {
-  const service = readFileSync(new URL('../src/services/clients.js', import.meta.url), 'utf8');
-  assert.match(service, /includePlantIds/);
-  assert.match(service, /\/clients/);
+test('Inventario ya no usa include=plant_ids; contexto independiente', () => {
   const detail = readFileSync(new URL('../src/views/InventoryDetailView.vue', import.meta.url), 'utf8');
-  assert.match(detail, /listClients\(\{/);
-  assert.match(detail, /includePlantIds/);
+  assert.doesNotMatch(detail, /includePlantIds/);
+  assert.doesNotMatch(detail, /plantsForClient/);
+  assert.match(detail, /Sin cliente/);
+  assert.match(detail, /Sin planta/);
 });

@@ -281,6 +281,49 @@ test('movement quantity llama RPC y valida quantity/source antes del repository'
   );
 });
 
+test('contexto comercial independiente: cliente o planta solos llegan a la RPC', async () => {
+  await service.transitionInventoryItem(ADMIN, ITEM_ID, {
+    movement_type: 'assign', client_id: CLIENT_A,
+  });
+  assert.equal(state.calls.at(-1).method, 'transitionSerializedRpc');
+  assert.equal(state.calls.at(-1).values.clientId, CLIENT_A);
+  assert.equal(state.calls.at(-1).values.plantId, null);
+
+  await service.transitionInventoryItem(ADMIN, ITEM_ID, {
+    movement_type: 'assign', plant_id: PLANT_A,
+  });
+  assert.equal(state.calls.at(-1).values.clientId, null);
+  assert.equal(state.calls.at(-1).values.plantId, PLANT_A);
+
+  await service.createQuantityMovement(ADMIN, PRODUCT_QUANTITY, {
+    movement_type: 'assign', quantity: '2', client_id: CLIENT_A,
+  });
+  assert.equal(state.calls.at(-1).method, 'quantityMovementRpc');
+  assert.equal(state.calls.at(-1).values.clientId, CLIENT_A);
+  assert.equal(state.calls.at(-1).values.plantId, null);
+
+  await service.createQuantityMovement(ADMIN, PRODUCT_QUANTITY, {
+    movement_type: 'assign', quantity: '2', plant_id: PLANT_A,
+  });
+  assert.equal(state.calls.at(-1).values.clientId, null);
+  assert.equal(state.calls.at(-1).values.plantId, PLANT_A);
+});
+
+test('client_id o plant_id con formato inválido se rechazan antes de la RPC', async () => {
+  const before = state.calls.length;
+  await assert.rejects(
+    service.transitionInventoryItem(ADMIN, ITEM_ID, { movement_type: 'assign', client_id: 'no-uuid' }),
+    error => error.statusCode === 400,
+  );
+  await assert.rejects(
+    service.createQuantityMovement(ADMIN, PRODUCT_QUANTITY, {
+      movement_type: 'assign', quantity: '1', plant_id: 'no-uuid',
+    }),
+    error => error.statusCode === 400,
+  );
+  assert.equal(state.calls.length, before);
+});
+
 test('client roles no ejecutan writes de stock', async () => {
   await assert.rejects(
     service.createInventoryItem(CLIENT_ADMIN, PRODUCT_SERIALIZED, { serial_number: 'X' }),
@@ -308,6 +351,7 @@ test('mapea errores RPC y serial duplicado sin filtrar detalles', () => {
     ['INVALID_TRANSITION', null, 409],
     ['INSUFFICIENT_STOCK', null, 409],
     ['INVALID_CLIENT_PLANT', null, 400],
+    ['INACTIVE_CLIENT', null, 409],
     ['DEVICE_PLANT_MISMATCH', null, 409],
     ['duplicate key contains secret', '23505', 409],
   ];

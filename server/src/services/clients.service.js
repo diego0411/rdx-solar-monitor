@@ -1,12 +1,10 @@
 import {
   getClientById,
-  getPlantById,
   insertClient,
   listActiveClients,
   listAllClients,
   listClientPlantAssignments,
   updateClient,
-  upsertClientPlant,
 } from '../repositories/clients.repository.js';
 
 const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -84,14 +82,4 @@ export async function setClientStatus(id, body) {
   if (!current) throw codedError(404, 'Cliente no encontrado');
   if (current.active === body.active) return current;
   return updateClient(clientId, { active: body.active });
-}
-
-export async function assignPlant(id, plantId) {
-  const clientId = validateUuid(id, 'id');
-  const cleanPlantId = validateUuid(plantId, 'plantId');
-  const client = await getClientById(clientId);
-  if (!client) throw codedError(404, 'Cliente no encontrado');
-  if (!client.active) throw codedError(409, 'El cliente está inactivo');
-  if (!(await getPlantById(cleanPlantId))) throw codedError(404, 'Planta no encontrada');
-  return upsertClientPlant(clientId, cleanPlantId);
 }
