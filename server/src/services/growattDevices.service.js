@@ -89,7 +89,7 @@ function meterAddress(entry) {
 
 // Descubrimiento de smart meters por datalogger. No toca el flujo MIN:
 // un fallo aquí nunca destruye/desactiva lo ya vinculado.
-async function linkPlantMeters(plant, realDevices, result) {
+export async function linkPlantMeters(plant, realDevices, result) {
   let linked = 0;
   const dataloggers = [...new Set(realDevices
     .map(device => device?.datalogger_sn ?? device?.dataloggerSn ?? null)
@@ -148,7 +148,7 @@ export async function linkNextGrowattPlantDevices() {
       result.linked += await linkGrowattDeviceToPlant(device.device_sn, plant.id);
     }
     result.linked += await linkPlantMeters(plant, realDevices, result);
-    progress[plant.external_plant_id] = true;
+    if (result.linked > 0) progress[plant.external_plant_id] = true;
     mkdirSync(new URL('../../.cache/', import.meta.url), { recursive: true });
     writeFileSync(LINK_PROGRESS_FILE, JSON.stringify(progress), 'utf8');
     result.remaining_plants = plants.filter(item => !progress[item.external_plant_id]).length;

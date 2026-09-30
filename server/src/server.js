@@ -1,6 +1,7 @@
 import app from './app.js';
 import { env } from './config/env.js';
 import { syncGrowattPlants } from './services/growattPlants.service.js';
+import { startGrowattDiscoveryWorker } from './services/growattDiscoveryWorker.js';
 import { syncGrowattLatest } from './services/growattLatest.service.js';
 import { syncGrowattPowerHistory } from './services/growattPowerHistory.service.js';
 import { syncGrowattEnergyHistory, syncGrowattEnergyRollups } from './services/growattEnergyHistory.service.js';
@@ -138,6 +139,7 @@ app.listen(env.PORT, () => {
   console.log(`RDX Solar Monitor API listening on port ${env.PORT}`);
   startAutomaticSchedulers(env.ENABLE_SCHEDULERS, () => {
     syncGrowattPlants().catch(() => {});
+    startGrowattDiscoveryWorker();
     runGrowattLatestSync();
     setInterval(runGrowattLatestSync, GROWATT_LATEST_INTERVAL_MS);
     runGrowattHistorySync();
