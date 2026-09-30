@@ -7,6 +7,7 @@ const actors = {
   admin: { id: 'admin', role: 'rdx_admin', client_id: null, active: true },
   manager: { id: 'manager', role: 'client_admin', client_id: 'client-a', active: true },
   reader: { id: 'reader', role: 'client_user', client_id: 'client-a', active: true },
+  legacy: { id: 'legacy', role: 'client_user', client_id: '99999999-9999-4999-8999-000000000009', active: true },
 };
 let state;
 
@@ -23,6 +24,7 @@ function fullClient(client) {
     name: client.name,
     phone: client.phone ?? null,
     email: client.email ?? null,
+    is_commercial: client.is_commercial ?? true,
     active: client.active,
     created_at: client.created_at ?? '2026-01-01T00:00:00Z',
     updated_at: client.updated_at ?? '2026-01-01T00:00:00Z',
@@ -65,6 +67,7 @@ async function transport(input, options = {}) {
         name: payload?.name,
         phone: payload?.phone ?? null,
         email: payload?.email ?? null,
+        is_commercial: true,
         active: true,
         created_at: '2026-01-01T00:00:00Z',
         updated_at: '2026-01-01T00:00:00Z',
@@ -90,10 +93,16 @@ async function transport(input, options = {}) {
       return json(found ? fullClient(found) : null);
     }
     if (url.searchParams.has('active')) {
-      return json(state.clients.filter(client => client.active).map(({ id, name }) => ({ id, name })));
+      const onlyCommercial = eqParam(url, 'is_commercial') === 'true';
+      return json(state.clients
+        .filter(client => client.active && (!onlyCommercial || client.is_commercial !== false))
+        .map(({ id, name }) => ({ id, name })));
     }
-    const rows = [...state.clients].sort((left, right) =>
-      left.name.localeCompare(right.name) || left.id.localeCompare(right.id));
+    const onlyCommercial = eqParam(url, 'is_commercial') === 'true';
+    const rows = [...state.clients]
+      .filter(client => !onlyCommercial || client.is_commercial !== false)
+      .sort((left, right) =>
+        left.name.localeCompare(right.name) || left.id.localeCompare(right.id));
     const start = Number(url.searchParams.get('offset') ?? 0);
     const limit = Number(url.searchParams.get('limit') ?? 1000);
     const end = start + limit - 1;
@@ -147,9 +156,10 @@ app.use('/api/clients', clientsRoutes);
 beforeEach(() => {
   state = {
     clients: [
-      { id: '11111111-1111-4111-8111-000000000001', name: 'Cliente A', active: true },
-      { id: '11111111-1111-4111-8111-000000000002', name: 'Cliente B', active: true },
-      { id: '11111111-1111-4111-8111-000000000003', name: 'Inactivo', active: false },
+      { id: '11111111-1111-4111-8111-000000000001', name: 'Cliente A', active: true, is_commercial: true },
+      { id: '11111111-1111-4111-8111-000000000002', name: 'Cliente B', active: true, is_commercial: true },
+      { id: '11111111-1111-4111-8111-000000000003', name: 'Inactivo', active: false, is_commercial: true },
+      { id: '99999999-9999-4999-8999-000000000009', name: 'Nexora', active: true, is_commercial: false },
     ],
     plants: [
       { id: '22222222-2222-4222-8222-000000000001' },
@@ -462,4 +472,79 @@ test('PATCH name conserva validación de duplicado aunque cambien contactos', as
   assert.equal(renamed.status, 200);
   assert.equal(renamed.body.name, 'Cliente A Unico');
   assert.equal(renamed.body.phone, '72000000');
+});
+
+const NEXORA = '99999999-9999-4999-8999-000000000009';
+
+test('GET active excluye la fila legacy no comercial', async t => {
+  const result = await request(t, 'admin');
+  assert.equal(result.status, 200);
+  assert.deepEqual(result.body, [
+    { id: CLIENT_A, name: 'Cliente A' },
+    { id: CLIENT_B, name: 'Cliente B' },
+  ]);
+  assert.ok(!result.body.some(client => client.id === NEXORA));
+});
+
+test('status=all excluye Nexora pero incluye inactivo comercial', async t => {
+  const result = await request(t, 'admin', '/api/clients?status=all');
+  assert.equal(result.status, 200);
+  assert.equal(result.body.length, 3);
+  assert.ok(!result.body.some(client => client.id === NEXORA));
+  assert.equal(result.body.find(client => client.id === CLIENT_OFF).active, false);
+});
+
+test('auth legacy sigue cargando Nexora active para su usuario', async t => {
+  const result = await request(t, 'legacy');
+  assert.equal(result.status, 403);
+  assert.deepEqual(result.body, { error: 'Acceso denegado' });
+});
+
+test('POST crea comercial e is_commercial en body se rechaza', async t => {
+  const created = await request(t, 'admin', '/api/clients', {
+    method: 'POST', body: { name: 'Nuevo Comercial', phone: '70000000', email: 'c@example.test' },
+  });
+  assert.equal(created.status, 201);
+  assert.equal(created.body.is_commercial, true);
+  const flagged = await request(t, 'admin', '/api/clients', {
+    method: 'POST', body: { name: 'Otro', is_commercial: false },
+  });
+  assert.equal(flagged.status, 400);
+});
+
+test('PATCH y PATCH status sobre UUID Nexora responden 404', async t => {
+  const patch = await request(t, 'admin', `/api/clients/${NEXORA}`, {
+    method: 'PATCH', body: { name: 'Cambio' },
+  });
+  assert.equal(patch.status, 404);
+  const phone = await request(t, 'admin', `/api/clients/${NEXORA}`, {
+    method: 'PATCH', body: { phone: '70000000' },
+  });
+  assert.equal(phone.status, 404);
+  const status = await request(t, 'admin', `/api/clients/${NEXORA}/status`, {
+    method: 'PATCH', body: { active: false },
+  });
+  assert.equal(status.status, 404);
+  assert.equal(state.clients.find(client => client.id === NEXORA).active, true);
+});
+
+test('duplicado de nombre considera a Nexora aunque no sea comercial', async t => {
+  const post = await request(t, 'admin', '/api/clients', {
+    method: 'POST', body: { name: 'NEXORA' },
+  });
+  assert.equal(post.status, 409);
+  const rename = await request(t, 'admin', `/api/clients/${CLIENT_A}`, {
+    method: 'PATCH', body: { name: 'nexora' },
+  });
+  assert.equal(rename.status, 409);
+});
+
+test('operación comercial no toca client_plants ni user_profiles', async t => {
+  await request(t, 'admin', '/api/clients', { method: 'POST', body: { name: ' intacto ' } });
+  await request(t, 'admin', `/api/clients/${CLIENT_A}`, {
+    method: 'PATCH', body: { phone: '71000000' },
+  });
+  assert.deepEqual(state.assignments, []);
+  assert.equal(actors.legacy.client_id, NEXORA);
+  assert.equal(state.clients.find(client => client.id === NEXORA).is_commercial, false);
 });

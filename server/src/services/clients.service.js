@@ -3,6 +3,7 @@ import {
   insertClient,
   listActiveClients,
   listAllClients,
+  listAllClientsIncludingNonCommercial,
   listClientPlantAssignments,
   updateClient,
 } from '../repositories/clients.repository.js';
@@ -69,9 +70,16 @@ function clientPayload(body, { requireName = false } = {}) {
 
 async function ensureUniqueName(name, excludedId = null) {
   const normalized = name.toLocaleLowerCase();
-  const duplicate = (await listAllClients()).some(client =>
+  const duplicate = (await listAllClientsIncludingNonCommercial()).some(client =>
     client.id !== excludedId && client.name.trim().toLocaleLowerCase() === normalized);
   if (duplicate) throw codedError(409, 'Ya existe un cliente con ese nombre');
+}
+
+function requireCommercial(client) {
+  // Los endpoints comerciales no gestionan la fila legacy no comercial (Nexora):
+  // ante su UUID responden 404 sin revelar su existencia.
+  if (!client || client.is_commercial === false) throw codedError(404, 'Cliente no encontrado');
+  return client;
 }
 
 function withPlantIds(clients, assignments) {
@@ -96,8 +104,7 @@ export async function createClient(body) {
 
 export async function renameClient(id, body) {
   const clientId = validateUuid(id, 'id');
-  const current = await getClientById(clientId);
-  if (!current) throw codedError(404, 'Cliente no encontrado');
+  const current = requireCommercial(await getClientById(clientId));
   const values = clientPayload(body);
   if (values.name !== undefined && values.name !== current.name) {
     await ensureUniqueName(values.name, clientId);
@@ -119,8 +126,7 @@ export async function setClientStatus(id, body) {
     || Object.keys(body).length !== 1 || typeof body.active !== 'boolean') {
     throw codedError(400, 'active debe ser true o false');
   }
-  const current = await getClientById(clientId);
-  if (!current) throw codedError(404, 'Cliente no encontrado');
+  const current = requireCommercial(await getClientById(clientId));
   if (current.active === body.active) return current;
   return updateClient(clientId, { active: body.active });
 }
