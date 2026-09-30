@@ -1,5 +1,6 @@
 import { apiFetch } from './api.js';
 
 export function listClients(options = {}) {
-  return apiFetch('/clients', { signal: options.signal });
+  const query = options.includePlantIds ? '?include=plant_ids' : '';
+  return apiFetch(`/clients${query}`, { signal: options.signal });
 }

@@ -20,6 +20,8 @@ const router = createRouter({
     { path: '/users', name: 'users', component: () => import('../views/UsersView.vue') },
     { path: '/maintenance', name: 'maintenance', component: () => import('../views/MaintenanceView.vue') },
     { path: '/maintenance/:id', name: 'maintenance-detail', component: () => import('../views/MaintenanceDetailView.vue') },
+    { path: '/inventory', name: 'inventory', component: () => import('../views/InventoryView.vue') },
+    { path: '/inventory/:id', name: 'inventory-detail', component: () => import('../views/InventoryDetailView.vue') },
   ],
 });
 
