@@ -1,5 +1,5 @@
 import { supabase } from '../config/supabase.js';
-import { getClientById } from '../repositories/clients.repository.js';
+import { listUserPlantIds } from '../repositories/userPlants.repository.js';
 
 /*
  * Carga el perfil del usuario autenticado (user_profiles) y
@@ -7,7 +7,10 @@ import { getClientById } from '../repositories/clients.repository.js';
  *
  * - rdx_admin: alcance global (plantIds = null => todas).
  * - client_admin / client_user: solo las plantas asignadas
- *   en client_plants (0 asignaciones => 0 plantas).
+ *   en user_plants (0 asignaciones => 0 plantas).
+ *
+ * El scope ya NO depende de clients ni client_plants: clients es
+ * catálogo comercial y user_plants es la única fuente de acceso.
  *
  * Nunca se auto-crea un perfil ni se autoriza por email o
  * dominio: la ausencia de perfil, el perfil inactivo o un rol
@@ -44,23 +47,16 @@ export async function loadProfile(req, res, next) {
       return res.status(403).json({ error: 'Acceso denegado' });
     }
 
-    const client = data.client_id ? await getClientById(data.client_id) : null;
-    if (!client?.active) {
-      return res.status(403).json({ error: 'Cliente inactivo' });
-    }
-
-    const { data: assignments, error: scopingError } =
-      await supabase.from('client_plants')
-        .select('plant_id')
-        .eq('client_id', data.client_id);
-
-    if (scopingError) {
+    let plantIds;
+    try {
+      plantIds = await listUserPlantIds(data.id);
+    } catch {
       return res.status(503).json({ error: 'No se pudo resolver el alcance del perfil' });
     }
 
     req.scope = {
-      client_id: data.client_id,
-      plantIds: new Set((assignments ?? []).map(row => row.plant_id)),
+      client_id: null,
+      plantIds: new Set(plantIds),
     };
 
     return next();

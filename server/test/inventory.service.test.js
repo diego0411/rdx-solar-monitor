@@ -12,8 +12,8 @@ const PLANT_B = 'bbbbbbbb-2222-4222-8222-222222222222';
 const ADMIN = { id: '99999999-9999-4999-8999-999999999999', role: 'rdx_admin', client_id: null };
 const CLIENT_ADMIN = { id: '88888888-8888-4888-8888-888888888888', role: 'client_admin', client_id: CLIENT_A };
 const CLIENT_USER = { id: '77777777-7777-4777-8777-777777777777', role: 'client_user', client_id: CLIENT_A };
-const ADMIN_SCOPE = { client_id: null, plantIds: null };
-const CLIENT_SCOPE = { client_id: CLIENT_A, plantIds: new Set([PLANT_A]) };
+const ADMIN_SCOPE = { plantIds: null };
+const CLIENT_SCOPE = { plantIds: new Set([PLANT_A]) };
 
 const baseProducts = [
   { id: PRODUCT_SERIALIZED, name: 'Inversor Uno', category: 'inverter', tracking_mode: 'serialized', active: true },
@@ -30,7 +30,7 @@ const state = {
 };
 
 function inScope(row, scope) {
-  return !scope || row.client_id === scope.client_id && scope.plantIds.has(row.plant_id);
+  return !scope || scope.plantIds.has(row.plant_id);
 }
 
 function maybeThrow() {
@@ -362,17 +362,27 @@ test('mapea errores RPC y serial duplicado sin filtrar detalles', () => {
   }
 });
 
-test('movimientos e items de otro cliente quedan fuera del scope', async () => {
+test('movimientos e items fuera de planta quedan fuera del scope', async () => {
   const items = await service.getInventoryItems(
     CLIENT_ADMIN, CLIENT_SCOPE, PRODUCT_SERIALIZED, {},
   );
   assert.deepEqual(items.map(item => item.serial_number), ['RDX-2']);
   const movements = await service.getInventoryMovements(CLIENT_USER, CLIENT_SCOPE, {});
   assert.equal(movements.length, 2);
-  assert.ok(movements.every(row => row.client_id === CLIENT_A && row.plant_id === PLANT_A));
+  assert.ok(movements.every(row => row.plant_id === PLANT_A));
   assert.deepEqual(await service.getInventoryMovements(CLIENT_USER, CLIENT_SCOPE, {
     clientId: CLIENT_B,
   }), []);
+});
+
+test('cliente comercial no deriva del usuario: otra firma en misma planta sí visible', async () => {
+  state.movements.push({
+    product_id: PRODUCT_QUANTITY, movement_type: 'assign', quantity: '1',
+    from_status: 'available', to_status: 'assigned', client_id: CLIENT_B, plant_id: PLANT_A,
+  });
+  const movements = await service.getInventoryMovements(CLIENT_USER, CLIENT_SCOPE, {});
+  assert.equal(movements.length, 3);
+  assert.ok(movements.some(row => row.client_id === CLIENT_B));
 });
 
 test('producto e item inexistentes se traducen a 404', async () => {

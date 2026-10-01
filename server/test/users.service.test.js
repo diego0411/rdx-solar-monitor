@@ -8,16 +8,15 @@ import {
   resolvePatch,
   resolveStatus,
   validEmail,
+  validatePlantIds,
 } from '../src/services/users.service.js';
 
 const ADMIN = { id: 'admin', client_id: null, role: 'rdx_admin', active: true };
-const CA_A = { id: 'ca-a', client_id: 'A', role: 'client_admin', active: true };
-const CU_A = { id: 'cu-a', client_id: 'A', role: 'client_user', active: true };
-const CU_A2 = { id: 'cu-a2', client_id: 'A', role: 'client_user', active: true };
-const CU_B = { id: 'cu-b', client_id: 'B', role: 'client_user', active: true };
-const CA_B = { id: 'ca-b', client_id: 'B', role: 'client_admin', active: true };
+const CA = { id: 'ca', client_id: null, role: 'client_admin', active: true };
+const CU = { id: 'cu', client_id: null, role: 'client_user', active: true };
+const CU2 = { id: 'cu2', client_id: 'legacy-fisico', role: 'client_user', active: true };
 const RDX2 = { id: 'rdx2', client_id: null, role: 'rdx_admin', active: true };
-const USER = { id: 'u', client_id: 'A', role: 'client_user', active: true };
+const PLANT = '11111111-1111-4111-8111-111111111111';
 
 function statusOf(fn) {
   try {
@@ -28,86 +27,77 @@ function statusOf(fn) {
   }
 }
 
-test('rdx_admin lista global gestionable (sin rdx)', () => {
-  const visible = visibleProfiles([ADMIN, CA_A, CU_A, CU_B, RDX2], ADMIN);
-  assert.deepEqual(visible.map(p => p.id).sort(), ['ca-a', 'cu-a', 'cu-b']);
+test('rdx_admin lista global gestionable (sin rdx, sin exigir cliente)', () => {
+  const visible = visibleProfiles([ADMIN, CA, CU, CU2, RDX2], ADMIN);
+  assert.deepEqual(visible.map(p => p.id).sort(), ['ca', 'cu', 'cu2']);
 });
 
-test('client_admin lista únicamente su cliente', () => {
-  const visible = visibleProfiles([CA_A, CU_A, CU_A2, CU_B, CA_B, ADMIN], CA_A);
-  assert.deepEqual(visible.map(p => p.id).sort(), ['ca-a', 'cu-a', 'cu-a2']);
+test('no-rdx_admin no ve perfiles aunque comparta legacy client_id', () => {
+  assert.deepEqual(visibleProfiles([CA, CU, CU2], CA), []);
 });
 
-test('rdx_admin crea client_admin y client_user con client_id válido', () => {
-  const a = resolveCreate(ADMIN, { email: 'a@x.com', role: 'client_admin', client_id: 'A' });
+test('rdx_admin crea client_admin y client_user sin client_id', () => {
+  const a = resolveCreate(ADMIN, { email: 'a@x.com', role: 'client_admin' });
   assert.equal(a.role, 'client_admin');
-  assert.equal(a.client_id, 'A');
-  const u = resolveCreate(ADMIN, { email: 'u@x.com', role: 'client_user', client_id: 'B', display_name: ' N ' });
+  assert.deepEqual(a.plant_ids, []);
+  assert.ok(!('client_id' in a));
+  const u = resolveCreate(ADMIN, {
+    email: 'u@x.com', role: 'client_user', display_name: ' N ', plant_ids: [PLANT],
+  });
   assert.equal(u.display_name, 'N');
+  assert.deepEqual(u.plant_ids, [PLANT]);
 });
 
-test('rdx_admin no crea rdx_admin y rechaza email/client_id inválidos', () => {
-  assert.equal(statusOf(() => resolveCreate(ADMIN, { email: 'r@x.com', role: 'rdx_admin', client_id: 'A' })), 403);
-  assert.equal(statusOf(() => resolveCreate(ADMIN, { email: 'mal', role: 'client_user', client_id: 'A' })), 400);
-  assert.equal(statusOf(() => resolveCreate(ADMIN, { email: 'u@x.com', role: 'client_user', client_id: '' })), 400);
+test('rdx_admin no crea rdx_admin y rechaza email/plant_ids inválidos', () => {
+  assert.equal(statusOf(() => resolveCreate(ADMIN, { email: 'r@x.com', role: 'rdx_admin' })), 403);
+  assert.equal(statusOf(() => resolveCreate(ADMIN, { email: 'mal', role: 'client_user' })), 400);
+  assert.equal(statusOf(() => resolveCreate(ADMIN, { email: 'u@x.com', role: 'client_user', plant_ids: 'x' })), 400);
+  assert.equal(statusOf(() => resolveCreate(ADMIN, { email: 'u@x.com', role: 'client_user', plant_ids: ['no-uuid'] })), 400);
 });
 
-test('rdx_admin sin client_id delega resolución server-side', () => {
-  const resolved = resolveCreate(ADMIN, { email: 'u@x.com', role: 'client_user' });
-  assert.equal(resolved.client_id, undefined);
+test('client_admin ya no crea usuarios en esta fase', () => {
+  assert.equal(statusOf(() => resolveCreate(CA, { email: 'n@x.com', role: 'client_user' })), 403);
 });
 
-test('client_admin crea client_admin y client_user solo en su cliente aunque body pida B', () => {
-  const created = resolveCreate(CA_A, { email: 'n@x.com', role: 'client_user', client_id: 'B' });
-  assert.equal(created.client_id, 'A');
-  assert.equal(created.role, 'client_user');
-  const admin = resolveCreate(CA_A, { email: 'a@x.com', role: 'client_admin', client_id: 'B' });
-  assert.equal(admin.client_id, 'A');
-  assert.equal(admin.role, 'client_admin');
-  const forced = resolveCreate(CA_A, { email: 'n@x.com' });
-  assert.equal(forced.client_id, 'A');
-  assert.equal(forced.role, 'client_user');
+test('validatePlantIds normaliza, dedup y exige UUIDs', () => {
+  assert.deepEqual(validatePlantIds(undefined), []);
+  assert.deepEqual(validatePlantIds(null), []);
+  assert.deepEqual(validatePlantIds([]), []);
+  assert.deepEqual(validatePlantIds([PLANT.toUpperCase(), PLANT]), [PLANT]);
+  assert.equal(statusOf(() => validatePlantIds('x')), 400);
+  assert.equal(statusOf(() => validatePlantIds([123])), 400);
 });
 
-test('client_admin no crea rdx_admin', () => {
-  assert.equal(statusOf(() => resolveCreate(CA_A, { email: 'a@x.com', role: 'rdx_admin' })), 403);
-});
-
-test('resolveTarget: ajeno y rdx devuelven 404; propio sí', () => {
-  assert.equal(statusOf(() => resolveTarget(CU_B, CA_A)), 404);
+test('resolveTarget: solo rdx_admin resuelve gestionables; rdx da 404', () => {
+  assert.equal(statusOf(() => resolveTarget(CU, CA)), 403);
   assert.equal(statusOf(() => resolveTarget(RDX2, ADMIN)), 404);
   assert.equal(statusOf(() => resolveTarget(null, ADMIN)), 404);
-  assert.doesNotThrow(() => resolveTarget(CU_A, CA_A));
-  assert.doesNotThrow(() => resolveTarget(CA_A, CA_A));
-  assert.doesNotThrow(() => resolveTarget(CU_A, ADMIN));
+  assert.doesNotThrow(() => resolveTarget(CU, ADMIN));
+  assert.doesNotThrow(() => resolveTarget(CU2, ADMIN));
 });
 
-test('client_admin modifica usuarios propios incluyendo cambio de rol entre gestionables', () => {
-  assert.deepEqual(resolvePatch(CA_A, CU_A, { display_name: 'Nuevo' }), { display_name: 'Nuevo' });
-  assert.deepEqual(resolvePatch(CA_A, CU_A, { role: 'client_user' }), {});
-  assert.deepEqual(resolvePatch(CA_A, CU_A, { role: 'client_admin' }), { role: 'client_admin' });
-  assert.deepEqual(resolvePatch(CA_A, CA_A, { display_name: 'Yo' }), { display_name: 'Yo' });
-  assert.equal(statusOf(() => resolvePatch(CA_A, CU_A, { role: 'rdx_admin' })), 403);
-  assert.equal(statusOf(() => resolvePatch(CA_A, CU_A, { client_id: 'B' })), 400);
-  assert.equal(statusOf(() => resolvePatch(CA_A, CU_A, { active: false })), 400);
-  assert.equal(statusOf(() => resolvePatch(CA_A, CU_A, { email: 'x@y.com' })), 400);
+test('rdx_admin modifica display_name y rol entre gestionables', () => {
+  assert.deepEqual(resolvePatch(ADMIN, CU, { display_name: 'Nuevo' }), { display_name: 'Nuevo' });
+  assert.deepEqual(resolvePatch(ADMIN, CU, { role: 'client_user' }), {});
+  assert.deepEqual(resolvePatch(ADMIN, CU, { role: 'client_admin' }), { role: 'client_admin' });
+  assert.equal(statusOf(() => resolvePatch(ADMIN, CU, { role: 'rdx_admin' })), 403);
+  assert.equal(statusOf(() => resolvePatch(ADMIN, CU, { client_id: 'B' })), 400);
+  assert.equal(statusOf(() => resolvePatch(ADMIN, CU, { active: false })), 400);
+  assert.equal(statusOf(() => resolvePatch(ADMIN, CU, { email: 'x@y.com' })), 400);
 });
 
-test('rdx_admin cambia client_admin<->client_user pero no a rdx_admin', () => {
-  assert.deepEqual(resolvePatch(ADMIN, CU_A, { role: 'client_admin' }), { role: 'client_admin' });
-  assert.equal(statusOf(() => resolvePatch(ADMIN, CU_A, { role: 'rdx_admin' })), 403);
-});
-
-test('nadie cambia su propio rol; client_admin no se desactiva a sí mismo', () => {
-  assert.equal(statusOf(() => resolvePatch(CA_A, CA_A, { role: 'client_user' })), 403);
-  assert.equal(statusOf(() => resolveStatus(CA_A, CA_A, false)), 403);
-  assert.equal(statusOf(() => resolveStatus(CA_A, CA_A, true)), 403);
-  assert.equal(resolveStatus(CA_A, CU_A, false), false);
-  assert.equal(statusOf(() => resolveStatus(CA_A, CU_A, 'no')), 400);
+test('nadie cambia su propio rol ni su estado', () => {
+  assert.deepEqual(resolvePatch(ADMIN, CU, { role: 'client_user' }), {});
+  assert.equal(statusOf(() => resolveTarget(ADMIN, ADMIN)), 404);
+  assert.equal(statusOf(() => resolvePatch(CA, CA, { role: 'client_user' })), 403);
+  assert.equal(statusOf(() => resolveStatus(CA, CA, false)), 403);
+  assert.equal(statusOf(() => resolveStatus(CA, CA, true)), 403);
+  assert.equal(statusOf(() => resolveStatus(CA, CU, 'no')), 400);
+  assert.equal(resolveStatus(ADMIN, CU, false), false);
 });
 
 test('client_user bloqueado a nivel ruta se refleja en roles válidos', () => {
-  assert.ok(!['rdx_admin', 'client_admin'].includes(USER.role));
+  assert.ok(!['rdx_admin', 'client_admin'].includes(CU.role));
   assert.equal(validEmail('a@b.com'), true);
   assert.equal(validEmail('no-email'), false);
 });

@@ -156,8 +156,9 @@ function serializedSummary(items, includeAvailable) {
 }
 
 function inventoryScope(profile, scope) {
+  // El scope de autorización es solo por plantas (user_plants).
+  // client_id comercial de las filas NO deriva del usuario autenticado.
   return profile?.role === 'rdx_admin' ? null : {
-    client_id: profile?.client_id ?? null,
     plantIds: scope?.plantIds ?? new Set(),
   };
 }
@@ -389,8 +390,7 @@ export async function getInventoryItems(profile, scope, productId, filters = {})
   const plantId = filters.plantId === undefined ? null : validateUuid(filters.plantId, 'plantId');
   const search = filters.search === undefined ? null : cleanText(filters.search, 'search', { max: 300 });
   const scoped = inventoryScope(profile, scope);
-  if (scoped && (clientId && clientId !== scoped.client_id
-    || plantId && !scoped.plantIds.has(plantId))) return [];
+  if (scoped && plantId && !scoped.plantIds.has(plantId)) return [];
   await getInventoryProduct(profile, scope, id);
   return listInventoryItems({
     productId: id, status: filters.status ?? null, clientId, plantId, search, scope: scoped,
@@ -415,8 +415,7 @@ export async function getInventoryMovements(profile, scope, filters = {}) {
   const dateFrom = filters.dateFrom === undefined ? null : validDate(filters.dateFrom, 'dateFrom');
   const dateTo = filters.dateTo === undefined ? null : validDate(filters.dateTo, 'dateTo');
   const scoped = inventoryScope(profile, scope);
-  if (scoped && (clientId && clientId !== scoped.client_id
-    || plantId && !scoped.plantIds.has(plantId))) return [];
+  if (scoped && plantId && !scoped.plantIds.has(plantId)) return [];
   return listInventoryMovements({
     productId,
     itemId,

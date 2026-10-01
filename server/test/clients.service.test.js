@@ -48,6 +48,9 @@ async function transport(input, options = {}) {
     const id = eqParam(url, 'id');
     return json(actors[id] ?? null);
   }
+  if (url.pathname === '/rest/v1/user_plants') {
+    return json([]);
+  }
   if (url.pathname === '/rest/v1/plants') {
     if (method === 'GET' && url.searchParams.has('id')) {
       const id = eqParam(url, 'id');
@@ -357,11 +360,11 @@ test('PUT client→plant ya no existe (catálogo comercial)', async t => {
   await managerResponse.text();
 });
 
-test('usuario de cliente inactivo recibe 403', async t => {
+test('auth nuevo ignora clients: cliente inactivo ya no bloquea el perfil', async t => {
   actors.reader.client_id = CLIENT_OFF;
   const result = await request(t, 'reader', '/api/clients?include=plant_ids');
   assert.equal(result.status, 403);
-  assert.deepEqual(result.body, { error: 'Cliente inactivo' });
+  assert.deepEqual(result.body, { error: 'Acceso denegado' });
 });
 
 test('mutaciones exigen rdx_admin', async t => {

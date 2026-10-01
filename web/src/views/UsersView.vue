@@ -1,8 +1,7 @@
 <script setup>
 import { computed, onMounted, onUnmounted, ref } from 'vue';
-import { getMyProfile } from '../services/api.js';
-import { listClients } from '../services/clients.js';
-import { listUsers, createUser, updateUser, setUserStatus } from '../services/users.js';
+import { getMyProfile, apiFetch } from '../services/api.js';
+import { listUsers, createUser, updateUser, setUserStatus, setUserPlants } from '../services/users.js';
 
 const roleNames = { client_admin: 'Administrador', client_user: 'Usuario' };
 
@@ -11,7 +10,7 @@ const loading = ref(true);
 const error = ref('');
 const myRole = ref(null);
 const accessDenied = ref(false);
-const clients = ref([]);
+const plants = ref([]);
 
 const search = ref('');
 const statusFilter = ref('all');
@@ -19,7 +18,7 @@ const roleFilter = ref('all');
 
 const showForm = ref(false);
 const editing = ref(null);
-const form = ref({ display_name: '', email: '', role: 'client_user', client_id: '' });
+const form = ref({ display_name: '', email: '', role: 'client_user', plant_ids: [] });
 const formError = ref('');
 const formSaving = ref(false);
 
@@ -39,8 +38,7 @@ const statusSaving = ref(false);
 const controller = new AbortController();
 
 const canManageRoles = computed(() => myRole.value === 'rdx_admin');
-const requiresClient = computed(() => !editing.value && myRole.value === 'rdx_admin'
-  && ['client_admin', 'client_user'].includes(form.value.role));
+const showPlants = computed(() => ['client_admin', 'client_user'].includes(form.value.role));
 
 const filtered = computed(() => {
   const term = search.value.trim().toLowerCase();
@@ -73,16 +71,16 @@ async function load() {
   try {
     const me = await getMyProfile({ signal: controller.signal });
     myRole.value = me?.profile?.role ?? null;
-    if (myRole.value !== 'rdx_admin' && myRole.value !== 'client_admin') {
+    if (myRole.value !== 'rdx_admin') {
       accessDenied.value = true;
       return;
     }
     const requests = [listUsers({ signal: controller.signal })];
-    if (myRole.value === 'rdx_admin') requests.push(listClients({ signal: controller.signal }));
-    const [userData, clientData = []] = await Promise.all(requests);
-    if (!Array.isArray(userData) || !Array.isArray(clientData)) throw new Error('Respuesta inválida');
+    requests.push(apiFetch('/plants', { signal: controller.signal }));
+    const [userData, plantData = []] = await Promise.all(requests);
+    if (!Array.isArray(userData) || !Array.isArray(plantData)) throw new Error('Respuesta inválida');
     users.value = userData;
-    clients.value = clientData;
+    plants.value = plantData;
   } catch (failure) {
     if (!controller.signal.aborted) {
       if (failure?.status === 403) accessDenied.value = true;
@@ -96,7 +94,7 @@ async function load() {
 function openCreate() {
   clearPassword();
   editing.value = null;
-  form.value = { display_name: '', email: '', role: 'client_user', client_id: '' };
+  form.value = { display_name: '', email: '', role: 'client_user', plant_ids: [] };
   formError.value = '';
   showForm.value = true;
 }
@@ -104,7 +102,7 @@ function openCreate() {
 function openEdit(user) {
   clearPassword();
   editing.value = user;
-  form.value = { display_name: user.display_name ?? '', email: user.email ?? '', role: user.role, client_id: '' };
+  form.value = { display_name: user.display_name ?? '', email: user.email ?? '', role: user.role, plant_ids: [...(user.plant_ids ?? [])] };
   formError.value = '';
   showForm.value = true;
 }
@@ -135,23 +133,23 @@ async function saveForm() {
       formError.value = 'Las contraseñas no coinciden.';
       return;
     }
-    if (requiresClient.value && !form.value.client_id) {
-      formError.value = 'El cliente es obligatorio.';
-      return;
-    }
   }
   formSaving.value = true;
   try {
     if (editing.value) {
       const payload = { display_name: displayName };
       if (form.value.role !== editing.value.role) payload.role = form.value.role;
-      const updated = await updateUser(editing.value.id, payload, { signal: controller.signal });
+      let updated = await updateUser(editing.value.id, payload, { signal: controller.signal });
+      const nextPlants = [...new Set(form.value.plant_ids)];
+      const currentPlants = [...new Set(editing.value.plant_ids ?? [])];
+      if (nextPlants.length !== currentPlants.length || nextPlants.some(id => !currentPlants.includes(id))) {
+        updated = await setUserPlants(editing.value.id, nextPlants, { signal: controller.signal });
+      }
       users.value = users.value.map(user => (user.id === updated.id ? updated : user));
       formSaving.value = false;
       closeForm();
     } else {
-      const payload = { name: displayName, email: form.value.email.trim(), role: form.value.role, password: password.value };
-      if (requiresClient.value) payload.client_id = form.value.client_id;
+      const payload = { name: displayName, email: form.value.email.trim(), role: form.value.role, password: password.value, plant_ids: [...new Set(form.value.plant_ids)] };
       const result = await createUser(payload, { signal: controller.signal });
       users.value = [result, ...users.value];
       formSaving.value = false;
@@ -303,12 +301,15 @@ onUnmounted(() => { controller.abort(); clearPassword(); });
           <option value="client_user">Usuario</option>
           <option value="client_admin">Administrador</option>
         </select>
-        <template v-if="requiresClient">
-          <label for="user-client">Cliente *</label>
-          <select id="user-client" v-model="form.client_id" required :disabled="formSaving">
-            <option value="" disabled>Selecciona un cliente</option>
-            <option v-for="client in clients" :key="client.id" :value="client.id">{{ client.name }}</option>
-          </select>
+        <template v-if="showPlants">
+          <fieldset class="plants-fieldset">
+            <legend>Plantas con acceso</legend>
+            <p v-if="!plants.length" class="muted">No hay plantas registradas.</p>
+            <label v-for="plant in plants" :key="plant.id" class="check-row">
+              <input v-model="form.plant_ids" type="checkbox" :value="plant.id" :disabled="formSaving" />
+              {{ plant.name || plant.id }}
+            </label>
+          </fieldset>
         </template>
         <p v-if="formError" class="form-error" role="alert">{{ formError }}</p>
         <div class="modal-actions">
@@ -368,6 +369,9 @@ h2 { margin: 0 0 12px; font-size: 18px; }
 .modal form { display: grid; gap: 8px; }
 .modal label { font-size: 13px; font-weight: 600; }
 .modal input, .modal select { padding: 10px 12px; border-radius: 8px; font: inherit; }
+.plants-fieldset { display: grid; gap: 6px; border: 1px solid var(--rdx-border); border-radius: 8px; padding: 10px 12px; }
+.plants-fieldset legend { font-size: 13px; font-weight: 600; padding: 0 4px; }
+.check-row { display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 400; }
 .modal-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 10px; }
 .form-error { color: var(--rdx-danger); font-size: 13px; }
 .muted { font-size: 13px; color: var(--rdx-text-muted); }

@@ -65,8 +65,8 @@ export async function updateInventoryProduct(id, values) {
 
 function applyScope(query, scope) {
   if (!scope) return query;
-  if (!scope.client_id || !scope.plantIds || scope.plantIds.size === 0) return null;
-  return query.eq('client_id', scope.client_id).in('plant_id', [...scope.plantIds]);
+  if (!scope.plantIds || scope.plantIds.size === 0) return null;
+  return query.in('plant_id', [...scope.plantIds]);
 }
 
 export async function listInventoryItems({
@@ -77,7 +77,7 @@ export async function listInventoryItems({
   search = null,
   scope = null,
 } = {}) {
-  if (scope && (!scope.client_id || !scope.plantIds || scope.plantIds.size === 0)) return [];
+  if (scope && (!scope.plantIds || scope.plantIds.size === 0)) return [];
   const items = await collectPages(() => {
     let query = supabase.from('inventory_items').select('*');
     query = applyScope(query, scope);
@@ -102,7 +102,7 @@ export async function listInventoryMovements({
   dateTo = null,
   scope = null,
 } = {}) {
-  if (scope && (!scope.client_id || !scope.plantIds || scope.plantIds.size === 0)) return [];
+  if (scope && (!scope.plantIds || scope.plantIds.size === 0)) return [];
   const movements = await collectPages(() => {
     let query = supabase.from('inventory_movements').select(movementSelect);
     query = applyScope(query, scope);

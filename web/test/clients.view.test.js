@@ -31,15 +31,16 @@ const usersCode = compileScript(usersDescriptor, { id: 'users-multiclient-test' 
   .replace(/^import[^;]*;$/gm, '').replace('export default', 'return');
 
 function setupUsers(overrides = {}) {
-  const calls = [];
+  const calls = { create: [], update: [], plants: [] };
   const deps = {
     ref, computed, onMounted() {}, onUnmounted() {},
     getMyProfile: async () => ({ profile: { role: overrides.role ?? 'rdx_admin' } }),
+    apiFetch: async () => overrides.plants ?? [],
     listUsers: async () => [],
-    listClients: async () => overrides.clients ?? [],
-    createUser: async payload => { calls.push(payload); return { id: 'new', ...payload }; },
-    updateUser: async () => ({}),
+    createUser: async payload => { calls.create.push(payload); return { id: 'new', ...payload }; },
+    updateUser: async (id, payload) => { calls.update.push([id, payload]); return { id, ...payload }; },
     setUserStatus: async () => ({}),
+    setUserPlants: async (id, plant_ids) => { calls.plants.push([id, plant_ids]); return { id, plant_ids }; },
   };
   const component = new Function(...Object.keys(deps), usersCode)(...Object.values(deps));
   return { view: component.setup({}, { expose() {} }), calls };
@@ -165,39 +166,38 @@ test('doble submit bloqueado y errores visibles; activar/desactivar confirma', a
   assert.deepEqual(calls.status[0], ['c1', false]);
 });
 
-test('UsersView muestra Cliente * para rdx_admin y envía client_id', async () => {
-  assert.match(usersSource, /Cliente \*/);
-  assert.match(usersSource, /id="user-client"/);
-  const { view, calls } = setupUsers({ clients: [{ id: 'c1', name: 'C1' }] });
-  view.myRole.value = 'rdx_admin';
+test('UsersView sin Cliente: ofrece Plantas con acceso y envía plant_ids', async () => {
+  assert.doesNotMatch(usersSource, /Cliente \*/);
+  assert.doesNotMatch(usersSource, /id="user-client"/);
+  assert.doesNotMatch(usersSource, /requiresClient/);
+  assert.doesNotMatch(usersSource, /listClients/);
+  assert.match(usersSource, /Plantas con acceso/);
+  const { view, calls } = setupUsers({ plants: [{ id: 'p1', name: 'Planta 1' }] });
   view.openCreate();
-  assert.equal(view.requiresClient.value, true);
-  view.form.value = { display_name: 'N', email: 'n@example.test', role: 'client_user', client_id: 'c1' };
+  assert.deepEqual(view.form.value.plant_ids, []);
+  view.form.value = { display_name: 'N', email: 'n@example.test', role: 'client_user', plant_ids: ['p1'] };
   view.password.value = 'Test-only-Password-42!';
   view.confirmPassword.value = view.password.value;
   await view.saveForm();
-  assert.equal(calls[0].client_id, 'c1');
-
-  const missing = setupUsers();
-  missing.view.myRole.value = 'rdx_admin';
-  missing.view.openCreate();
-  missing.view.form.value = { display_name: 'N', email: 'n@example.test', role: 'client_admin', client_id: '' };
-  missing.view.password.value = 'Test-only-Password-42!';
-  missing.view.confirmPassword.value = missing.view.password.value;
-  await missing.view.saveForm();
-  assert.match(missing.view.formError.value, /cliente/i);
+  assert.deepEqual(calls.create[0].plant_ids, ['p1']);
+  assert.ok(!('client_id' in calls.create[0]));
 });
 
-test('client_admin no puede seleccionar otro cliente', async () => {
-  const { view, calls } = setupUsers({ role: 'client_admin' });
-  view.myRole.value = 'client_admin';
-  view.openCreate();
-  assert.equal(view.requiresClient.value, false);
-  view.form.value = { display_name: 'N', email: 'n@example.test', role: 'client_user', client_id: '' };
-  view.password.value = 'Test-only-Password-42!';
-  view.confirmPassword.value = view.password.value;
+test('UsersView editar actualiza plantas por endpoint dedicado', async () => {
+  const { view, calls } = setupUsers({ plants: [{ id: 'p1', name: 'Planta 1' }] });
+  view.openEdit({ id: 'u1', display_name: 'U', email: 'u@example.test', role: 'client_user', plant_ids: ['p1'] });
+  assert.deepEqual(view.form.value.plant_ids, ['p1']);
+  view.form.value.plant_ids = [];
   await view.saveForm();
-  assert.ok(!('client_id' in calls[0]));
+  assert.deepEqual(calls.plants[0], ['u1', []]);
+});
+
+test('/users y enlace Usuarios solo para rdx_admin en esta fase', () => {
+  const router = readFileSync(new URL('../src/router/index.js', import.meta.url), 'utf8');
+  assert.match(router, /to\.name === 'users' && role !== 'rdx_admin'/);
+  assert.doesNotMatch(router, /role !== 'client_admin'/);
+  const layout = readFileSync(new URL('../src/layouts/AppLayout.vue', import.meta.url), 'utf8');
+  assert.match(layout, /showUsers\.value = me\?\.profile\?\.role === 'rdx_admin'/);
 });
 
 test('Inventario ya no usa include=plant_ids; contexto independiente', () => {

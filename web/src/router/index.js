@@ -37,7 +37,7 @@ router.beforeEach(async to => {
       if (to.name === 'clients' && role !== 'rdx_admin') {
         return { name: 'dashboard' };
       }
-      if (to.name === 'users' && role !== 'rdx_admin' && role !== 'client_admin') {
+      if (to.name === 'users' && role !== 'rdx_admin') {
         return { name: 'dashboard' };
       }
     } catch {

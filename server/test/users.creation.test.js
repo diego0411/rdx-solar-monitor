@@ -7,11 +7,12 @@ import { createClient } from '@supabase/supabase-js';
 // an isolated transport. No credentials, accounts or database in production.
 const actors = {
   admin: { id: 'admin', role: 'rdx_admin', client_id: null, active: true },
-  manager: { id: 'manager', role: 'client_admin', client_id: 'nexora', active: true },
-  reader: { id: 'reader', role: 'client_user', client_id: 'nexora', active: true },
+  manager: { id: 'manager', role: 'client_admin', client_id: 'legacy-fisico', active: true },
+  reader: { id: 'reader', role: 'client_user', client_id: 'legacy-fisico', active: true },
 };
 const PASSWORD = 'Test-only-Password-42!';
 const USER_ID = '00000000-0000-4000-8000-000000000001';
+const PLANT_A = 'aaaaaaaa-1111-4111-8111-111111111111';
 const testToken = [
   { alg: 'HS256', typ: 'JWT' },
   { sub: USER_ID, exp: Math.floor(Date.now() / 1000) + 3600 },
@@ -20,6 +21,12 @@ let state;
 const json = (body, status = 200) => new Response(JSON.stringify(body), {
   status, headers: { 'Content-Type': 'application/json', 'X-Supabase-Api-Version': '2024-01-01' },
 });
+
+function eqParam(url, name) {
+  const raw = url.searchParams.get(name);
+  if (!raw) return null;
+  return decodeURIComponent(raw).replace(/^eq\./, '');
+}
 
 async function transport(input, options = {}) {
   const url = new URL(input);
@@ -59,15 +66,6 @@ async function transport(input, options = {}) {
     return json({ user, access_token: testToken, refresh_token: 'test-refresh',
       token_type: 'bearer', expires_in: 3600 });
   }
-  if (url.pathname === '/rest/v1/clients') {
-    if (url.searchParams.has('id')) {
-      const requested = url.searchParams.get('id')?.replace('eq.', '');
-      if (requested && requested !== 'nexora') return json(null);
-      return json({ id: 'nexora', name: 'Nexora', active: true });
-    }
-    return json([{ id: 'nexora', name: 'Nexora' }]);
-  }
-  if (url.pathname === '/rest/v1/client_plants') return json([]);
   if (url.pathname === '/rest/v1/user_profiles') {
     if (method === 'POST') {
       state.profilePayload = body;
@@ -77,7 +75,30 @@ async function transport(input, options = {}) {
       return json(profile);
     }
     const id = url.searchParams.get('id')?.replace('eq.', '');
-    return json(id ? actors[id] : state.profiles);
+    return json(id ? actors[id] ?? state.profiles.find(profile => profile.id === id) ?? null : state.profiles);
+  }
+  if (url.pathname === '/rest/v1/user_plants') {
+    if (method === 'DELETE') {
+      const userId = eqParam(url, 'user_id');
+      state.grants = state.grants.filter(grant => grant.user_id !== userId);
+      return json([]);
+    }
+    if (method === 'POST') {
+      const rows = (Array.isArray(body) ? body : [body]).map(row => ({ ...row }));
+      state.grants.push(...rows);
+      return json(rows.map(({ plant_id }) => ({ plant_id })), 201);
+    }
+    const userId = eqParam(url, 'user_id');
+    const rows = state.grants.filter(grant => !userId || grant.user_id === userId);
+    return json(rows.map(({ user_id, plant_id }) => ({ user_id, plant_id })));
+  }
+  if (url.pathname === '/rest/v1/plants') {
+    if (method === 'GET' && url.searchParams.has('id')) {
+      const id = eqParam(url, 'id');
+      const plant = state.plants.find(item => item.id === id);
+      return json(plant ? { ...plant } : null);
+    }
+    return json(state.plants);
   }
   throw new Error('Unexpected test transport request');
 }
@@ -94,15 +115,18 @@ app.use('/api/users', usersRoutes);
 await new Promise(resolve => setImmediate(resolve));
 
 beforeEach(() => {
-  state = { authUsers: [], authPasswords: new Map(), profiles: [], deletions: 0, authStatus: 422 };
+  state = {
+    authUsers: [], authPasswords: new Map(), profiles: [], grants: [],
+    plants: [{ id: PLANT_A }], deletions: 0, authStatus: 422,
+  };
 });
 
-async function request(t, actor, body, method = 'POST') {
+async function request(t, actor, path = '/api/users', body = null, method = null) {
   const server = app.listen(0, '127.0.0.1');
   t.after(() => new Promise(resolve => server.close(resolve)));
   await new Promise(resolve => server.once('listening', resolve));
-  const response = await fetch(`http://127.0.0.1:${server.address().port}/api/users`, {
-    method,
+  const response = await fetch(`http://127.0.0.1:${server.address().port}${path}`, {
+    method: method ?? (body ? 'POST' : 'GET'),
     headers: { 'Content-Type': 'application/json', ...(actor ? { Authorization: `Bearer ${actor}` } : {}) },
     ...(body ? { body: JSON.stringify(body) } : {}),
   });
@@ -116,13 +140,15 @@ const payload = (overrides = {}) => ({
 test('create -> Auth password sign-in contract -> visible user; secrets stay out of profiles and responses', async t => {
   const logs = mock.method(console, 'error', () => {});
   t.after(() => logs.mock.restore());
-  const result = await request(t, 'admin', payload());
+  const result = await request(t, 'admin', '/api/users', payload());
   assert.equal(result.status, 201);
   assert.equal(state.authPayload.password === PASSWORD, true);
   assert.equal(state.authPayload.email_confirm, true);
   assert.deepEqual(state.authPayload.user_metadata, { display_name: 'Nuevo usuario' });
   assert.equal(result.body.id, state.profilePayload.id);
-  assert.equal(result.body.client_id, 'nexora');
+  assert.equal(state.profilePayload.client_id, null);
+  assert.ok(!('client_id' in result.body));
+  assert.deepEqual(result.body.plant_ids, []);
   assert.equal(state.profilePayload.active, true);
   for (const value of [state.profilePayload, result.body]) {
     assert.equal(JSON.stringify(value).includes(PASSWORD), false);
@@ -132,58 +158,61 @@ test('create -> Auth password sign-in contract -> visible user; secrets stay out
   const login = await supabase.auth.signInWithPassword({ email: result.body.email, password: PASSWORD });
   assert.equal(login.error, null);
   assert.equal(login.data.user.id, result.body.id);
-  const listed = await request(t, 'admin', null, 'GET');
+  const listed = await request(t, 'admin', '/api/users');
   assert.equal(listed.status, 200);
   assert.deepEqual(listed.body, [result.body]);
   assert.equal(logs.mock.calls.some(call => call.arguments.some(value => String(value).includes(PASSWORD))), false);
 });
 
-for (const role of ['client_admin', 'client_user']) {
-  test(`client_admin creates ${role} only in Nexora`, async t => {
-    const result = await request(t, 'manager', payload({ role, client_id: 'other' }));
-    assert.equal(result.status, 201);
-    assert.equal(result.body.role, role);
-    assert.equal(result.body.client_id, 'nexora');
-  });
-}
+test('create acepta plant_ids y responde el scope otorgado', async t => {
+  const result = await request(t, 'admin', '/api/users', payload({ plant_ids: [PLANT_A] }));
+  assert.equal(result.status, 201);
+  assert.deepEqual(result.body.plant_ids, [PLANT_A]);
+  assert.deepEqual(state.grants, [{ user_id: USER_ID, plant_id: PLANT_A }]);
+});
 
-test('client_user gets 403 for listing and creating; unauthenticated gets 401', async t => {
-  assert.equal((await request(t, 'reader', payload())).status, 403);
-  assert.equal((await request(t, 'reader', null, 'GET')).status, 403);
-  assert.equal((await request(t, null, payload())).status, 401);
+test('client_admin y client_user no administran usuarios en esta fase', async t => {
+  for (const actor of ['manager', 'reader']) {
+    assert.equal((await request(t, actor, '/api/users', payload())).status, 403);
+    assert.equal((await request(t, actor, '/api/users')).status, 403);
+  }
   assert.equal(state.authPayload, undefined);
 });
 
+test('manager legacy carga perfil aunque ya no administre usuarios', async t => {
+  const result = await request(t, 'manager', '/api/users', payload({ role: 'client_admin' }));
+  assert.equal(result.status, 403);
+  assert.deepEqual(result.body, { error: 'Acceso denegado' });
+});
+
 test('neither administrator can create rdx_admin', async t => {
-  for (const actor of ['admin', 'manager']) {
-    assert.equal((await request(t, actor, payload({ role: 'rdx_admin' }))).status, 403);
-  }
+  assert.equal((await request(t, 'admin', '/api/users', payload({ role: 'rdx_admin' }))).status, 403);
   assert.equal(state.authPayload, undefined);
 });
 
 test('reject invalid or missing passwords before calling Auth', async t => {
   for (const password of [undefined, null, 123456, '', 'short', '      ']) {
-    assert.equal((await request(t, 'admin', payload({ password }))).status, 400);
+    assert.equal((await request(t, 'admin', '/api/users', payload({ password }))).status, 400);
   }
   assert.equal(state.authPayload, undefined);
 });
 
 test('keep password whitespace unchanged and support existing display_name callers', async t => {
   const password = ` ${PASSWORD} `;
-  assert.equal((await request(t, 'admin', payload({ name: undefined, display_name: 'Legacy', password }))).status, 201);
+  assert.equal((await request(t, 'admin', '/api/users', payload({ name: undefined, display_name: 'Legacy', password }))).status, 201);
   assert.equal(state.authPayload.password === password, true);
   assert.equal(state.profilePayload.display_name, 'Legacy');
 });
 
 test('duplicate email is 409 and does not create another profile', async t => {
-  await request(t, 'admin', payload());
-  assert.equal((await request(t, 'admin', payload())).status, 409);
+  await request(t, 'admin', '/api/users', payload());
+  assert.equal((await request(t, 'admin', '/api/users', payload())).status, 409);
   assert.equal(state.profiles.length, 1);
 });
 
 test('Supabase weak password rejection is 400, never mistaken for duplicate email or echoed', async t => {
   state.authError = { code: 'weak_password', msg: PASSWORD, weak_password: { reasons: ['length'] } };
-  const result = await request(t, 'admin', payload());
+  const result = await request(t, 'admin', '/api/users', payload());
   assert.equal(result.status, 400);
   assert.equal(JSON.stringify(result.body).includes(PASSWORD), false);
   assert.equal(state.profilePayload, undefined);
@@ -191,14 +220,14 @@ test('Supabase weak password rejection is 400, never mistaken for duplicate emai
 
 test('unknown Supabase errors are sanitized, including non-duplicate 422', async t => {
   state.authError = { code: 'unexpected_failure', msg: PASSWORD };
-  const result = await request(t, 'admin', payload());
+  const result = await request(t, 'admin', '/api/users', payload());
   assert.equal(result.status, 503);
   assert.deepEqual(result.body, { error: 'Error interno' });
 });
 
 test('profile failure rolls back Auth user without leaking provider details', async t => {
   state.profileFails = true;
-  const result = await request(t, 'admin', payload());
+  const result = await request(t, 'admin', '/api/users', payload());
   assert.equal(result.status, 503);
   assert.equal(state.deletions, 1);
   assert.equal(state.authUsers.length, 0);
@@ -211,7 +240,7 @@ test('rollback failure is reported safely and never returns success or password'
   t.after(() => logs.mock.restore());
   state.profileFails = true;
   state.cleanupFails = true;
-  const result = await request(t, 'admin', payload());
+  const result = await request(t, 'admin', '/api/users', payload());
   assert.equal(result.status, 503);
   assert.equal(logs.mock.callCount(), 1);
   assert.equal(JSON.stringify(logs.mock.calls.map(call => call.arguments)).includes(PASSWORD), false);

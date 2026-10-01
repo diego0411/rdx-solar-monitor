@@ -5,10 +5,16 @@ import {
   createUserProfile,
   updateUserProfile,
 } from '../repositories/userProfiles.repository.js';
-import { getClientById, listActiveClients } from '../repositories/clients.repository.js';
+import {
+  listAllUserPlants,
+  listUserPlantIds,
+  replaceUserPlants,
+} from '../repositories/userPlants.repository.js';
+import { getStoredPlantById } from '../repositories/plants.repository.js';
 
 const MANAGED_ROLES = ['client_admin', 'client_user'];
 const PATCH_FIELDS = ['display_name', 'role'];
+const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 function codedError(statusCode, message) {
   const error = new Error(message);
@@ -17,14 +23,13 @@ function codedError(statusCode, message) {
 }
 
 /*
- * Un perfil es gestionable por este módulo solo si es cliente
- * (nunca rdx_admin) y pertenece a un client_id concreto.
+ * Un perfil es gestionable por este módulo solo si su rol es cliente.
+ * rdx_admin nunca es gestionable. El acceso a plantas vive en user_plants,
+ * no en clientes: client_id físico legacy no participa en autorización.
  */
 export function isManagedProfile(profile) {
   return !!profile
-    && MANAGED_ROLES.includes(profile.role)
-    && profile.client_id !== null
-    && profile.client_id !== undefined;
+    && MANAGED_ROLES.includes(profile.role);
 }
 
 export function visibleProfiles(profiles, actor) {
@@ -32,26 +37,19 @@ export function visibleProfiles(profiles, actor) {
     return profiles.filter(isManagedProfile);
   }
 
-  return profiles.filter(
-    profile =>
-      isManagedProfile(profile)
-      && profile.client_id === actor.client_id,
-  );
+  return [];
 }
 
 /*
- * Resuelve el perfil objetivo o lanza 404 si no existe,
- * no es gestionable o pertenece a otro cliente.
+ * Resuelve el perfil objetivo o lanza 404 si no existe
+ * o no es gestionable. Solo rdx_admin administra usuarios.
  */
 export function resolveTarget(target, actor) {
-  if (!isManagedProfile(target)) {
-    throw codedError(404, 'Usuario no encontrado');
+  if (actor?.role !== 'rdx_admin') {
+    throw codedError(403, 'No tienes permiso para administrar usuarios');
   }
 
-  if (
-    actor.role !== 'rdx_admin'
-    && target.client_id !== actor.client_id
-  ) {
+  if (!isManagedProfile(target)) {
     throw codedError(404, 'Usuario no encontrado');
   }
 
@@ -72,53 +70,49 @@ function cleanDisplayName(value) {
 }
 
 /*
- * Decide role/client_id efectivos de creación.
- * client_admin NUNCA puede salir de su propio client_id.
- * rdx_admin puede omitir client_id: se resuelve server-side
- * al único cliente activo (single-tenant Nexora).
+ * Decide role y plantas efectivas de creación.
+ * Solo rdx_admin administra usuarios en esta fase.
+ * Crear client_admin/client_user NO requiere cliente comercial:
+ * el acceso a plantas se otorga con plant_ids (user_plants).
  */
 export function resolveCreate(actor, body) {
-  if (!['rdx_admin', 'client_admin'].includes(actor?.role)) {
+  if (actor?.role !== 'rdx_admin') {
     throw codedError(403, 'No tienes permiso para crear usuarios');
   }
-  const { email, role, client_id } = body ?? {};
+  const { email, role } = body ?? {};
   const display_name = body?.name ?? body?.display_name;
 
   if (!validEmail(email)) throw codedError(400, 'email inválido');
-
-  if (actor.role === 'rdx_admin') {
-    if (!MANAGED_ROLES.includes(role)) {
-      throw codedError(403, 'No se puede crear ese rol');
-    }
-    if (client_id !== undefined && client_id !== null) {
-      if (typeof client_id !== 'string' || client_id.trim() === '') {
-        throw codedError(400, 'client_id inválido');
-      }
-      return {
-        email: email.trim(),
-        display_name: cleanDisplayName(display_name),
-        role,
-        client_id: client_id.trim(),
-      };
-    }
-    return {
-      email: email.trim(),
-      display_name: cleanDisplayName(display_name),
-      role,
-      client_id: undefined,
-    };
-  }
-
-  if (role !== undefined && !MANAGED_ROLES.includes(role)) {
+  if (!MANAGED_ROLES.includes(role)) {
     throw codedError(403, 'No se puede crear ese rol');
   }
 
   return {
     email: email.trim(),
     display_name: cleanDisplayName(display_name),
-    role: role ?? 'client_user',
-    client_id: actor.client_id,
+    role,
+    plant_ids: validatePlantIds(body?.plant_ids),
   };
+}
+
+export function validatePlantIds(value) {
+  if (value === undefined || value === null) return [];
+  if (!Array.isArray(value)) throw codedError(400, 'plant_ids inválido');
+  const seen = new Set();
+  for (const entry of value) {
+    if (typeof entry !== 'string' || !uuidPattern.test(entry)) {
+      throw codedError(400, 'plant_ids inválido');
+    }
+    seen.add(entry.toLowerCase());
+  }
+  return [...seen];
+}
+
+async function ensurePlantsExist(plantIds) {
+  for (const plantId of plantIds) {
+    const plant = await getStoredPlantById(plantId);
+    if (!plant) throw codedError(400, 'planta inexistente en plant_ids');
+  }
 }
 
 /*
@@ -179,20 +173,30 @@ async function authEmailById(authAdmin, id, emailById) {
   return emailById.get(id) ?? null;
 }
 
-function toPublicUser(profile, email) {
+function toPublicUser(profile, email, plantIds = []) {
   return {
     id: profile.id,
     email,
     display_name: profile.display_name ?? null,
     role: profile.role,
     active: profile.active,
-    client_id: profile.client_id,
+    plant_ids: plantIds,
     created_at: profile.created_at ?? null,
   };
 }
 
+function groupPlantsByUser(rows) {
+  const byUser = new Map();
+  for (const row of rows ?? []) {
+    if (!byUser.has(row.user_id)) byUser.set(row.user_id, []);
+    byUser.get(row.user_id).push(row.plant_id);
+  }
+  return byUser;
+}
+
 export async function listUsers(actor) {
   const profiles = visibleProfiles(await listUserProfiles(), actor);
+  const plantsByUser = groupPlantsByUser(await listAllUserPlants());
 
   const emailById = new Map();
   const pageSize = 100;
@@ -210,6 +214,7 @@ export async function listUsers(actor) {
     users.push(toPublicUser(
       profile,
       await authEmailById(supabase.auth.admin, profile.id, emailById),
+      plantsByUser.get(profile.id) ?? [],
     ));
   }
   return users;
@@ -224,20 +229,6 @@ function authConflict(error) {
     || message.includes('duplicate');
 }
 
-/*
- * Resuelve server-side el único cliente activo (single-tenant Nexora).
- * Falla si no hay exactamente uno: nunca se adivina ni se usa frontend.
- */
-export async function resolveSingleActiveClient() {
-  const clients = await listActiveClients();
-
-  if (clients.length !== 1) {
-    throw codedError(400, 'No se pudo resolver el cliente');
-  }
-
-  return clients[0].id;
-}
-
 export async function createUser(actor, body) {
   const resolved = resolveCreate(actor, body);
   const password = body?.password;
@@ -246,14 +237,7 @@ export async function createUser(actor, body) {
     throw codedError(400, 'La contraseña debe tener al menos 6 caracteres');
   }
 
-  if (resolved.client_id === undefined) {
-    resolved.client_id = await resolveSingleActiveClient();
-  }
-
-  const client = await getClientById(resolved.client_id);
-  if (!client?.active) {
-    throw codedError(400, 'client_id inexistente o inactivo');
-  }
+  await ensurePlantsExist(resolved.plant_ids);
 
   const { data, error } = await supabase.auth.admin.createUser({
     email: resolved.email,
@@ -273,15 +257,24 @@ export async function createUser(actor, body) {
     throw codedError(503, 'No se pudo crear el usuario');
   }
 
+  // Sin transacción real entre Auth y DB: compensación en orden inverso
+  // (grants -> perfil -> Auth) ante cualquier fallo posterior al alta.
+  let profile = null;
   try {
-    const profile = await createUserProfile({
+    profile = await createUserProfile({
       id: data.user.id,
-      client_id: resolved.client_id,
+      client_id: null,
       role: resolved.role,
       display_name: resolved.display_name,
     });
-    return toPublicUser(profile, data.user.email ?? resolved.email);
+    const plant_ids = await replaceUserPlants(profile.id, resolved.plant_ids);
+    return toPublicUser(profile, data.user.email ?? resolved.email, plant_ids);
   } catch {
+    try {
+      if (profile) await replaceUserPlants(profile.id, []);
+    } catch {
+      console.error('No se pudieron revertir los grants tras fallar el alta; requiere revisión administrativa.');
+    }
     try {
       const { error: cleanupError } = await supabase.auth.admin.deleteUser(data.user.id);
       if (cleanupError) throw cleanupError;
@@ -297,10 +290,14 @@ export async function updateUser(actor, id, body) {
   const target = resolveTarget(await getUserProfileById(id), actor);
   const values = resolvePatch(actor, target, body);
 
+  // Nota: resolvePatch rechaza role=rdx_admin (403) y resolveTarget devuelve
+  // 404 para perfiles rdx_admin, por lo que no existen transiciones hacia o
+  // desde rdx_admin en este módulo: los cambios laterales conservan grants.
   if (Object.keys(values).length === 0) {
     return toPublicUser(
       target,
       await authEmailById(supabase.auth.admin, target.id, new Map()),
+      await listUserPlantIdsSafe(target.id),
     );
   }
 
@@ -308,6 +305,38 @@ export async function updateUser(actor, id, body) {
   return toPublicUser(
     updated,
     await authEmailById(supabase.auth.admin, updated.id, new Map()),
+    await listUserPlantIdsSafe(updated.id),
+  );
+}
+
+async function listUserPlantIdsSafe(userId) {
+  try {
+    return await listUserPlantIds(userId);
+  } catch {
+    return [];
+  }
+}
+
+export async function setUserPlants(actor, id, plant_ids) {
+  if (actor?.role !== 'rdx_admin') {
+    throw codedError(403, 'No tienes permiso para administrar accesos');
+  }
+  if (!uuidPattern.test(id ?? '')) throw codedError(400, 'id inválido');
+  if (plant_ids === undefined || plant_ids === null) {
+    throw codedError(400, 'plant_ids inválido');
+  }
+  const target = await getUserProfileById(id);
+  if (!target || !MANAGED_ROLES.includes(target.role)) {
+    // rdx_admin tiene alcance global: la asignación no le aplica.
+    throw codedError(400, 'Las asignaciones de plantas no aplican a ese rol');
+  }
+  const validated = validatePlantIds(plant_ids);
+  await ensurePlantsExist(validated);
+  const assigned = await replaceUserPlants(target.id, validated);
+  return toPublicUser(
+    target,
+    await authEmailById(supabase.auth.admin, target.id, new Map()),
+    assigned,
   );
 }
 
@@ -319,6 +348,7 @@ export async function setUserStatus(actor, id, active) {
     return toPublicUser(
       target,
       await authEmailById(supabase.auth.admin, target.id, new Map()),
+      await listUserPlantIdsSafe(target.id),
     );
   }
 
@@ -326,5 +356,6 @@ export async function setUserStatus(actor, id, active) {
   return toPublicUser(
     updated,
     await authEmailById(supabase.auth.admin, updated.id, new Map()),
+    await listUserPlantIdsSafe(updated.id),
   );
 }

@@ -10,7 +10,7 @@ const displayName = ref('Usuario');
 onMounted(async () => {
   try {
     const me = await getMyProfile();
-    showUsers.value = me?.profile?.role === 'rdx_admin' || me?.profile?.role === 'client_admin';
+    showUsers.value = me?.profile?.role === 'rdx_admin';
     showClients.value = me?.profile?.role === 'rdx_admin';
     displayName.value = me?.profile?.display_name?.trim() || 'Usuario';
   } catch {
