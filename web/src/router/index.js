@@ -26,6 +26,20 @@ const router = createRouter({
   ],
 });
 
+const routeModules = {
+  dashboard: 'dashboard',
+  plants: 'plants',
+  'plant-detail': 'plants',
+  map: 'plants',
+  devices: 'devices',
+  'device-detail': 'devices',
+  alarms: 'devices',
+  maintenance: 'maintenance',
+  'maintenance-detail': 'maintenance',
+  inventory: 'inventory',
+  'inventory-detail': 'inventory',
+};
+
 router.beforeEach(async to => {
   const session = await getSession();
   if (to.name !== 'login' && !session) return { name: 'login' };
@@ -38,6 +52,19 @@ router.beforeEach(async to => {
         return { name: 'dashboard' };
       }
       if (to.name === 'users' && role !== 'rdx_admin') {
+        return { name: 'dashboard' };
+      }
+      return true;
+    } catch {
+      return { name: 'dashboard' };
+    }
+  }
+  const module = routeModules[to.name];
+  if (module && session && to.name !== 'dashboard') {
+    try {
+      const me = await getMyProfile();
+      if (me?.profile?.role === 'client_user'
+        && !(me?.profile?.module_permissions ?? []).includes(module)) {
         return { name: 'dashboard' };
       }
     } catch {

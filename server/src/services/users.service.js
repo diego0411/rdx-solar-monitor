@@ -5,16 +5,10 @@ import {
   createUserProfile,
   updateUserProfile,
 } from '../repositories/userProfiles.repository.js';
-import {
-  listAllUserPlants,
-  listUserPlantIds,
-  replaceUserPlants,
-} from '../repositories/userPlants.repository.js';
-import { getStoredPlantById } from '../repositories/plants.repository.js';
+import { MODULE_PERMISSIONS } from '../config/modulePermissions.js';
 
 const MANAGED_ROLES = ['client_admin', 'client_user'];
-const PATCH_FIELDS = ['display_name', 'role'];
-const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const PATCH_FIELDS = ['display_name', 'role', 'module_permissions'];
 
 function codedError(statusCode, message) {
   const error = new Error(message);
@@ -70,10 +64,11 @@ function cleanDisplayName(value) {
 }
 
 /*
- * Decide role y plantas efectivas de creación.
+ * Decide role y permisos efectivos de creación.
  * Solo rdx_admin administra usuarios en esta fase.
- * Crear client_admin/client_user NO requiere cliente comercial:
- * el acceso a plantas se otorga con plant_ids (user_plants).
+ * Crear client_admin/client_user NO requiere cliente ni plantas:
+ * client_user recibe module_permissions explícitos ([] si se omiten).
+ * client_admin hace bypass por rol (se almacenan vacíos).
  */
 export function resolveCreate(actor, body) {
   if (actor?.role !== 'rdx_admin') {
@@ -91,28 +86,23 @@ export function resolveCreate(actor, body) {
     email: email.trim(),
     display_name: cleanDisplayName(display_name),
     role,
-    plant_ids: validatePlantIds(body?.plant_ids),
+    module_permissions: role === 'client_user'
+      ? validateModulePermissions(body?.module_permissions)
+      : [],
   };
 }
 
-export function validatePlantIds(value) {
+export function validateModulePermissions(value) {
   if (value === undefined || value === null) return [];
-  if (!Array.isArray(value)) throw codedError(400, 'plant_ids inválido');
+  if (!Array.isArray(value)) throw codedError(400, 'module_permissions inválido');
   const seen = new Set();
   for (const entry of value) {
-    if (typeof entry !== 'string' || !uuidPattern.test(entry)) {
-      throw codedError(400, 'plant_ids inválido');
+    if (typeof entry !== 'string' || !MODULE_PERMISSIONS.includes(entry)) {
+      throw codedError(400, 'module_permissions inválido');
     }
-    seen.add(entry.toLowerCase());
+    seen.add(entry);
   }
   return [...seen];
-}
-
-async function ensurePlantsExist(plantIds) {
-  for (const plantId of plantIds) {
-    const plant = await getStoredPlantById(plantId);
-    if (!plant) throw codedError(400, 'planta inexistente en plant_ids');
-  }
 }
 
 /*
@@ -133,6 +123,10 @@ export function resolvePatch(actor, target, body) {
 
   if (body.display_name !== undefined) {
     values.display_name = cleanDisplayName(body.display_name);
+  }
+
+  if (body.module_permissions !== undefined) {
+    values.module_permissions = validateModulePermissions(body.module_permissions);
   }
 
   if (body.role !== undefined) {
@@ -173,30 +167,20 @@ async function authEmailById(authAdmin, id, emailById) {
   return emailById.get(id) ?? null;
 }
 
-function toPublicUser(profile, email, plantIds = []) {
+function toPublicUser(profile, email) {
   return {
     id: profile.id,
     email,
     display_name: profile.display_name ?? null,
     role: profile.role,
     active: profile.active,
-    plant_ids: plantIds,
+    module_permissions: Array.isArray(profile.module_permissions) ? profile.module_permissions : [],
     created_at: profile.created_at ?? null,
   };
 }
 
-function groupPlantsByUser(rows) {
-  const byUser = new Map();
-  for (const row of rows ?? []) {
-    if (!byUser.has(row.user_id)) byUser.set(row.user_id, []);
-    byUser.get(row.user_id).push(row.plant_id);
-  }
-  return byUser;
-}
-
 export async function listUsers(actor) {
   const profiles = visibleProfiles(await listUserProfiles(), actor);
-  const plantsByUser = groupPlantsByUser(await listAllUserPlants());
 
   const emailById = new Map();
   const pageSize = 100;
@@ -214,7 +198,6 @@ export async function listUsers(actor) {
     users.push(toPublicUser(
       profile,
       await authEmailById(supabase.auth.admin, profile.id, emailById),
-      plantsByUser.get(profile.id) ?? [],
     ));
   }
   return users;
@@ -237,8 +220,6 @@ export async function createUser(actor, body) {
     throw codedError(400, 'La contraseña debe tener al menos 6 caracteres');
   }
 
-  await ensurePlantsExist(resolved.plant_ids);
-
   const { data, error } = await supabase.auth.admin.createUser({
     email: resolved.email,
     password,
@@ -257,8 +238,8 @@ export async function createUser(actor, body) {
     throw codedError(503, 'No se pudo crear el usuario');
   }
 
-  // Sin transacción real entre Auth y DB: compensación en orden inverso
-  // (grants -> perfil -> Auth) ante cualquier fallo posterior al alta.
+  // Sin transacción real entre Auth y DB: ante un fallo posterior al alta
+  // se revierte el usuario Auth (patrón de compensación existente).
   let profile = null;
   try {
     profile = await createUserProfile({
@@ -266,15 +247,10 @@ export async function createUser(actor, body) {
       client_id: null,
       role: resolved.role,
       display_name: resolved.display_name,
+      module_permissions: resolved.module_permissions,
     });
-    const plant_ids = await replaceUserPlants(profile.id, resolved.plant_ids);
-    return toPublicUser(profile, data.user.email ?? resolved.email, plant_ids);
+    return toPublicUser(profile, data.user.email ?? resolved.email);
   } catch {
-    try {
-      if (profile) await replaceUserPlants(profile.id, []);
-    } catch {
-      console.error('No se pudieron revertir los grants tras fallar el alta; requiere revisión administrativa.');
-    }
     try {
       const { error: cleanupError } = await supabase.auth.admin.deleteUser(data.user.id);
       if (cleanupError) throw cleanupError;
@@ -297,7 +273,6 @@ export async function updateUser(actor, id, body) {
     return toPublicUser(
       target,
       await authEmailById(supabase.auth.admin, target.id, new Map()),
-      await listUserPlantIdsSafe(target.id),
     );
   }
 
@@ -305,38 +280,6 @@ export async function updateUser(actor, id, body) {
   return toPublicUser(
     updated,
     await authEmailById(supabase.auth.admin, updated.id, new Map()),
-    await listUserPlantIdsSafe(updated.id),
-  );
-}
-
-async function listUserPlantIdsSafe(userId) {
-  try {
-    return await listUserPlantIds(userId);
-  } catch {
-    return [];
-  }
-}
-
-export async function setUserPlants(actor, id, plant_ids) {
-  if (actor?.role !== 'rdx_admin') {
-    throw codedError(403, 'No tienes permiso para administrar accesos');
-  }
-  if (!uuidPattern.test(id ?? '')) throw codedError(400, 'id inválido');
-  if (plant_ids === undefined || plant_ids === null) {
-    throw codedError(400, 'plant_ids inválido');
-  }
-  const target = await getUserProfileById(id);
-  if (!target || !MANAGED_ROLES.includes(target.role)) {
-    // rdx_admin tiene alcance global: la asignación no le aplica.
-    throw codedError(400, 'Las asignaciones de plantas no aplican a ese rol');
-  }
-  const validated = validatePlantIds(plant_ids);
-  await ensurePlantsExist(validated);
-  const assigned = await replaceUserPlants(target.id, validated);
-  return toPublicUser(
-    target,
-    await authEmailById(supabase.auth.admin, target.id, new Map()),
-    assigned,
   );
 }
 
@@ -348,7 +291,6 @@ export async function setUserStatus(actor, id, active) {
     return toPublicUser(
       target,
       await authEmailById(supabase.auth.admin, target.id, new Map()),
-      await listUserPlantIdsSafe(target.id),
     );
   }
 
@@ -356,6 +298,5 @@ export async function setUserStatus(actor, id, active) {
   return toPublicUser(
     updated,
     await authEmailById(supabase.auth.admin, updated.id, new Map()),
-    await listUserPlantIdsSafe(updated.id),
   );
 }

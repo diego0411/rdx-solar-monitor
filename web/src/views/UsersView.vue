@@ -1,16 +1,23 @@
 <script setup>
 import { computed, onMounted, onUnmounted, ref } from 'vue';
-import { getMyProfile, apiFetch } from '../services/api.js';
-import { listUsers, createUser, updateUser, setUserStatus, setUserPlants } from '../services/users.js';
+import { getMyProfile } from '../services/api.js';
+import { listUsers, createUser, updateUser, setUserStatus } from '../services/users.js';
 
 const roleNames = { client_admin: 'Administrador', client_user: 'Usuario' };
+// Módulos con UI funcional. Reportes queda reservado hasta que exista el módulo.
+const MODULES = [
+  { id: 'dashboard', label: 'Dashboard' },
+  { id: 'plants', label: 'Plantas' },
+  { id: 'devices', label: 'Dispositivos' },
+  { id: 'maintenance', label: 'Mantenimiento' },
+  { id: 'inventory', label: 'Inventario' },
+];
 
 const users = ref([]);
 const loading = ref(true);
 const error = ref('');
 const myRole = ref(null);
 const accessDenied = ref(false);
-const plants = ref([]);
 
 const search = ref('');
 const statusFilter = ref('all');
@@ -18,7 +25,7 @@ const roleFilter = ref('all');
 
 const showForm = ref(false);
 const editing = ref(null);
-const form = ref({ display_name: '', email: '', role: 'client_user', plant_ids: [] });
+const form = ref({ display_name: '', email: '', role: 'client_user', module_permissions: [] });
 const formError = ref('');
 const formSaving = ref(false);
 
@@ -38,7 +45,7 @@ const statusSaving = ref(false);
 const controller = new AbortController();
 
 const canManageRoles = computed(() => myRole.value === 'rdx_admin');
-const showPlants = computed(() => ['client_admin', 'client_user'].includes(form.value.role));
+const showModules = computed(() => form.value.role === 'client_user');
 
 const filtered = computed(() => {
   const term = search.value.trim().toLowerCase();
@@ -76,11 +83,9 @@ async function load() {
       return;
     }
     const requests = [listUsers({ signal: controller.signal })];
-    requests.push(apiFetch('/plants', { signal: controller.signal }));
-    const [userData, plantData = []] = await Promise.all(requests);
-    if (!Array.isArray(userData) || !Array.isArray(plantData)) throw new Error('Respuesta inválida');
+    const [userData] = await Promise.all(requests);
+    if (!Array.isArray(userData)) throw new Error('Respuesta inválida');
     users.value = userData;
-    plants.value = plantData;
   } catch (failure) {
     if (!controller.signal.aborted) {
       if (failure?.status === 403) accessDenied.value = true;
@@ -94,7 +99,7 @@ async function load() {
 function openCreate() {
   clearPassword();
   editing.value = null;
-  form.value = { display_name: '', email: '', role: 'client_user', plant_ids: [] };
+  form.value = { display_name: '', email: '', role: 'client_user', module_permissions: [] };
   formError.value = '';
   showForm.value = true;
 }
@@ -102,7 +107,7 @@ function openCreate() {
 function openEdit(user) {
   clearPassword();
   editing.value = user;
-  form.value = { display_name: user.display_name ?? '', email: user.email ?? '', role: user.role, plant_ids: [...(user.plant_ids ?? [])] };
+  form.value = { display_name: user.display_name ?? '', email: user.email ?? '', role: user.role, module_permissions: [...(user.module_permissions ?? [])] };
   formError.value = '';
   showForm.value = true;
 }
@@ -139,17 +144,17 @@ async function saveForm() {
     if (editing.value) {
       const payload = { display_name: displayName };
       if (form.value.role !== editing.value.role) payload.role = form.value.role;
-      let updated = await updateUser(editing.value.id, payload, { signal: controller.signal });
-      const nextPlants = [...new Set(form.value.plant_ids)];
-      const currentPlants = [...new Set(editing.value.plant_ids ?? [])];
-      if (nextPlants.length !== currentPlants.length || nextPlants.some(id => !currentPlants.includes(id))) {
-        updated = await setUserPlants(editing.value.id, nextPlants, { signal: controller.signal });
+      const nextModules = [...new Set(form.value.module_permissions)];
+      const currentModules = [...new Set(editing.value.module_permissions ?? [])];
+      if (nextModules.length !== currentModules.length || nextModules.some(id => !currentModules.includes(id))) {
+        payload.module_permissions = nextModules;
       }
+      const updated = await updateUser(editing.value.id, payload, { signal: controller.signal });
       users.value = users.value.map(user => (user.id === updated.id ? updated : user));
       formSaving.value = false;
       closeForm();
     } else {
-      const payload = { name: displayName, email: form.value.email.trim(), role: form.value.role, password: password.value, plant_ids: [...new Set(form.value.plant_ids)] };
+      const payload = { name: displayName, email: form.value.email.trim(), role: form.value.role, password: password.value, module_permissions: [...new Set(form.value.module_permissions)] };
       const result = await createUser(payload, { signal: controller.signal });
       users.value = [result, ...users.value];
       formSaving.value = false;
@@ -301,16 +306,17 @@ onUnmounted(() => { controller.abort(); clearPassword(); });
           <option value="client_user">Usuario</option>
           <option value="client_admin">Administrador</option>
         </select>
-        <template v-if="showPlants">
+        <template v-if="showModules">
           <fieldset class="plants-fieldset">
-            <legend>Plantas con acceso</legend>
-            <p v-if="!plants.length" class="muted">No hay plantas registradas.</p>
-            <label v-for="plant in plants" :key="plant.id" class="check-row">
-              <input v-model="form.plant_ids" type="checkbox" :value="plant.id" :disabled="formSaving" />
-              {{ plant.name || plant.id }}
+            <legend>Acceso a módulos</legend>
+            <p v-if="!MODULES.length" class="muted">No hay módulos configurados.</p>
+            <label v-for="module in MODULES" :key="module.id" class="check-row">
+              <input v-model="form.module_permissions" type="checkbox" :value="module.id" :disabled="formSaving" />
+              {{ module.label }}
             </label>
           </fieldset>
         </template>
+        <p v-else class="muted">El rol Administrador tiene acceso completo a módulos y plantas.</p>
         <p v-if="formError" class="form-error" role="alert">{{ formError }}</p>
         <div class="modal-actions">
           <button class="secondary-button" type="button" :disabled="formSaving" @click="closeForm">Cancelar</button>

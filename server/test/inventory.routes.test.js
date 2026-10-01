@@ -47,11 +47,11 @@ function request(app, method, path, body = null) {
   });
 }
 
-function appAs(role) {
+function appAs(role, module_permissions = []) {
   const app = express();
   app.use(express.json());
   app.use('/api/inventory', (req, res, next) => {
-    req.profile = { id: 'actor', role };
+    req.profile = { id: 'actor', role, module_permissions };
     next();
   }, inventoryRoutes);
   return app;
@@ -82,9 +82,11 @@ test('rdx_admin puede alcanzar writes y todos los roles pueden leer', async () =
   const adminApp = appAs('rdx_admin');
   assert.equal(await request(adminApp, 'POST', '/api/inventory/products', {}), 201);
   assert.equal(writes, 1);
-  for (const role of ['rdx_admin', 'client_admin', 'client_user']) {
+  for (const role of ['rdx_admin', 'client_admin']) {
     assert.equal(await request(appAs(role), 'GET', '/api/inventory/products'), 200);
   }
+  assert.equal(await request(appAs('client_user', ['inventory']), 'GET', '/api/inventory/products'), 200);
+  assert.equal(await request(appAs('client_user', []), 'GET', '/api/inventory/products'), 403);
 });
 
 test('las rutas de inventario exigen autenticación en el montaje real', async () => {

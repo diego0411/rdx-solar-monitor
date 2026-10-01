@@ -9,11 +9,12 @@ import {
   postActivity,
   postMaintenance,
 } from '../controllers/maintenance.controller.js';
-import { requireRoles } from '../middleware/authorization.middleware.js';
+import { requireModuleAccess, requireRoles } from '../middleware/authorization.middleware.js';
 
 const writer = requireRoles('rdx_admin', 'client_admin');
 
 const router = Router();
+router.use(requireModuleAccess('maintenance'));
 router.get('/', listMaintenance);
 router.get('/:id', getMaintenance);
 router.post('/', writer, postMaintenance);

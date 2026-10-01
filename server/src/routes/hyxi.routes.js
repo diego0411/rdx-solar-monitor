@@ -7,12 +7,12 @@ import { getHyxiPlantEnergyHistory } from '../controllers/hyxi.controller.js';
 import { getHyxiPlantEnergySummary, postHyxiSyncRealtime, postHyxiSyncEnergySummary } from '../controllers/hyxi.controller.js';
 import { getHyxiDevice, getHyxiDeviceRealtime, postHyxiSyncDevices, postHyxiSyncDeviceDetails } from '../controllers/hyxi.controller.js';
 import { getHyxiHealth, getHyxiPlant, getHyxiPlants, postHyxiSyncPlants, postHyxiSyncPlantDetails } from '../controllers/hyxi.controller.js';
-import { requireRoles } from '../middleware/authorization.middleware.js';
+import { requireModuleAccess, requireRoles } from '../middleware/authorization.middleware.js';
 
 const router = Router();
 
 router.get('/health', requireRoles('rdx_admin'), getHyxiHealth);
-router.get('/alarms/recent', getHyxiRecentAlarms);
+router.get('/alarms/recent', requireModuleAccess('devices'), getHyxiRecentAlarms);
 router.post('/sync/realtime', requireRoles('rdx_admin'), postHyxiSyncRealtime);
 router.post('/sync/energy-summary', requireRoles('rdx_admin'), postHyxiSyncEnergySummary);
 router.get('/devices/:deviceSn', requireRoles('rdx_admin'), getHyxiDevice);

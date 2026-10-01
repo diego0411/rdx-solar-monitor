@@ -30,12 +30,3 @@ export function setUserStatus(id, active, options = {}) {
     signal: options.signal,
   });
 }
-
-export function setUserPlants(id, plant_ids, options = {}) {
-  return apiFetch(`/users/${encodeURIComponent(id)}/plants`, {
-    method: 'PATCH',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ plant_ids }),
-    signal: options.signal,
-  });
-}

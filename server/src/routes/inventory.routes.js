@@ -10,9 +10,10 @@ import {
   postProduct,
   postQuantityMovement,
 } from '../controllers/inventory.controller.js';
-import { requireRoles } from '../middleware/authorization.middleware.js';
+import { requireModuleAccess, requireRoles } from '../middleware/authorization.middleware.js';
 
 const router = Router();
+router.use(requireModuleAccess('inventory'));
 const writer = requireRoles('rdx_admin');
 
 router.get('/products', listProducts);

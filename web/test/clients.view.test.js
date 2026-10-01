@@ -31,16 +31,14 @@ const usersCode = compileScript(usersDescriptor, { id: 'users-multiclient-test' 
   .replace(/^import[^;]*;$/gm, '').replace('export default', 'return');
 
 function setupUsers(overrides = {}) {
-  const calls = { create: [], update: [], plants: [] };
+  const calls = { create: [], update: [] };
   const deps = {
     ref, computed, onMounted() {}, onUnmounted() {},
     getMyProfile: async () => ({ profile: { role: overrides.role ?? 'rdx_admin' } }),
-    apiFetch: async () => overrides.plants ?? [],
     listUsers: async () => [],
     createUser: async payload => { calls.create.push(payload); return { id: 'new', ...payload }; },
     updateUser: async (id, payload) => { calls.update.push([id, payload]); return { id, ...payload }; },
     setUserStatus: async () => ({}),
-    setUserPlants: async (id, plant_ids) => { calls.plants.push([id, plant_ids]); return { id, plant_ids }; },
   };
   const component = new Function(...Object.keys(deps), usersCode)(...Object.values(deps));
   return { view: component.setup({}, { expose() {} }), calls };
@@ -166,30 +164,39 @@ test('doble submit bloqueado y errores visibles; activar/desactivar confirma', a
   assert.deepEqual(calls.status[0], ['c1', false]);
 });
 
-test('UsersView sin Cliente: ofrece Plantas con acceso y envía plant_ids', async () => {
+test('UsersView sin Cliente ni Plantas: ofrece Acceso a módulos y envía module_permissions', async () => {
   assert.doesNotMatch(usersSource, /Cliente \*/);
   assert.doesNotMatch(usersSource, /id="user-client"/);
   assert.doesNotMatch(usersSource, /requiresClient/);
   assert.doesNotMatch(usersSource, /listClients/);
-  assert.match(usersSource, /Plantas con acceso/);
-  const { view, calls } = setupUsers({ plants: [{ id: 'p1', name: 'Planta 1' }] });
+  assert.doesNotMatch(usersSource, /Plantas con acceso/);
+  assert.doesNotMatch(usersSource, /plant_ids/);
+  assert.doesNotMatch(usersSource, /id: 'reports'/);
+  assert.match(usersSource, /Acceso a módulos/);
+  for (const label of ['Dashboard', 'Plantas', 'Dispositivos', 'Mantenimiento', 'Inventario']) {
+    assert.ok(usersSource.includes(label));
+  }
+  const { view, calls } = setupUsers();
   view.openCreate();
-  assert.deepEqual(view.form.value.plant_ids, []);
-  view.form.value = { display_name: 'N', email: 'n@example.test', role: 'client_user', plant_ids: ['p1'] };
+  assert.deepEqual(view.form.value.module_permissions, []);
+  view.form.value = { display_name: 'N', email: 'n@example.test', role: 'client_user', module_permissions: ['dashboard'] };
   view.password.value = 'Test-only-Password-42!';
   view.confirmPassword.value = view.password.value;
   await view.saveForm();
-  assert.deepEqual(calls.create[0].plant_ids, ['p1']);
+  assert.deepEqual(calls.create[0].module_permissions, ['dashboard']);
   assert.ok(!('client_id' in calls.create[0]));
+  assert.ok(!('plant_ids' in calls.create[0]));
 });
 
-test('UsersView editar actualiza plantas por endpoint dedicado', async () => {
-  const { view, calls } = setupUsers({ plants: [{ id: 'p1', name: 'Planta 1' }] });
-  view.openEdit({ id: 'u1', display_name: 'U', email: 'u@example.test', role: 'client_user', plant_ids: ['p1'] });
-  assert.deepEqual(view.form.value.plant_ids, ['p1']);
-  view.form.value.plant_ids = [];
+test('UsersView editar actualiza módulos por PATCH y admin ve acceso completo', async () => {
+  const { view, calls } = setupUsers();
+  view.openEdit({ id: 'u1', display_name: 'U', email: 'u@example.test', role: 'client_user', module_permissions: ['dashboard'] });
+  assert.deepEqual(view.form.value.module_permissions, ['dashboard']);
+  view.form.value.module_permissions = ['dashboard', 'plants'];
   await view.saveForm();
-  assert.deepEqual(calls.plants[0], ['u1', []]);
+  assert.deepEqual(calls.update[0], ['u1', { display_name: 'U', module_permissions: ['dashboard', 'plants'] }]);
+  view.openEdit({ id: 'a1', display_name: 'A', role: 'client_admin', module_permissions: [] });
+  assert.match(usersSource, /acceso completo/);
 });
 
 test('/users y enlace Usuarios solo para rdx_admin en esta fase', () => {

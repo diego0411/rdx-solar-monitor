@@ -6,7 +6,7 @@ export async function listUserProfiles() {
 
   for (let offset = 0; ; offset += pageSize) {
     const { data, error } = await supabase.from('user_profiles')
-      .select('id, client_id, role, display_name, active, created_at')
+      .select('id, client_id, role, display_name, active, module_permissions, created_at')
       .order('created_at', { ascending: true })
       .order('id', { ascending: true })
       .range(offset, offset + pageSize - 1);
@@ -21,7 +21,7 @@ export async function listUserProfiles() {
 
 export async function getUserProfileById(id) {
   const { data, error } = await supabase.from('user_profiles')
-    .select('id, client_id, role, display_name, active, created_at')
+    .select('id, client_id, role, display_name, active, module_permissions, created_at')
     .eq('id', id)
     .maybeSingle();
 
@@ -30,16 +30,17 @@ export async function getUserProfileById(id) {
   return data;
 }
 
-export async function createUserProfile({ id, client_id, role, display_name }) {
+export async function createUserProfile({ id, client_id, role, display_name, module_permissions = [] }) {
   const { data, error } = await supabase.from('user_profiles')
     .insert({
       id,
       client_id,
       role,
       display_name: display_name ?? null,
+      module_permissions,
       active: true,
     })
-    .select('id, client_id, role, display_name, active, created_at')
+    .select('id, client_id, role, display_name, active, module_permissions, created_at')
     .single();
 
   if (error || !data) throw new Error('No se pudo crear el perfil de usuario');
@@ -51,7 +52,7 @@ export async function updateUserProfile(id, values) {
   const { data, error } = await supabase.from('user_profiles')
     .update(values)
     .eq('id', id)
-    .select('id, client_id, role, display_name, active, created_at')
+    .select('id, client_id, role, display_name, active, module_permissions, created_at')
     .single();
 
   if (error || !data) throw new Error('No se pudo actualizar el perfil de usuario');

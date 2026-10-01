@@ -1,4 +1,4 @@
-import { listUsers, createUser, updateUser, setUserStatus, setUserPlants } from '../services/users.service.js';
+import { listUsers, createUser, updateUser, setUserStatus } from '../services/users.service.js';
 
 const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -41,17 +41,6 @@ export async function patchUserStatus(req, res) {
   }
   try {
     return res.json(await setUserStatus(req.profile, req.params.id, req.body?.active));
-  } catch (error) {
-    return sendError(res, error);
-  }
-}
-
-export async function patchUserPlants(req, res) {
-  if (!uuidPattern.test(req.params.id ?? '')) {
-    return res.status(400).json({ error: 'id inválido' });
-  }
-  try {
-    return res.json(await setUserPlants(req.profile, req.params.id, req.body?.plant_ids));
   } catch (error) {
     return sendError(res, error);
   }

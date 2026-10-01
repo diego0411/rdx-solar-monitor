@@ -6,13 +6,12 @@ import { createClient } from '@supabase/supabase-js';
 // Exercise the real router, middleware, repositories and Supabase SDK against
 // an isolated transport. No credentials, accounts or database in production.
 const actors = {
-  admin: { id: 'admin', role: 'rdx_admin', client_id: null, active: true },
-  manager: { id: 'manager', role: 'client_admin', client_id: 'legacy-fisico', active: true },
-  reader: { id: 'reader', role: 'client_user', client_id: 'legacy-fisico', active: true },
+  admin: { id: 'admin', role: 'rdx_admin', client_id: null, active: true, module_permissions: [] },
+  manager: { id: 'manager', role: 'client_admin', client_id: 'legacy-fisico', active: true, module_permissions: [] },
+  reader: { id: 'reader', role: 'client_user', client_id: 'legacy-fisico', active: true, module_permissions: [] },
 };
 const PASSWORD = 'Test-only-Password-42!';
 const USER_ID = '00000000-0000-4000-8000-000000000001';
-const PLANT_A = 'aaaaaaaa-1111-4111-8111-111111111111';
 const testToken = [
   { alg: 'HS256', typ: 'JWT' },
   { sub: USER_ID, exp: Math.floor(Date.now() / 1000) + 3600 },
@@ -21,12 +20,6 @@ let state;
 const json = (body, status = 200) => new Response(JSON.stringify(body), {
   status, headers: { 'Content-Type': 'application/json', 'X-Supabase-Api-Version': '2024-01-01' },
 });
-
-function eqParam(url, name) {
-  const raw = url.searchParams.get(name);
-  if (!raw) return null;
-  return decodeURIComponent(raw).replace(/^eq\./, '');
-}
 
 async function transport(input, options = {}) {
   const url = new URL(input);
@@ -77,29 +70,6 @@ async function transport(input, options = {}) {
     const id = url.searchParams.get('id')?.replace('eq.', '');
     return json(id ? actors[id] ?? state.profiles.find(profile => profile.id === id) ?? null : state.profiles);
   }
-  if (url.pathname === '/rest/v1/user_plants') {
-    if (method === 'DELETE') {
-      const userId = eqParam(url, 'user_id');
-      state.grants = state.grants.filter(grant => grant.user_id !== userId);
-      return json([]);
-    }
-    if (method === 'POST') {
-      const rows = (Array.isArray(body) ? body : [body]).map(row => ({ ...row }));
-      state.grants.push(...rows);
-      return json(rows.map(({ plant_id }) => ({ plant_id })), 201);
-    }
-    const userId = eqParam(url, 'user_id');
-    const rows = state.grants.filter(grant => !userId || grant.user_id === userId);
-    return json(rows.map(({ user_id, plant_id }) => ({ user_id, plant_id })));
-  }
-  if (url.pathname === '/rest/v1/plants') {
-    if (method === 'GET' && url.searchParams.has('id')) {
-      const id = eqParam(url, 'id');
-      const plant = state.plants.find(item => item.id === id);
-      return json(plant ? { ...plant } : null);
-    }
-    return json(state.plants);
-  }
   throw new Error('Unexpected test transport request');
 }
 
@@ -115,10 +85,7 @@ app.use('/api/users', usersRoutes);
 await new Promise(resolve => setImmediate(resolve));
 
 beforeEach(() => {
-  state = {
-    authUsers: [], authPasswords: new Map(), profiles: [], grants: [],
-    plants: [{ id: PLANT_A }], deletions: 0, authStatus: 422,
-  };
+  state = { authUsers: [], authPasswords: new Map(), profiles: [], deletions: 0, authStatus: 422 };
 });
 
 async function request(t, actor, path = '/api/users', body = null, method = null) {
@@ -148,7 +115,9 @@ test('create -> Auth password sign-in contract -> visible user; secrets stay out
   assert.equal(result.body.id, state.profilePayload.id);
   assert.equal(state.profilePayload.client_id, null);
   assert.ok(!('client_id' in result.body));
-  assert.deepEqual(result.body.plant_ids, []);
+  assert.ok(!('plant_ids' in result.body));
+  assert.deepEqual(result.body.module_permissions, []);
+  assert.deepEqual(state.profilePayload.module_permissions, []);
   assert.equal(state.profilePayload.active, true);
   for (const value of [state.profilePayload, result.body]) {
     assert.equal(JSON.stringify(value).includes(PASSWORD), false);
@@ -164,11 +133,12 @@ test('create -> Auth password sign-in contract -> visible user; secrets stay out
   assert.equal(logs.mock.calls.some(call => call.arguments.some(value => String(value).includes(PASSWORD))), false);
 });
 
-test('create acepta plant_ids y responde el scope otorgado', async t => {
-  const result = await request(t, 'admin', '/api/users', payload({ plant_ids: [PLANT_A] }));
+test('create acepta module_permissions y los persiste', async t => {
+  const result = await request(t, 'admin', '/api/users',
+    payload({ module_permissions: ['dashboard', 'inventory'] }));
   assert.equal(result.status, 201);
-  assert.deepEqual(result.body.plant_ids, [PLANT_A]);
-  assert.deepEqual(state.grants, [{ user_id: USER_ID, plant_id: PLANT_A }]);
+  assert.deepEqual(result.body.module_permissions, ['dashboard', 'inventory']);
+  assert.deepEqual(state.profilePayload.module_permissions, ['dashboard', 'inventory']);
 });
 
 test('client_admin y client_user no administran usuarios en esta fase', async t => {

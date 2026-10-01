@@ -17,25 +17,23 @@ const script = compileScript(descriptor, { id: 'users-test' }).content
   .replace(/^import .*;$/gm, '')
   .replace('export default', 'return');
 const makeComponent = new Function('deps', `
-  const { ref, computed, onMounted, onUnmounted, getMyProfile, apiFetch,
-    listUsers, createUser, updateUser, setUserStatus, setUserPlants } = deps;
+  const { ref, computed, onMounted, onUnmounted, getMyProfile,
+    listUsers, createUser, updateUser, setUserStatus } = deps;
   ${script}
 `);
 
 function setup(overrides = {}) {
-  const calls = { create: [], update: [], plants: [] };
+  const calls = { create: [], update: [] };
   let unmount;
   const component = makeComponent({
     ref, computed, onMounted() {}, onUnmounted(fn) { unmount = fn; },
     getMyProfile: async () => ({ profile: { role: 'rdx_admin' } }),
-    apiFetch: async () => overrides.plants ?? [],
     listUsers: async () => [], setUserStatus: async () => {},
     createUser: async payload => {
       calls.create.push(payload);
       return { id: 'new', display_name: payload.name, email: payload.email, role: payload.role, active: true };
     },
     updateUser: async (id, payload) => { calls.update.push([id, payload]); return { id, ...payload }; },
-    setUserPlants: async (id, plant_ids) => { calls.plants.push([id, plant_ids]); return { id, plant_ids }; },
     ...overrides,
   });
   return { view: component.setup({}, { expose() {} }), calls, unmount: () => unmount() };
@@ -43,19 +41,20 @@ function setup(overrides = {}) {
 
 function fill(view) {
   view.openCreate();
-  view.form.value = { display_name: ' Name ', email: ' user@example.test ', role: 'client_user', plant_ids: [] };
+  view.form.value = { display_name: ' Name ', email: ' user@example.test ', role: 'client_user', module_permissions: [] };
   view.password.value = 'Test-only-Password-42!';
   view.confirmPassword.value = view.password.value;
 }
 
-test('creation sends name/email/role/password/plant_ids, not confirmation; updates list and clears secrets', async () => {
+test('creation sends name/email/role/password/module_permissions, not confirmation; updates list and clears secrets', async () => {
   const { view, calls } = setup();
   fill(view);
   await view.saveForm();
-  assert.deepEqual(Object.keys(calls.create[0]).sort(), ['email', 'name', 'password', 'plant_ids', 'role']);
+  assert.deepEqual(Object.keys(calls.create[0]).sort(), ['email', 'module_permissions', 'name', 'password', 'role']);
   assert.equal(calls.create[0].name, 'Name');
   assert.equal(calls.create[0].email, 'user@example.test');
   assert.ok(!('client_id' in calls.create[0]));
+  assert.ok(!('plant_ids' in calls.create[0]));
   assert.equal(view.users.value.length, 1);
   assert.equal('password' in view.users.value[0], false);
   assert.equal(view.password.value, '');
@@ -63,12 +62,12 @@ test('creation sends name/email/role/password/plant_ids, not confirmation; updat
   assert.equal(view.showForm.value, false);
 });
 
-test('creation incluye plantas seleccionadas', async () => {
-  const { view, calls } = setup({ plants: [{ id: 'p1', name: 'Planta 1' }] });
+test('creation incluye módulos seleccionados', async () => {
+  const { view, calls } = setup();
   fill(view);
-  view.form.value.plant_ids = ['p1'];
+  view.form.value.module_permissions = ['dashboard', 'plants'];
   await view.saveForm();
-  assert.deepEqual(calls.create[0].plant_ids, ['p1']);
+  assert.deepEqual(calls.create[0].module_permissions, ['dashboard', 'plants']);
 });
 
 test('both passwords required and matching, with minimum length enforced', async () => {
@@ -83,21 +82,20 @@ test('both passwords required and matching, with minimum length enforced', async
   assert.equal(calls.create.length, 0);
 });
 
-test('editing does not require or send passwords; plants go through dedicated endpoint', async () => {
+test('editing does not require or send passwords; modules update through PATCH', async () => {
   const { view, calls } = setup();
-  const user = { id: 'existing', display_name: 'Old', role: 'client_user', plant_ids: [] };
+  const user = { id: 'existing', display_name: 'Old', role: 'client_user', module_permissions: [] };
   view.users.value = [user];
   view.openEdit(user);
   view.form.value.display_name = 'New';
   await view.saveForm();
   assert.deepEqual(calls.update, [['existing', { display_name: 'New' }]]);
-  assert.deepEqual(calls.plants, []);
   assert.equal(view.users.value[0].display_name, 'New');
 
-  view.openEdit({ id: 'existing', display_name: 'New', role: 'client_user', plant_ids: [] });
-  view.form.value.plant_ids = ['p1'];
+  view.openEdit({ id: 'existing', display_name: 'New', role: 'client_user', module_permissions: [] });
+  view.form.value.module_permissions = ['inventory'];
   await view.saveForm();
-  assert.deepEqual(calls.plants, [['existing', ['p1']]]);
+  assert.deepEqual(calls.update[1], ['existing', { display_name: 'New', module_permissions: ['inventory'] }]);
 });
 
 test('cancel, reopening and unmount clear passwords and reset visibility', () => {

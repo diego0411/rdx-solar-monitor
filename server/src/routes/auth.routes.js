@@ -19,6 +19,7 @@ router.get('/me', requireAuth, loadProfile, (req, res) => {
       role: req.profile.role,
       display_name: req.profile.display_name,
       active: req.profile.active,
+      module_permissions: req.profile.module_permissions ?? [],
     },
   });
 });

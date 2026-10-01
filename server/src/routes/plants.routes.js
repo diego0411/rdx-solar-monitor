@@ -13,13 +13,14 @@ import {
   getEnergyDistributors,
   getTariffCategoriesByDistributor,
 } from '../controllers/energyCatalog.controller.js';
-import { requireRoles } from '../middleware/authorization.middleware.js';
+import { requireModuleAccess, requireRoles } from '../middleware/authorization.middleware.js';
 import {
   getInstallationDetails,
   putInstallationDetails,
 } from '../controllers/plantInstallationDetails.controller.js';
 
 const router = Router();
+router.use(requireModuleAccess('plants'));
 router.get('/', getPlants);
 router.get('/overview', getOverview);
 router.get('/:plantId/overview', getPlantDetailOverview);

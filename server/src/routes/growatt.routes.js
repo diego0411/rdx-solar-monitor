@@ -7,10 +7,10 @@ import {
 	postGrowattSyncLatest,
 	postGrowattSyncPlants,
 } from '../controllers/growatt.controller.js';
-import { requireRoles } from '../middleware/authorization.middleware.js';
+import { requireModuleAccess, requireRoles } from '../middleware/authorization.middleware.js';
 
 const router = Router();
-router.get('/alarms/current', getGrowattCurrentAlarms);
+router.get('/alarms/current', requireModuleAccess('devices'), getGrowattCurrentAlarms);
 
 /*
  * Maintenance de integración: solo rdx_admin puede orquestar

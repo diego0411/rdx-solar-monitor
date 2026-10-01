@@ -7,9 +7,18 @@ const router = useRouter();
 const showUsers = ref(false);
 const showClients = ref(false);
 const displayName = ref('Usuario');
+const myRole = ref(null);
+const myModules = ref([]);
+function canSee(module) {
+  if (myRole.value === 'rdx_admin' || myRole.value === 'client_admin') return true;
+  if (myRole.value !== 'client_user') return false;
+  return myModules.value.includes(module);
+}
 onMounted(async () => {
   try {
     const me = await getMyProfile();
+    myRole.value = me?.profile?.role ?? null;
+    myModules.value = Array.isArray(me?.profile?.module_permissions) ? me.profile.module_permissions : [];
     showUsers.value = me?.profile?.role === 'rdx_admin';
     showClients.value = me?.profile?.role === 'rdx_admin';
     displayName.value = me?.profile?.display_name?.trim() || 'Usuario';
@@ -43,31 +52,31 @@ async function logout() {
       </RouterLink>
       <nav aria-label="Navegación principal">
         <p class="nav-heading">Monitoreo</p>
-        <RouterLink to="/" class="nav-link" exact-active-class="is-active">
+        <RouterLink v-if="canSee('dashboard')" to="/" class="nav-link" exact-active-class="is-active">
           <svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 13h6V4H4v9Zm0 7h6v-4H4v4Zm10 0h6v-9h-6v9Zm0-16v4h6V4h-6Z" /></svg>
           <span>Dashboard</span>
         </RouterLink>
-        <RouterLink to="/plants" class="nav-link" active-class="is-active">
+        <RouterLink v-if="canSee('plants')" to="/plants" class="nav-link" active-class="is-active">
           <svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 21V10m0 0C8 10 5 8 5 4c4 0 7 2 7 6Zm0 3c0-5 3-8 8-8 0 5-3 8-8 8Z" /></svg>
           <span>Plantas</span>
         </RouterLink>
-        <RouterLink to="/map" class="nav-link" active-class="is-active">
+        <RouterLink v-if="canSee('plants')" to="/map" class="nav-link" active-class="is-active">
           <svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m3 6 5-2 8 2 5-2v14l-5 2-8-2-5 2V6Zm5-2v14m8-12v14" /></svg>
           <span>Mapa</span>
         </RouterLink>
-        <RouterLink to="/devices" class="nav-link" active-class="is-active">
+        <RouterLink v-if="canSee('devices')" to="/devices" class="nav-link" active-class="is-active">
           <svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="5" width="16" height="14" rx="3" /><path d="M8 9h8m-8 3h5m-5 3h3" /></svg>
           <span>Dispositivos</span>
         </RouterLink>
-        <RouterLink to="/alarms" class="nav-link" active-class="is-active">
+        <RouterLink v-if="canSee('devices')" to="/alarms" class="nav-link" active-class="is-active">
           <svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M18 9a6 6 0 0 0-12 0c0 7-3 7-3 8h18c0-1-3-1-3-8ZM9.5 20h5" /></svg>
           <span>Alarmas</span>
         </RouterLink>
-        <RouterLink to="/maintenance" class="nav-link" active-class="is-active">
+        <RouterLink v-if="canSee('maintenance')" to="/maintenance" class="nav-link" active-class="is-active">
           <svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M14.7 6.3a4.5 4.5 0 0 0-6 6L3 18l3 3 5.7-5.7a4.5 4.5 0 0 0 6-6L14 13l-3-3 3.7-3.7Z" /></svg>
           <span>Mantenimiento</span>
         </RouterLink>
-        <RouterLink to="/inventory" class="nav-link" active-class="is-active">
+        <RouterLink v-if="canSee('inventory')" to="/inventory" class="nav-link" active-class="is-active">
           <svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7.5 12 3l8 4.5v9L12 21l-8-4.5v-9Zm0 0 8 4.5 8-4.5M12 12v9" /></svg>
           <span>Inventario</span>
         </RouterLink>
