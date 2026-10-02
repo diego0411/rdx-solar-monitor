@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { parse, compileScript } from '@vue/compiler-sfc';
 import { computed, ref } from 'vue';
+import { inventoryCategoryLabel, inventoryCategoryLabels } from '../src/utils/inventoryCategories.js';
 
 const source = readFileSync(new URL('../src/views/InventoryView.vue', import.meta.url), 'utf8');
 const { descriptor } = parse(source);
@@ -12,6 +13,8 @@ const code = compileScript(descriptor, { id: 'inventory-view-test' }).content
 function setup({ role = 'rdx_admin', products = [], create = null, listError = null } = {}) {
   const deps = {
     ref, computed, onMounted() {}, onUnmounted() {},
+    categories: inventoryCategoryLabels,
+    categoryLabel: inventoryCategoryLabel,
     getMyProfile: async () => ({ profile: { role } }),
     listInventoryProducts: async () => {
       if (listError) throw listError;

@@ -2,18 +2,7 @@
 import { computed, onMounted, onUnmounted, ref } from 'vue';
 import { getMyProfile } from '../services/api.js';
 import { createInventoryProduct, listInventoryProducts } from '../services/inventory.js';
-
-const categories = {
-  inverter: 'Inversor',
-  solar_panel: 'Panel solar',
-  smart_meter: 'Smart meter',
-  battery: 'Batería',
-  datalogger: 'Datalogger',
-  protection: 'Protección',
-  structure: 'Estructura',
-  cable: 'Cable',
-  other: 'Otro',
-};
+import { inventoryCategoryLabel as categoryLabel, inventoryCategoryLabels as categories } from '../utils/inventoryCategories.js';
 const trackingLabels = { serialized: 'Serializado', quantity: 'Por cantidad' };
 
 const products = ref([]);
@@ -49,7 +38,6 @@ function formatDecimal(value) {
   return `${match[1] === '-' ? '-' : ''}${grouped}${match[3] ? `,${match[3]}` : ''}`;
 }
 
-function categoryLabel(value) { return categories[value] ?? value ?? '—'; }
 function trackingLabel(value) { return trackingLabels[value] ?? value ?? '—'; }
 
 function manufacturerModel(product) {

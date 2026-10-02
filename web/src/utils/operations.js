@@ -1,6 +1,12 @@
 // Lógica pura del módulo Operaciones (sin dependencias de Vue ni fetch).
 // Centraliza etiquetas, payloads, idempotencia y mensajes de error amigables.
 
+export {
+  inventoryCategoryLabel as productCategoryLabel,
+  inventoryCategoryLabels as productCategoryLabels,
+  inventoryCategoryOptions as productCategoryOptions,
+} from './inventoryCategories.js';
+
 export const requestStatusLabels = {
   requested: 'Solicitada',
   received: 'Recibida',
@@ -43,37 +49,8 @@ export const requestReasons = Object.keys(reasonLabels);
 export const requestPriorities = Object.keys(priorityLabels);
 export const requestStatuses = Object.keys(requestStatusLabels);
 
-// Categorías reales de inventory_products (mismas etiquetas que inventario).
-export const productCategoryLabels = {
-  inverter: 'Inversor',
-  solar_panel: 'Panel solar',
-  smart_meter: 'Smart meter',
-  battery: 'Batería',
-  datalogger: 'Datalogger',
-  protection: 'Protección',
-  structure: 'Estructura',
-  cable: 'Cable',
-  other: 'Otro',
-};
-
-export function productCategoryLabel(category) {
-  return productCategoryLabels[category] ?? category ?? '—';
-}
-
 // Límite inicial de resultados del selector (no renderizar cientos).
 export const PRODUCT_PICKER_PAGE_SIZE = 10;
-
-// Categorías presentes en los datos cargados, etiquetadas y ordenadas.
-export function availableCategoryOptions(products = []) {
-  const seen = new Set();
-  for (const product of products ?? []) {
-    if (product?.active === false) continue;
-    if (typeof product?.category === 'string' && product.category !== '') seen.add(product.category);
-  }
-  return [...seen]
-    .map(value => ({ value, label: productCategoryLabel(value) }))
-    .sort((a, b) => a.label.localeCompare(b.label, 'es'));
-}
 
 // Búsqueda case-insensitive por los campos expuestos por el contrato:
 // nombre, fabricante y modelo. Multi-término con AND.

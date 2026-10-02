@@ -12,12 +12,7 @@ import {
   transitionSerializedInventoryItem,
   updateInventoryProduct,
 } from '../services/inventory.js';
-
-const categories = {
-  inverter: 'Inversor', solar_panel: 'Panel solar', smart_meter: 'Smart meter',
-  battery: 'Batería', datalogger: 'Datalogger', protection: 'Protección',
-  structure: 'Estructura', cable: 'Cable', other: 'Otro',
-};
+import { inventoryCategoryLabel as categoryLabel, inventoryCategoryLabels as categories } from '../utils/inventoryCategories.js';
 const statusLabels = {
   available: 'Disponible', dispatched: 'Despachado', assigned: 'Asignado', installed: 'Instalado',
   sold: 'Vendido', written_off: 'Baja',
@@ -71,7 +66,6 @@ function formatDate(value) {
   if (!value || !Number.isFinite(Date.parse(value))) return '—';
   return new Intl.DateTimeFormat('es-BO', { dateStyle: 'short', timeStyle: 'short' }).format(new Date(value));
 }
-function categoryLabel(value) { return categories[value] ?? value ?? '—'; }
 function statusLabel(value) { return statusLabels[value] ?? value ?? '—'; }
 function movementLabel(value) { return movementLabels[value] ?? value ?? '—'; }
 function plantName(id) { return id ? plantsById.value[id] ?? `Planta ${String(id).slice(0, 8)}` : '—'; }

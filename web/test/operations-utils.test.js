@@ -3,7 +3,6 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import {
   PRODUCT_PICKER_PAGE_SIZE,
-  availableCategoryOptions,
   buildCreatePayload,
   buildDeliveries,
   cancellableStatus,
@@ -20,6 +19,7 @@ import {
   pickerAvailabilityText,
   priorityLabel,
   productCategoryLabel,
+  productCategoryOptions,
   productMatchesSearch,
   reasonAllowsPlant,
   reasonLabel,
@@ -312,13 +312,7 @@ test('picker: búsqueda case-insensitive por nombre, fabricante o modelo', () =>
 });
 
 test('picker: categorías reales y disponibilidad uniforme', () => {
-  assert.deepEqual(
-    availableCategoryOptions(pickCatalog()),
-    [
-      { value: 'cable', label: 'Cable' },
-      { value: 'inverter', label: 'Inversor' },
-    ],
-  );
+  assert.equal(productCategoryOptions.length, 9);
   assert.equal(productCategoryLabel('inverter'), 'Inversor');
   const [inverter, cable] = pickCatalog();
   assert.equal(pickerAvailabilityText(inverter), 'Disponible: 3');
@@ -359,26 +353,14 @@ test('picker: quantity y serialized aparecen juntos por búsqueda y categoría',
   assert.deepEqual(matched.results.map(product => product.id), [PICK_A, PICK_B]);
 });
 
-test('picker: categorías usan todo el catálogo activo, incluso stock cero y categorías nuevas', () => {
-  const products = [
-    ...pickCatalog(),
-    {
-      id: 'dddddddd-dddd-4ddd-8ddd-dddddddddddd', name: 'Batería sin stock',
-      category: 'battery', tracking_mode: 'quantity', active: true,
-      availability: { available: '0', physical_stock: '0' },
-    },
-    {
-      id: 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee', name: 'Categoría futura',
-      category: 'mounting_kit', tracking_mode: 'quantity', active: true,
-      availability: { available: '0', physical_stock: '0' },
-    },
-  ];
-  const options = availableCategoryOptions(products);
-  assert.deepEqual(options, [
-    { value: 'battery', label: 'Batería' },
-    { value: 'cable', label: 'Cable' },
-    { value: 'inverter', label: 'Inversor' },
-    { value: 'mounting_kit', label: 'mounting_kit' },
-  ]);
-  assert.ok(!options.some(option => option.value === 'solar_panel'));
+test('categorías Inventory y Operations reutilizan una única fuente canónica', () => {
+  const canonical = readFileSync(new URL('../src/utils/inventoryCategories.js', import.meta.url), 'utf8');
+  const inventory = readFileSync(new URL('../src/views/InventoryView.vue', import.meta.url), 'utf8');
+  const detail = readFileSync(new URL('../src/views/InventoryDetailView.vue', import.meta.url), 'utf8');
+  const operations = readFileSync(new URL('../src/utils/operations.js', import.meta.url), 'utf8');
+  assert.match(canonical, /solar_panel: 'Panel solar'/);
+  for (const consumer of [inventory, detail, operations]) {
+    assert.match(consumer, /inventoryCategories\.js/);
+    assert.doesNotMatch(consumer, /solar_panel:\s*'Panel solar'/);
+  }
 });

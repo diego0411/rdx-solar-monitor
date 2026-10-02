@@ -4,7 +4,7 @@ import { useRouter } from 'vue-router';
 import SearchableSelect from '../components/SearchableSelect.vue';
 import { apiFetch, getMyProfile } from '../services/api.js';
 import { createRequest, listClients, listProducts, listRequests } from '../services/operations.js';
-import { buildCreatePayload, canCreateRequest, destinationDisplay, destinationTypeLabels, destinationTypes, filterPickerProducts, availableCategoryOptions, pickerAvailabilityText, priorityLabel, productCategoryLabel, reasonAllowsPlant, reasonLabel, reasonLabels, requestPriorities, requestReasons, statusLabel } from '../utils/operations.js';
+import { buildCreatePayload, canCreateRequest, destinationDisplay, destinationTypeLabels, destinationTypes, filterPickerProducts, pickerAvailabilityText, priorityLabel, productCategoryLabel, productCategoryOptions, reasonAllowsPlant, reasonLabel, reasonLabels, requestPriorities, requestReasons, statusLabel } from '../utils/operations.js';
 
 const router = useRouter();
 
@@ -211,7 +211,7 @@ const pickerCategory = ref('all');
 const pickerLimit = ref(10);
 const pickerSearchInput = ref(null);
 
-const pickerCategoryOptions = computed(() => availableCategoryOptions(products.value));
+const pickerCategoryOptions = computed(() => productCategoryOptions);
 
 const pickerExcludeIds = computed(() => {
   const current = pickerTarget.value !== null
@@ -236,6 +236,12 @@ const pickerResults = computed(() => {
     limit: pickerLimit.value,
   });
 });
+
+const pickerEmptyMessage = computed(() => (
+  pickerCategory.value !== 'all'
+    ? 'No hay productos disponibles en esta categoría.'
+    : 'Sin resultados para los filtros indicados.'
+));
 
 function productById(productId) {
   return products.value.find(product => product.id === productId) ?? null;
@@ -657,7 +663,7 @@ onUnmounted(() => controller.abort());
             </button>
           </li>
         </ul>
-        <p v-else-if="pickerHasCriteria" class="hint">Sin resultados para los filtros indicados.</p>
+        <p v-else-if="pickerHasCriteria" class="hint">{{ pickerEmptyMessage }}</p>
         <button
           v-if="pickerResults.total > pickerResults.results.length"
           class="secondary-button"

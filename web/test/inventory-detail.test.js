@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { parse, compileScript } from '@vue/compiler-sfc';
 import { computed, ref } from 'vue';
+import { inventoryCategoryLabel, inventoryCategoryLabels } from '../src/utils/inventoryCategories.js';
 
 const source = readFileSync(new URL('../src/views/InventoryDetailView.vue', import.meta.url), 'utf8');
 const { descriptor } = parse(source);
@@ -35,6 +36,8 @@ function setup({
   const clientRequests = [];
   const deps = {
     ref, computed, onUnmounted() {},
+    categories: inventoryCategoryLabels,
+    categoryLabel: inventoryCategoryLabel,
     watch(sourceFn, callback) {
       const watcher = { sourceFn, callback };
       watchers.push(watcher);

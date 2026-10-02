@@ -30,7 +30,7 @@ function setup({
     destinationTypeLabels: { client: 'Cliente', other: 'Otro' },
     destinationTypes: ['client', 'other'],
     filterPickerProducts: (...args) => globalThis.__filterPickerProducts(...args),
-    availableCategoryOptions: (...args) => globalThis.__availableCategoryOptions(...args),
+    productCategoryOptions: globalThis.__productCategoryOptions,
     pickerAvailabilityText: (...args) => globalThis.__pickerAvailabilityText(...args),
     productCategoryLabel: (...args) => globalThis.__productCategoryLabel(...args),
     reasonAllowsPlant: (...args) => globalThis.__reasonAllowsPlant(...args),
@@ -51,7 +51,7 @@ globalThis.__destinationDisplay = destinationDisplay;
 globalThis.__reasonAllowsPlant = reasonAllowsPlant;
 const pickerUtils = await import('../src/utils/operations.js');
 globalThis.__filterPickerProducts = pickerUtils.filterPickerProducts;
-globalThis.__availableCategoryOptions = pickerUtils.availableCategoryOptions;
+globalThis.__productCategoryOptions = pickerUtils.productCategoryOptions;
 globalThis.__pickerAvailabilityText = pickerUtils.pickerAvailabilityText;
 globalThis.__productCategoryLabel = pickerUtils.productCategoryLabel;
 
@@ -276,6 +276,33 @@ test('picker: modal con buscador, filtros y paginación en template', () => {
   assert.doesNotMatch(template, /<select v-model="line\.product_id"/);
 });
 
+test('picker: muestra las nueve categorías del dominio aunque no existan productos', async () => {
+  const view = setup({ products: [] });
+  await view.load();
+  assert.deepEqual(view.pickerCategoryOptions.value, [
+    { value: 'inverter', label: 'Inversor' },
+    { value: 'solar_panel', label: 'Panel solar' },
+    { value: 'smart_meter', label: 'Smart meter' },
+    { value: 'battery', label: 'Batería' },
+    { value: 'datalogger', label: 'Datalogger' },
+    { value: 'protection', label: 'Protección' },
+    { value: 'structure', label: 'Estructura' },
+    { value: 'cable', label: 'Cable' },
+    { value: 'other', label: 'Otros' },
+  ]);
+});
+
+test('picker: categoría vacía permanece visible y muestra estado vacío', async () => {
+  const view = setup({ products: catalog() });
+  await view.load();
+  view.openCreate();
+  view.openPickerForNew();
+  view.pickerCategory.value = 'battery';
+  assert.ok(view.pickerCategoryOptions.value.some(option => option.value === 'battery'));
+  assert.deepEqual(view.pickerResults.value, { results: [], total: 0 });
+  assert.equal(view.pickerEmptyMessage.value, 'No hay productos disponibles en esta categoría.');
+});
+
 test('picker: limita a 10 resultados y permite mostrar más', async () => {
   const manyProducts = Array.from({ length: 12 }, (_, index) => ({
     id: `product-${index}`,
@@ -321,10 +348,27 @@ test('picker: búsqueda y límite no reducen las categorías del catálogo compl
   view.openPickerForNew();
   view.pickerSearch.value = 'inversor';
   assert.equal(view.pickerResults.value.results.length, 10);
-  assert.deepEqual(view.pickerCategoryOptions.value, [
-    { value: 'battery', label: 'Batería' },
-    { value: 'inverter', label: 'Inversor' },
-  ]);
+  assert.equal(view.pickerCategoryOptions.value.length, 9);
+  assert.ok(view.pickerCategoryOptions.value.some(option => option.value === 'battery'));
+});
+
+test('picker: producto activo con stock cero sigue siendo seleccionable', async () => {
+  const product = {
+    id: PICK_PROD_Q,
+    name: 'Batería sin stock',
+    category: 'battery',
+    tracking_mode: 'quantity',
+    active: true,
+    availability: { available: '0' },
+  };
+  const view = setup({ products: [product] });
+  await view.load();
+  view.openCreate();
+  view.openPickerForNew();
+  view.pickerCategory.value = 'battery';
+  assert.deepEqual(view.pickerResults.value.results, [product]);
+  view.selectPickerProduct(product.id);
+  assert.equal(view.form.value.lines[0].product_id, product.id);
 });
 
 test('picker: agregar abre modal y seleccionar crea la línea', async () => {
