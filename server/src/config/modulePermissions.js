@@ -8,6 +8,7 @@ export const MODULE_PERMISSIONS = Object.freeze([
   'maintenance',
   'inventory',
   'reports',
+  'operations',
 ]);
 
 export function isKnownModule(value) {

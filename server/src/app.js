@@ -11,6 +11,7 @@ import usersRoutes from './routes/users.routes.js';
 import clientsRoutes from './routes/clients.routes.js';
 import maintenanceRoutes from './routes/maintenance.routes.js';
 import inventoryRoutes from './routes/inventory.routes.js';
+import operationsRoutes from './routes/operations.routes.js';
 import { requireAuth } from './middleware/auth.middleware.js';
 import { loadProfile } from './middleware/authorization.middleware.js';
 import { apiLimiter, sensitiveLimiter } from './middleware/rateLimit.middleware.js';
@@ -37,5 +38,6 @@ app.use('/api/users', usersRoutes);
 app.use('/api/clients', clientsRoutes);
 app.use('/api/maintenance', requireAuth, loadProfile, maintenanceRoutes);
 app.use('/api/inventory', requireAuth, loadProfile, inventoryRoutes);
+app.use('/api/operations', requireAuth, loadProfile, operationsRoutes);
 
 export default app;

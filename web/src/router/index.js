@@ -23,6 +23,8 @@ const router = createRouter({
     { path: '/maintenance/:id', name: 'maintenance-detail', component: () => import('../views/MaintenanceDetailView.vue') },
     { path: '/inventory', name: 'inventory', component: () => import('../views/InventoryView.vue') },
     { path: '/inventory/:id', name: 'inventory-detail', component: () => import('../views/InventoryDetailView.vue') },
+    { path: '/operations', name: 'operations', component: () => import('../views/OperationsView.vue') },
+    { path: '/operations/:id', name: 'operations-detail', component: () => import('../views/MaterialRequestDetailView.vue') },
   ],
 });
 
@@ -38,6 +40,8 @@ const routeModules = {
   'maintenance-detail': 'maintenance',
   inventory: 'inventory',
   'inventory-detail': 'inventory',
+  operations: 'operations',
+  'operations-detail': 'operations',
 };
 
 router.beforeEach(async to => {
