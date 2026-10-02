@@ -14,12 +14,12 @@ const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{1
 const categories = ['inverter', 'solar_panel', 'smart_meter', 'battery', 'datalogger',
   'protection', 'structure', 'cable', 'other'];
 const trackingModes = ['serialized', 'quantity'];
-const itemStatuses = ['available', 'assigned', 'installed', 'sold', 'written_off'];
+const itemStatuses = ['available', 'dispatched', 'assigned', 'installed', 'sold', 'written_off'];
 const movementTypes = ['in', 'assign', 'install', 'sell', 'return', 'write_off',
   'adjust_in', 'adjust_out'];
 const serializedTransitions = ['assign', 'install', 'return', 'sell', 'write_off'];
 const sourceStatuses = ['available', 'assigned', 'installed'];
-const summaryStatuses = ['available', 'assigned', 'installed', 'sold', 'written_off'];
+const summaryStatuses = ['available', 'dispatched', 'assigned', 'installed', 'sold', 'written_off'];
 
 function codedError(statusCode, message) {
   const error = new Error(message);
@@ -134,7 +134,10 @@ export function projectQuantityLedger(movements, { includeAvailable = true } = {
   for (const status of summaryStatuses) {
     if (balances[status].units < 0n) throw codedError(503, 'Ledger de inventario inconsistente');
   }
-  const physical = addDecimal(addDecimal(balances.available, balances.assigned), balances.installed);
+  const physical = addDecimal(
+    addDecimal(addDecimal(balances.available, balances.dispatched), balances.assigned),
+    balances.installed,
+  );
   return {
     ...Object.fromEntries(summaryStatuses.map(status => [status, decimalString(balances[status])])),
     physical_stock: decimalString(physical),
@@ -151,7 +154,7 @@ function serializedSummary(items, includeAvailable) {
   if (!includeAvailable) counts.available = 0;
   return {
     ...Object.fromEntries(summaryStatuses.map(status => [status, String(counts[status])])),
-    physical_stock: String(counts.available + counts.assigned + counts.installed),
+    physical_stock: String(counts.available + counts.dispatched + counts.assigned + counts.installed),
   };
 }
 

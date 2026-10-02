@@ -35,6 +35,7 @@ function decimalIsPositive(value) {
 const kpis = computed(() => ({
   products: products.value.length,
   available: products.value.filter(product => decimalIsPositive(product.summary?.available)).length,
+  dispatched: products.value.filter(product => decimalIsPositive(product.summary?.dispatched)).length,
   assigned: products.value.filter(product => decimalIsPositive(product.summary?.assigned)).length,
   installed: products.value.filter(product => decimalIsPositive(product.summary?.installed)).length,
   physical: products.value.filter(product => decimalIsPositive(product.summary?.physical_stock)).length,
@@ -175,6 +176,7 @@ onUnmounted(() => controller.abort());
     <section class="kpi-grid" aria-label="Resumen de inventario">
       <article class="card kpi"><span>Productos</span><strong>{{ kpis.products }}</strong><small>productos visibles</small></article>
       <article class="card kpi"><span>Disponible</span><strong>{{ kpis.available }}</strong><small>productos con saldo</small></article>
+      <article class="card kpi"><span>Despachado</span><strong>{{ kpis.dispatched }}</strong><small>salida operativa de almacén</small></article>
       <article class="card kpi"><span>Asignado</span><strong>{{ kpis.assigned }}</strong><small>productos con saldo</small></article>
       <article class="card kpi"><span>Instalado</span><strong>{{ kpis.installed }}</strong><small>productos con saldo</small></article>
       <article class="card kpi featured"><span>Stock físico</span><strong>{{ kpis.physical }}</strong><small>productos con existencia</small></article>
@@ -196,7 +198,7 @@ onUnmounted(() => controller.abort());
       <div v-else-if="!products.length" class="page-state">No hay productos para los filtros seleccionados.</div>
       <div v-else class="table-wrapper">
         <table>
-          <thead><tr><th>Producto</th><th>Categoría</th><th>Fabricante / Modelo</th><th>Control</th><th>Disponible</th><th>Asignado</th><th>Instalado</th><th>Stock físico</th><th>Estado</th><th>Acción</th></tr></thead>
+          <thead><tr><th>Producto</th><th>Categoría</th><th>Fabricante / Modelo</th><th>Control</th><th>Disponible</th><th>Despachado</th><th>Asignado</th><th>Instalado</th><th>Stock físico</th><th>Estado</th><th>Acción</th></tr></thead>
           <tbody>
             <tr v-for="product in products" :key="product.id">
               <td class="product-name"><strong>{{ product.name }}</strong><small>{{ product.unit }}</small></td>
@@ -204,6 +206,7 @@ onUnmounted(() => controller.abort());
               <td>{{ manufacturerModel(product) }}</td>
               <td><span class="badge control">{{ trackingLabel(product.tracking_mode) }}</span></td>
               <td>{{ formatDecimal(product.summary?.available) }}</td>
+              <td>{{ formatDecimal(product.summary?.dispatched) }}</td>
               <td>{{ formatDecimal(product.summary?.assigned) }}</td>
               <td>{{ formatDecimal(product.summary?.installed) }}</td>
               <td class="stock-cell">{{ formatDecimal(product.summary?.physical_stock) }}</td>

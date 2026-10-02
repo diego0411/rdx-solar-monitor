@@ -19,7 +19,7 @@ const categories = {
   structure: 'Estructura', cable: 'Cable', other: 'Otro',
 };
 const statusLabels = {
-  available: 'Disponible', assigned: 'Asignado', installed: 'Instalado',
+  available: 'Disponible', dispatched: 'Despachado', assigned: 'Asignado', installed: 'Instalado',
   sold: 'Vendido', written_off: 'Baja',
 };
 const movementLabels = {
@@ -384,6 +384,7 @@ onUnmounted(() => controller.abort());
 
       <section class="summary-grid">
         <article class="card summary-card"><span>Disponible</span><strong>{{ formatDecimal(summary.available) }}</strong><small>{{ product.unit }}</small></article>
+        <article class="card summary-card"><span>Despachado</span><strong>{{ formatDecimal(summary.dispatched) }}</strong><small>{{ product.unit }}</small></article>
         <article class="card summary-card"><span>Asignado</span><strong>{{ formatDecimal(summary.assigned) }}</strong><small>{{ product.unit }}</small></article>
         <article class="card summary-card"><span>Instalado</span><strong>{{ formatDecimal(summary.installed) }}</strong><small>{{ product.unit }}</small></article>
         <article class="card summary-card featured"><span>Stock físico</span><strong>{{ formatDecimal(summary.physical_stock) }}</strong><small>{{ product.unit }}</small></article>

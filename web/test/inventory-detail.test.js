@@ -427,3 +427,9 @@ test('404 y error genérico tienen estados separados', async () => {
   assert.equal(broken.notFound.value, false);
   assert.ok(broken.error.value);
 });
+
+test('detalle muestra Despachado sin acción manual de despacho', () => {
+  assert.match(source, /dispatched: 'Despachado'/);
+  assert.match(source, /summary\.dispatched/);
+  assert.doesNotMatch(source, /dispatch.*Despachar|Despachar.*dispatch/);
+});

@@ -43,12 +43,23 @@ test('rutas y navegación exponen Inventario', () => {
 
 test('KPIs cuentan productos con saldo sin sumar unidades incompatibles', async () => {
   const view = setup({ products: [
-    product({ id: 'a', summary: { available: '100000000000000000000.0001', assigned: '0', installed: '0', physical_stock: '100000000000000000000.0001' } }),
-    product({ id: 'b', tracking_mode: 'quantity', summary: { available: '2.5', assigned: '7', installed: '0.1', physical_stock: '9.6' } }),
+    product({ id: 'a', summary: { available: '100000000000000000000.0001', dispatched: '0', assigned: '0', installed: '0', physical_stock: '100000000000000000000.0001' } }),
+    product({ id: 'b', tracking_mode: 'quantity', summary: { available: '2.5', dispatched: '3', assigned: '7', installed: '0.1', physical_stock: '12.6' } }),
   ] });
   await view.loadProducts();
-  assert.deepEqual(view.kpis.value, { products: 2, available: 2, assigned: 1, installed: 1, physical: 2 });
+  assert.deepEqual(view.kpis.value, { products: 2, available: 2, dispatched: 1, assigned: 1, installed: 1, physical: 2 });
   assert.equal(view.formatDecimal('100000000000000000000.0001'), '100.000.000.000.000.000.000,0001');
+});
+
+test('tabla y KPIs muestran Despachado sin acción manual de despacho', async () => {
+  const template = readFileSync(new URL('../src/views/InventoryView.vue', import.meta.url), 'utf8');
+  assert.match(template, /Despachado/);
+  assert.match(template, /summary\?\.dispatched/);
+  const view = setup({ products: [
+    product({ id: 'a', summary: { available: '1', dispatched: '2', assigned: '0', installed: '0', physical_stock: '3' } }),
+  ] });
+  await view.loadProducts();
+  assert.equal(view.kpis.value.dispatched, 1);
 });
 
 test('solo rdx_admin tiene escritura y el alta conserva decimales como string', async () => {

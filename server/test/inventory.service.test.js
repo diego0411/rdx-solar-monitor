@@ -133,6 +133,7 @@ test('proyecta ledger quantity con precisión decimal y todas las operaciones', 
   }));
   assert.deepEqual(service.projectQuantityLedger(rows), {
     available: '5.2',
+    dispatched: '0',
     assigned: '1',
     installed: '1',
     sold: '2',
@@ -141,9 +142,41 @@ test('proyecta ledger quantity con precisión decimal y todas las operaciones', 
   });
 });
 
+test('ledger reconoce dispatch de Operations: available 6, dispatched 4, físico 10', () => {
+  const rows = [
+    { movement_type: 'in', quantity: '10', from_status: null, to_status: 'available' },
+    { movement_type: 'dispatch', quantity: '4', from_status: 'available', to_status: 'dispatched' },
+  ];
+  assert.deepEqual(service.projectQuantityLedger(rows), {
+    available: '6',
+    dispatched: '4',
+    assigned: '0',
+    installed: '0',
+    sold: '0',
+    written_off: '0',
+    physical_stock: '10',
+  });
+});
+
+test('sold y written_off siguen fuera del stock físico con dispatched presente', () => {
+  const rows = [
+    { movement_type: 'in', quantity: '10', from_status: null, to_status: 'available' },
+    { movement_type: 'dispatch', quantity: '3', from_status: 'available', to_status: 'dispatched' },
+    { movement_type: 'sell', quantity: '2', from_status: 'available', to_status: 'sold' },
+    { movement_type: 'write_off', quantity: '1', from_status: 'available', to_status: 'written_off' },
+  ];
+  const ledger = service.projectQuantityLedger(rows);
+  assert.equal(ledger.available, '4');
+  assert.equal(ledger.dispatched, '3');
+  assert.equal(ledger.sold, '2');
+  assert.equal(ledger.written_off, '1');
+  assert.equal(ledger.physical_stock, '7');
+});
+
 test('proyección scoped oculta available RDX y rechaza balances negativos', () => {
   assert.deepEqual(service.projectQuantityLedger(state.movements.slice(0, 2), { includeAvailable: false }), {
     available: '0',
+    dispatched: '0',
     assigned: '2.5',
     installed: '1.5',
     sold: '0',
@@ -161,6 +194,7 @@ test('ledger conserva numeric fuera de Number seguro y exige transporte textual'
     quantity: '9007199254740993.0000000000000001', from_status: null, to_status: 'available',
   }]), {
     available: '9007199254740993.0000000000000001',
+    dispatched: '0',
     assigned: '0',
     installed: '0',
     sold: '0',
@@ -182,6 +216,30 @@ test('rdx_admin lista catálogo global con filtros y summaries', async () => {
   assert.equal(products[0].summary.available, '1');
   assert.equal(products[0].summary.assigned, '1');
   assert.equal(products[0].summary.physical_stock, '3');
+});
+
+test('serialized con dispatched cuenta available 1, dispatched 1 y suma al físico', async () => {
+  state.items.push({
+    id: '77777777-7777-4777-8777-777777777777', product_id: PRODUCT_SERIALIZED,
+    serial_number: 'RDX-4', status: 'dispatched', client_id: null, plant_id: null,
+  });
+  const products = await service.getInventoryProducts(ADMIN, ADMIN_SCOPE, { search: 'uno' });
+  const serialized = products.find(product => product.id === PRODUCT_SERIALIZED);
+  assert.equal(serialized.summary.available, '1');
+  assert.equal(serialized.summary.dispatched, '1');
+  assert.equal(serialized.summary.physical_stock, '4');
+});
+
+test('GET products no falla ante dispatch quantity y expone dispatched', async () => {
+  state.movements.push(
+    { product_id: PRODUCT_QUANTITY, movement_type: 'in', quantity: '10', from_status: null, to_status: 'available', client_id: null, plant_id: null },
+    { product_id: PRODUCT_QUANTITY, movement_type: 'dispatch', quantity: '4', from_status: 'available', to_status: 'dispatched', client_id: null, plant_id: null },
+  );
+  const products = await service.getInventoryProducts(ADMIN, ADMIN_SCOPE, {});
+  const quantity = products.find(product => product.id === PRODUCT_QUANTITY);
+  assert.equal(quantity.summary.available, '0');
+  assert.equal(quantity.summary.dispatched, '4');
+  assert.equal(quantity.summary.physical_stock, '10');
 });
 
 test('client_admin y client_user solo ven productos y stock de su scope', async () => {
