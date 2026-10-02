@@ -41,6 +41,7 @@
   --rdx-space-8: 32px;
   --rdx-space-10: 40px;
   --rdx-transition: 180ms ease;
+  --rdx-topbar-height: 46px;
   font-family: Inter, "Segoe UI", system-ui, sans-serif;
   color: var(--rdx-text);
   background: var(--rdx-background);

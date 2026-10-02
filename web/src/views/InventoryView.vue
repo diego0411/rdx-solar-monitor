@@ -294,7 +294,7 @@ onUnmounted(() => controller.abort());
 .secondary-button { border: 1px solid var(--rdx-border); background: var(--rdx-surface); color: var(--rdx-text-strong); }
 button:disabled { opacity: .6; cursor: wait; }
 .notice { padding: 10px 14px; border-radius: var(--rdx-radius-sm); background: var(--rdx-success-soft); color: var(--rdx-success); font-size: 13px; }
-.inventory-sticky { position: sticky; top: 0; z-index: 20; background: var(--rdx-background); padding: 12px 0; }
+.inventory-sticky { position: sticky; top: var(--rdx-topbar-height, 46px); z-index: 20; background: var(--rdx-background); padding: 12px 0; }
 .kpi-grid { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 10px; }
 .kpi { display: grid; min-width: 0; padding: 9px 12px; }
 .kpi span { font-size: 11px; font-weight: 700; color: var(--rdx-text-muted); }
