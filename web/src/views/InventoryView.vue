@@ -3,6 +3,7 @@ import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
 import { getMyProfile } from '../services/api.js';
 import { createInventoryProduct, listInventoryProducts } from '../services/inventory.js';
 import { inventoryCategoryLabel as categoryLabel, inventoryCategoryLabels as categories } from '../utils/inventoryCategories.js';
+import { exportInventoryToExcel, downloadExcel } from '../utils/excelExport.js';
 const trackingLabels = { serialized: 'Serializado', quantity: 'Por cantidad' };
 
 const products = ref([]);
@@ -112,9 +113,25 @@ function clearFilters() {
   void loadProducts();
 }
 
+async function exportInventory() {
+  if (exporting.value || !filteredProducts.value.length) return;
+  exporting.value = true;
+  try {
+    const filtersToExport = { ...filters.value };
+    const { buffer, fileName } = await exportInventoryToExcel(filteredProducts.value, filtersToExport);
+    downloadExcel(buffer, fileName);
+  } catch (err) {
+    console.error('Error exportando inventario:', err);
+    notice.value = 'No se pudo generar el archivo Excel.';
+  } finally {
+    exporting.value = false;
+  }
+}
+
 const showCreate = ref(false);
 const saving = ref(false);
 const formError = ref('');
+const exporting = ref(false);
 
 function emptyProduct() {
   return {
@@ -202,7 +219,13 @@ onUnmounted(() => controller.abort());
         <h1>Inventario</h1>
         <p>Control de equipos, materiales y asignaciones.</p>
       </div>
-      <button v-if="canWrite" class="primary-button" type="button" @click="openCreate">+ Nuevo producto</button>
+      <div class="header-actions">
+        <button v-if="!filteredProducts.length" class="secondary-button" type="button" :disabled="exporting || !filteredProducts.length" @click="exportInventory">
+          <span v-if="exporting">Generando…</span>
+          <span v-else>Exportar Excel</span>
+        </button>
+        <button v-if="canWrite" class="primary-button" type="button" @click="openCreate">+ Nuevo producto</button>
+      </div>
     </header>
 
     <p v-if="notice" class="notice" role="status">{{ notice }}</p>

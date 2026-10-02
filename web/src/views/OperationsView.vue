@@ -5,6 +5,7 @@ import SearchableSelect from '../components/SearchableSelect.vue';
 import { apiFetch, getMyProfile } from '../services/api.js';
 import { createRequest, listClients, listProducts, listRequests } from '../services/operations.js';
 import { buildCreatePayload, canCreateRequest, destinationDisplay, destinationTypeLabels, destinationTypes, filterPickerProducts, pickerAvailabilityText, priorityLabel, productCategoryLabel, productCategoryOptions, reasonAllowsPlant, reasonLabel, reasonLabels, requestPriorities, requestReasons, statusLabel } from '../utils/operations.js';
+import { exportOperationsToExcel, downloadExcel } from '../utils/excelExport.js';
 
 const router = useRouter();
 
@@ -31,6 +32,7 @@ const controller = new AbortController();
 const showForm = ref(false);
 const formSaving = ref(false);
 const formError = ref('');
+const exporting = ref(false);
 
 function emptyLine() {
   return { product_id: '', requested_quantity: '1', observations: '' };
@@ -114,6 +116,28 @@ const filtered = computed(() => requests.value.filter(request => {
   if (dateTo.value && (!day || day > dateTo.value)) return false;
   return true;
 }));
+
+async function exportOperations() {
+  if (exporting.value || !filtered.value.length) return;
+  exporting.value = true;
+  try {
+    const filtersToExport = {
+      status: statusFilter.value,
+      priority: priorityFilter.value,
+      reason: reasonFilter.value,
+      plant: plantFilter.value,
+      dateFrom: dateFrom.value,
+      dateTo: dateTo.value,
+    };
+    const { buffer, fileName } = await exportOperationsToExcel(filtered.value, filtersToExport);
+    downloadExcel(buffer, fileName);
+  } catch (err) {
+    console.error('Error exportando solicitudes:', err);
+    notice.value = 'No se pudo generar el archivo Excel.';
+  } finally {
+    exporting.value = false;
+  }
+}
 
 function requesterName(request) {
   return request.requester?.display_name?.trim() || 'Sin datos';
@@ -372,7 +396,13 @@ onUnmounted(() => controller.abort());
           Solicitudes de materiales y preparación de almacén.
         </p>
       </div>
-      <button v-if="canCreate" class="primary-button" type="button" @click="openCreate">Nueva solicitud</button>
+      <div class="header-actions">
+        <button v-if="!filtered.length" class="secondary-button" type="button" :disabled="exporting || !filtered.length" @click="exportOperations">
+          <span v-if="exporting">Generando…</span>
+          <span v-else>Exportar Excel</span>
+        </button>
+        <button v-if="canCreate" class="primary-button" type="button" @click="openCreate">Nueva solicitud</button>
+      </div>
     </header>
 
     <p v-if="notice" class="notice" role="status">{{ notice }}</p>
