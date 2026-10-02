@@ -33,7 +33,6 @@ function setup({
     availableCategoryOptions: (...args) => globalThis.__availableCategoryOptions(...args),
     pickerAvailabilityText: (...args) => globalThis.__pickerAvailabilityText(...args),
     productCategoryLabel: (...args) => globalThis.__productCategoryLabel(...args),
-    productTypeLabel: (...args) => globalThis.__productTypeLabel(...args),
     reasonAllowsPlant: (...args) => globalThis.__reasonAllowsPlant(...args),
     priorityLabel: priority => ({ low: 'Baja', normal: 'Normal', high: 'Alta', urgent: 'Urgente' }[priority] ?? priority),
     reasonLabel: reason => reason,
@@ -55,7 +54,6 @@ globalThis.__filterPickerProducts = pickerUtils.filterPickerProducts;
 globalThis.__availableCategoryOptions = pickerUtils.availableCategoryOptions;
 globalThis.__pickerAvailabilityText = pickerUtils.pickerAvailabilityText;
 globalThis.__productCategoryLabel = pickerUtils.productCategoryLabel;
-globalThis.__productTypeLabel = pickerUtils.productTypeLabel;
 
 function request(overrides = {}) {
   return {
@@ -267,6 +265,11 @@ test('picker: modal con buscador, filtros y paginación en template', () => {
   assert.match(template, /Seleccionar material/);
   assert.match(template, /Buscar por nombre, fabricante o modelo/);
   assert.doesNotMatch(template, /Buscar por nombre, código/);
+  assert.match(template, /<span>Categoría<\/span>/);
+  assert.doesNotMatch(template, /pickerTrackingMode/);
+  assert.doesNotMatch(template, /<span>Tipo<\/span>/);
+  assert.doesNotMatch(template, />Por cantidad</);
+  assert.doesNotMatch(template, />Serializado</);
   assert.match(template, /Mostrar más/);
   assert.match(template, /Escribe para buscar un material o utiliza los filtros\./);
   assert.match(template, /Cambiar material/);
@@ -312,6 +315,21 @@ test('picker: agregar abre modal y seleccionar crea la línea', async () => {
   assert.equal(view.form.value.lines.length, 1);
   assert.equal(view.form.value.lines[0].product_id, PROD_S);
   assert.ok(view.productById(PROD_S));
+});
+
+test('picker: quantity y serialized crean líneas solicitadas por cantidad', async () => {
+  for (const productId of [PROD_S, PICK_PROD_Q]) {
+    const view = setup({ products: catalog() });
+    await view.load();
+    view.openCreate();
+    view.openPickerForNew();
+    view.selectPickerProduct(productId);
+    assert.deepEqual(view.form.value.lines, [{
+      product_id: productId,
+      requested_quantity: '1',
+      observations: '',
+    }]);
+  }
 });
 
 test('picker: cancelar no crea línea vacía', async () => {
@@ -373,9 +391,6 @@ test('picker: excluye ya agregados e inactivos; filtra y pagina', async () => {
 
   view.pickerSearch.value = '';
   view.pickerCategory.value = 'all';
-  view.pickerTrackingMode.value = 'serialized';
-  assert.deepEqual(view.pickerResults.value.results.map(product => product.id), []);
-  view.pickerTrackingMode.value = 'all';
   view.pickerCategory.value = 'cable';
   assert.deepEqual(view.pickerResults.value.results.map(product => product.id), [PICK_PROD_Q]);
 });

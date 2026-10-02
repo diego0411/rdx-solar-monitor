@@ -21,7 +21,6 @@ import {
   priorityLabel,
   productCategoryLabel,
   productMatchesSearch,
-  productTypeLabel,
   reasonAllowsPlant,
   reasonLabel,
   statusLabel,
@@ -312,7 +311,7 @@ test('picker: búsqueda case-insensitive por nombre, fabricante o modelo', () =>
   assert.equal(productMatchesSearch(cable, 'cable panel'), false);
 });
 
-test('picker: categorías reales, tipos y disponibilidad informativa', () => {
+test('picker: categorías reales y disponibilidad uniforme', () => {
   assert.deepEqual(
     availableCategoryOptions(pickCatalog()),
     [
@@ -322,10 +321,8 @@ test('picker: categorías reales, tipos y disponibilidad informativa', () => {
     ],
   );
   assert.equal(productCategoryLabel('inverter'), 'Inversor');
-  assert.equal(productTypeLabel('serialized'), 'Serializado');
-  assert.equal(productTypeLabel('quantity'), 'Por cantidad');
   const [inverter, cable] = pickCatalog();
-  assert.equal(pickerAvailabilityText(inverter), 'Equipos disponibles: 3');
+  assert.equal(pickerAvailabilityText(inverter), 'Disponible: 3');
   assert.equal(pickerAvailabilityText(cable), 'Disponible: 42');
   assert.equal(pickerAvailabilityText({}), 'Disponibilidad no disponible');
 });
@@ -349,8 +346,16 @@ test('picker: filtra inactivos/duplicados y pagina sin render masivo', () => {
 
   const byCategory = filterPickerProducts(all, { category: 'cable' });
   assert.deepEqual(byCategory.results.map(product => product.id), [PICK_B]);
-  const byType = filterPickerProducts(all, { trackingMode: 'serialized' });
-  assert.deepEqual(byType.results.map(product => product.id), [PICK_A]);
   const bySearch = filterPickerProducts(all, { search: 'topcable' });
   assert.deepEqual(bySearch.results.map(product => product.id), [PICK_B]);
+});
+
+test('picker: quantity y serialized aparecen juntos por búsqueda y categoría', () => {
+  const [serialized, quantity] = pickCatalog();
+  const products = [
+    { ...serialized, name: 'Kit Solar Serial', category: 'other' },
+    { ...quantity, name: 'Kit Solar Cantidad', category: 'other' },
+  ];
+  const matched = filterPickerProducts(products, { search: 'kit solar', category: 'other' });
+  assert.deepEqual(matched.results.map(product => product.id), [PICK_A, PICK_B]);
 });

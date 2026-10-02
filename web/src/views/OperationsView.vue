@@ -4,7 +4,7 @@ import { useRouter } from 'vue-router';
 import SearchableSelect from '../components/SearchableSelect.vue';
 import { apiFetch, getMyProfile } from '../services/api.js';
 import { createRequest, listClients, listProducts, listRequests } from '../services/operations.js';
-import { buildCreatePayload, canCreateRequest, destinationDisplay, destinationTypeLabels, destinationTypes, filterPickerProducts, availableCategoryOptions, pickerAvailabilityText, priorityLabel, productCategoryLabel, productTypeLabel, reasonAllowsPlant, reasonLabel, reasonLabels, requestPriorities, requestReasons, statusLabel } from '../utils/operations.js';
+import { buildCreatePayload, canCreateRequest, destinationDisplay, destinationTypeLabels, destinationTypes, filterPickerProducts, availableCategoryOptions, pickerAvailabilityText, priorityLabel, productCategoryLabel, reasonAllowsPlant, reasonLabel, reasonLabels, requestPriorities, requestReasons, statusLabel } from '../utils/operations.js';
 
 const router = useRouter();
 
@@ -208,7 +208,6 @@ const showPicker = ref(false);
 const pickerTarget = ref(null);
 const pickerSearch = ref('');
 const pickerCategory = ref('all');
-const pickerTrackingMode = ref('all');
 const pickerLimit = ref(10);
 const pickerSearchInput = ref(null);
 
@@ -226,7 +225,6 @@ const pickerExcludeIds = computed(() => {
 const pickerHasCriteria = computed(() => (
   pickerSearch.value.trim() !== ''
   || pickerCategory.value !== 'all'
-  || pickerTrackingMode.value !== 'all'
 ));
 
 const pickerResults = computed(() => {
@@ -234,7 +232,6 @@ const pickerResults = computed(() => {
   return filterPickerProducts(products.value, {
     search: pickerSearch.value,
     category: pickerCategory.value,
-    trackingMode: pickerTrackingMode.value,
     excludeIds: pickerExcludeIds.value,
     limit: pickerLimit.value,
   });
@@ -248,7 +245,6 @@ function openPickerForNew() {
   pickerTarget.value = null;
   pickerSearch.value = '';
   pickerCategory.value = 'all';
-  pickerTrackingMode.value = 'all';
   pickerLimit.value = 10;
   showPicker.value = true;
   void nextTick(() => pickerSearchInput.value?.focus());
@@ -258,7 +254,6 @@ function openPickerForLine(index) {
   pickerTarget.value = index;
   pickerSearch.value = '';
   pickerCategory.value = 'all';
-  pickerTrackingMode.value = 'all';
   pickerLimit.value = 10;
   showPicker.value = true;
   void nextTick(() => pickerSearchInput.value?.focus());
@@ -641,14 +636,6 @@ onUnmounted(() => controller.abort());
               </option>
             </select>
           </label>
-          <label>
-            <span>Tipo</span>
-            <select v-model="pickerTrackingMode">
-              <option value="all">Todos</option>
-              <option value="quantity">Por cantidad</option>
-              <option value="serialized">Serializado</option>
-            </select>
-          </label>
         </div>
         <p v-if="pickerHasCriteria" class="hint" role="status">
           {{ pickerResults.total }} resultado(s). La disponibilidad es informativa.
@@ -662,7 +649,7 @@ onUnmounted(() => controller.abort());
               <strong>{{ product.name }}</strong>
               <p class="line-sub">{{ [product.manufacturer, product.model].filter(Boolean).join(' · ') || 'Sin fabricante/modelo' }}</p>
               <p class="line-sub">
-                {{ productCategoryLabel(product.category) }} · {{ productTypeLabel(product.tracking_mode) }} · {{ pickerAvailabilityText(product) }}
+                {{ productCategoryLabel(product.category) }} · {{ pickerAvailabilityText(product) }}
               </p>
             </div>
             <button class="secondary-button" type="button" @click="selectPickerProduct(product.id)">

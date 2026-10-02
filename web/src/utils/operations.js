@@ -56,17 +56,8 @@ export const productCategoryLabels = {
   other: 'Otro',
 };
 
-export const productTypeLabels = {
-  quantity: 'Por cantidad',
-  serialized: 'Serializado',
-};
-
 export function productCategoryLabel(category) {
   return productCategoryLabels[category] ?? category ?? '—';
-}
-
-export function productTypeLabel(trackingMode) {
-  return productTypeLabels[trackingMode] ?? trackingMode ?? '—';
 }
 
 // Límite inicial de resultados del selector (no renderizar cientos).
@@ -100,7 +91,7 @@ export function pickerAvailabilityText(product = {}) {
   const availability = product?.availability;
   if (!availability) return 'Disponibilidad no disponible';
   if (product.tracking_mode === 'serialized') {
-    return `Equipos disponibles: ${availability.available_count ?? '—'}`;
+    return `Disponible: ${availability.available_count ?? '—'}`;
   }
   return `Disponible: ${availability.available ?? '—'}`;
 }
@@ -111,7 +102,6 @@ export function filterPickerProducts(products = [], filters = {}) {
   const {
     search = '',
     category = 'all',
-    trackingMode = 'all',
     excludeIds = [],
     limit = PRODUCT_PICKER_PAGE_SIZE,
   } = filters ?? {};
@@ -121,7 +111,6 @@ export function filterPickerProducts(products = [], filters = {}) {
     if (product.active === false) return false;
     if (excluded.has(product.id)) return false;
     if (category !== 'all' && product.category !== category) return false;
-    if (trackingMode !== 'all' && product.tracking_mode !== trackingMode) return false;
     return productMatchesSearch(product, search);
   });
   const safeLimit = Number.isFinite(limit) && limit > 0 ? Math.floor(limit) : PRODUCT_PICKER_PAGE_SIZE;
