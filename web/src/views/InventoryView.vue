@@ -220,7 +220,7 @@ onUnmounted(() => controller.abort());
         <p>Control de equipos, materiales y asignaciones.</p>
       </div>
       <div class="header-actions">
-        <button v-if="!filteredProducts.length" class="secondary-button" type="button" :disabled="exporting || !filteredProducts.length" @click="exportInventory">
+        <button class="secondary-button" type="button" :disabled="exporting || !filteredProducts.length" @click="exportInventory">
           <span v-if="exporting">Generando…</span>
           <span v-else>Exportar Excel</span>
         </button>

@@ -397,7 +397,7 @@ onUnmounted(() => controller.abort());
         </p>
       </div>
       <div class="header-actions">
-        <button v-if="!filtered.length" class="secondary-button" type="button" :disabled="exporting || !filtered.length" @click="exportOperations">
+        <button class="secondary-button" type="button" :disabled="exporting || !filtered.length" @click="exportOperations">
           <span v-if="exporting">Generando…</span>
           <span v-else>Exportar Excel</span>
         </button>
