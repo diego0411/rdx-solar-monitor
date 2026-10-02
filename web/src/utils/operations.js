@@ -67,6 +67,7 @@ export const PRODUCT_PICKER_PAGE_SIZE = 10;
 export function availableCategoryOptions(products = []) {
   const seen = new Set();
   for (const product of products ?? []) {
+    if (product?.active === false) continue;
     if (typeof product?.category === 'string' && product.category !== '') seen.add(product.category);
   }
   return [...seen]
@@ -97,7 +98,7 @@ export function pickerAvailabilityText(product = {}) {
 }
 
 // Filtra el catálogo del selector: oculta inactivos y ya agregados,
-// aplica búsqueda/categoría/tipo y pagina el renderizado.
+// aplica búsqueda/categoría y pagina el renderizado.
 export function filterPickerProducts(products = [], filters = {}) {
   const {
     search = '',

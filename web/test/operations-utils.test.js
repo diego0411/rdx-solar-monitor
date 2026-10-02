@@ -317,7 +317,6 @@ test('picker: categorías reales y disponibilidad uniforme', () => {
     [
       { value: 'cable', label: 'Cable' },
       { value: 'inverter', label: 'Inversor' },
-      { value: 'solar_panel', label: 'Panel solar' },
     ],
   );
   assert.equal(productCategoryLabel('inverter'), 'Inversor');
@@ -358,4 +357,28 @@ test('picker: quantity y serialized aparecen juntos por búsqueda y categoría',
   ];
   const matched = filterPickerProducts(products, { search: 'kit solar', category: 'other' });
   assert.deepEqual(matched.results.map(product => product.id), [PICK_A, PICK_B]);
+});
+
+test('picker: categorías usan todo el catálogo activo, incluso stock cero y categorías nuevas', () => {
+  const products = [
+    ...pickCatalog(),
+    {
+      id: 'dddddddd-dddd-4ddd-8ddd-dddddddddddd', name: 'Batería sin stock',
+      category: 'battery', tracking_mode: 'quantity', active: true,
+      availability: { available: '0', physical_stock: '0' },
+    },
+    {
+      id: 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee', name: 'Categoría futura',
+      category: 'mounting_kit', tracking_mode: 'quantity', active: true,
+      availability: { available: '0', physical_stock: '0' },
+    },
+  ];
+  const options = availableCategoryOptions(products);
+  assert.deepEqual(options, [
+    { value: 'battery', label: 'Batería' },
+    { value: 'cable', label: 'Cable' },
+    { value: 'inverter', label: 'Inversor' },
+    { value: 'mounting_kit', label: 'mounting_kit' },
+  ]);
+  assert.ok(!options.some(option => option.value === 'solar_panel'));
 });

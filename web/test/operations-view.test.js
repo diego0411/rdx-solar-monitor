@@ -298,6 +298,35 @@ test('picker: limita a 10 resultados y permite mostrar más', async () => {
   assert.equal(view.pickerResults.value.results.length, 12);
 });
 
+test('picker: búsqueda y límite no reducen las categorías del catálogo completo', async () => {
+  const products = Array.from({ length: 11 }, (_, index) => ({
+    id: `product-${index}`,
+    name: `Inversor ${index}`,
+    category: 'inverter',
+    tracking_mode: 'quantity',
+    active: true,
+    availability: { available: '1' },
+  }));
+  products.push({
+    id: 'zero-stock-battery',
+    name: 'Batería sin stock',
+    category: 'battery',
+    tracking_mode: 'quantity',
+    active: true,
+    availability: { available: '0' },
+  });
+  const view = setup({ products });
+  await view.load();
+  view.openCreate();
+  view.openPickerForNew();
+  view.pickerSearch.value = 'inversor';
+  assert.equal(view.pickerResults.value.results.length, 10);
+  assert.deepEqual(view.pickerCategoryOptions.value, [
+    { value: 'battery', label: 'Batería' },
+    { value: 'inverter', label: 'Inversor' },
+  ]);
+});
+
 test('picker: agregar abre modal y seleccionar crea la línea', async () => {
   const view = setup({ products: catalog() });
   await view.load();
