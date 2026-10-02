@@ -72,6 +72,7 @@ async function logout() {
           <svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M18 9a6 6 0 0 0-12 0c0 7-3 7-3 8h18c0-1-3-1-3-8ZM9.5 20h5" /></svg>
           <span>Alarmas</span>
         </RouterLink>
+        <p class="nav-heading">Operaciones</p>
         <RouterLink v-if="canSee('maintenance')" to="/maintenance" class="nav-link" active-class="is-active">
           <svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M14.7 6.3a4.5 4.5 0 0 0-6 6L3 18l3 3 5.7-5.7a4.5 4.5 0 0 0 6-6L14 13l-3-3 3.7-3.7Z" /></svg>
           <span>Mantenimiento</span>
@@ -82,7 +83,7 @@ async function logout() {
         </RouterLink>
         <RouterLink v-if="canSee('operations')" to="/operations" class="nav-link" active-class="is-active">
           <svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 8V6h16v2m-16 0h16v9l-2 4H6l-2-4V8Zm4 3h8" /></svg>
-          <span>Operaciones</span>
+          <span>Solicitudes de materiales</span>
         </RouterLink>
         <template v-if="showUsers">
           <p class="nav-heading nav-heading-admin">Administración</p>

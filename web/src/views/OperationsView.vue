@@ -367,7 +367,7 @@ onUnmounted(() => controller.abort());
     <header class="page-header operations-header">
       <div>
         <p class="eyebrow">RDX SOLAR MONITOR</p>
-        <h1>Operaciones</h1>
+        <h1>Solicitudes de materiales</h1>
         <p class="page-description">
           Solicitudes de materiales y preparación de almacén.
         </p>
