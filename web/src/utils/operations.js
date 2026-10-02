@@ -43,6 +43,127 @@ export const requestReasons = Object.keys(reasonLabels);
 export const requestPriorities = Object.keys(priorityLabels);
 export const requestStatuses = Object.keys(requestStatusLabels);
 
+// Categorías reales de inventory_products (mismas etiquetas que inventario).
+export const productCategoryLabels = {
+  inverter: 'Inversor',
+  solar_panel: 'Panel solar',
+  smart_meter: 'Smart meter',
+  battery: 'Batería',
+  datalogger: 'Datalogger',
+  protection: 'Protección',
+  structure: 'Estructura',
+  cable: 'Cable',
+  other: 'Otro',
+};
+
+export const productTypeLabels = {
+  quantity: 'Por cantidad',
+  serialized: 'Serializado',
+};
+
+export function productCategoryLabel(category) {
+  return productCategoryLabels[category] ?? category ?? '—';
+}
+
+export function productTypeLabel(trackingMode) {
+  return productTypeLabels[trackingMode] ?? trackingMode ?? '—';
+}
+
+// Límite inicial de resultados del selector (no renderizar cientos).
+export const PRODUCT_PICKER_PAGE_SIZE = 20;
+
+// Categorías presentes en los datos cargados, etiquetadas y ordenadas.
+export function availableCategoryOptions(products = []) {
+  const seen = new Set();
+  for (const product of products ?? []) {
+    if (typeof product?.category === 'string' && product.category !== '') seen.add(product.category);
+  }
+  return [...seen]
+    .map(value => ({ value, label: productCategoryLabel(value) }))
+    .sort((a, b) => a.label.localeCompare(b.label, 'es'));
+}
+
+// Búsqueda case-insensitive por nombre, fabricante o modelo (el modelo
+// actúa como código). Multi-término con AND.
+export function productMatchesSearch(product = {}, search = '') {
+  const query = String(search ?? '').trim().toLowerCase();
+  if (query === '') return true;
+  const haystack = [product?.name, product?.manufacturer, product?.model]
+    .filter(value => typeof value === 'string')
+    .join(' ')
+    .toLowerCase();
+  return query.split(/\s+/).every(token => haystack.includes(token));
+}
+
+// Disponibilidad informativa por tipo (no reserva stock).
+export function pickerAvailabilityText(product = {}) {
+  const availability = product?.availability;
+  if (!availability) return 'Disponibilidad no disponible';
+  if (product.tracking_mode === 'serialized') {
+    return `Equipos disponibles: ${availability.available_count ?? '—'}`;
+  }
+  return `Disponible: ${availability.available ?? '—'}`;
+}
+
+// Filtra el catálogo del selector: oculta inactivos y ya agregados,
+// aplica búsqueda/categoría/tipo y pagina el renderizado.
+export function filterPickerProducts(products = [], filters = {}) {
+  const {
+    search = '',
+    category = 'all',
+    trackingMode = 'all',
+    excludeIds = [],
+    limit = PRODUCT_PICKER_PAGE_SIZE,
+  } = filters ?? {};
+  const excluded = new Set(excludeIds ?? []);
+  const matched = (products ?? []).filter(product => {
+    if (!product || typeof product.id !== 'string') return false;
+    if (product.active === false) return false;
+    if (excluded.has(product.id)) return false;
+    if (category !== 'all' && product.category !== category) return false;
+    if (trackingMode !== 'all' && product.tracking_mode !== trackingMode) return false;
+    return productMatchesSearch(product, search);
+  });
+  const safeLimit = Number.isFinite(limit) && limit > 0 ? Math.floor(limit) : PRODUCT_PICKER_PAGE_SIZE;
+  return { results: matched.slice(0, safeLimit), total: matched.length };
+}
+
+// Motivos que admiten planta asociada. Para el resto, plant_id se
+// normaliza a NULL (el backend también lo fuerza).
+export const plantReasons = ['maintenance', 'warranty', 'replacement'];
+
+export function reasonAllowsPlant(reason) {
+  return plantReasons.includes(reason);
+}
+
+export const destinationTypeLabels = {
+  client: 'Cliente',
+  other: 'Otro',
+};
+
+export const destinationTypes = Object.keys(destinationTypeLabels);
+
+export function destinationTypeLabel(type) {
+  return destinationTypeLabels[type] ?? type ?? 'Sin datos';
+}
+
+// Normaliza el destino para listado y detalle. Nunca infiere cliente
+// desde planta: solo usa destination_client y destination tal cual.
+export function destinationDisplay(request = {}) {
+  const rawName = request?.destination_client?.name;
+  const clientName = typeof rawName === 'string' && rawName.trim() !== '' ? rawName.trim() : null;
+  const rawDestination = request?.destination;
+  const reference = typeof rawDestination === 'string' && rawDestination.trim() !== ''
+    ? rawDestination.trim()
+    : null;
+  return {
+    clientName,
+    reference,
+    primary: clientName ?? reference ?? '—',
+    secondary: clientName && reference ? reference : null,
+  };
+}
+
 const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export function statusLabel(status) {
@@ -170,15 +291,36 @@ export function buildCreatePayload(form = {}) {
     payloadLines.push(entry);
   }
   const payload = { reason: form.reason, priority: form.priority, lines: payloadLines };
-  if (form.plant_id !== undefined && form.plant_id !== null && form.plant_id !== '') {
-    if (typeof form.plant_id !== 'string' || !uuidPattern.test(form.plant_id.trim())) {
-      return { error: 'La planta seleccionada no es válida.' };
+  if (reasonAllowsPlant(form.reason)) {
+    if (form.plant_id !== undefined && form.plant_id !== null && form.plant_id !== '') {
+      if (typeof form.plant_id !== 'string' || !uuidPattern.test(form.plant_id.trim())) {
+        return { error: 'La planta seleccionada no es válida.' };
+      }
+      payload.plant_id = form.plant_id.trim().toLowerCase();
     }
-    payload.plant_id = form.plant_id.trim().toLowerCase();
   }
-  const destination = optionalText(form.destination, 400);
-  if (destination === undefined) return { error: 'El destino es demasiado largo.' };
-  if (destination !== null) payload.destination = destination;
+  const destinationType = form.destination_type === undefined || form.destination_type === null
+    || form.destination_type === '' ? 'client' : form.destination_type;
+  if (!destinationTypes.includes(destinationType)) return { error: 'Selecciona un tipo de destino válido.' };
+  if (destinationType === 'client') {
+    if (form.destination_client_id === undefined || form.destination_client_id === null
+      || form.destination_client_id === '') {
+      return { error: 'Selecciona el cliente destino.' };
+    }
+    if (typeof form.destination_client_id !== 'string'
+      || !uuidPattern.test(form.destination_client_id.trim())) {
+      return { error: 'El cliente destino seleccionado no es válido.' };
+    }
+    payload.destination_client_id = form.destination_client_id.trim().toLowerCase();
+    const reference = optionalText(form.destination, 400);
+    if (reference === undefined) return { error: 'El lugar de entrega es demasiado largo.' };
+    if (reference !== null) payload.destination = reference;
+  } else {
+    const destination = optionalText(form.destination, 400);
+    if (destination === undefined) return { error: 'El destino es demasiado largo.' };
+    if (destination === null) return { error: 'Indica el destino de la solicitud.' };
+    payload.destination = destination;
+  }
   if (form.required_at !== undefined && form.required_at !== null && form.required_at !== '') {
     if (typeof form.required_at !== 'string' || !Number.isFinite(Date.parse(form.required_at))) {
       return { error: 'La fecha requerida no es válida.' };

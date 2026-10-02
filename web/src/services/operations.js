@@ -26,6 +26,10 @@ export function listProducts(options = {}) {
   return apiFetch('/operations/products', { signal: options.signal });
 }
 
+export function listClients(options = {}) {
+  return apiFetch('/operations/clients', { signal: options.signal });
+}
+
 export function getRequest(id, options = {}) {
   return apiFetch(`/operations/requests/${encodeURIComponent(id)}`, { signal: options.signal });
 }

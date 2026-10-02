@@ -6,10 +6,13 @@ import {
   listInventoryProducts,
 } from '../repositories/inventory.repository.js';
 import {
+  getDestinationClientById,
   getMaterialRequestById,
   getRequestLine,
   listActiveReservedItemIds,
   listAvailableSerials as listAvailableSerialsRepo,
+  listDestinationClients as listDestinationClientsRepo,
+  listDestinationClientsByIds,
   listInventoryItemsByIds,
   listMaterialRequests as listMaterialRequestsRepo,
   listPlantsByIds,
@@ -34,6 +37,9 @@ const priorities = ['low', 'normal', 'high', 'urgent'];
 const statuses = ['requested', 'received', 'preparing', 'ready', 'delivered', 'rejected', 'cancelled'];
 const transitionTargets = ['received', 'preparing', 'ready', 'rejected'];
 const warehouseRoles = ['rdx_admin', 'client_admin'];
+// Motivos que admiten planta asociada. Para el resto, plant_id se
+// normaliza a NULL (sin error por valores stale del frontend).
+const plantReasons = ['maintenance', 'warranty', 'replacement'];
 
 function codedError(statusCode, message) {
   const error = new Error(message);
@@ -189,7 +195,7 @@ function cleanListFilters(filters = {}) {
   return clean;
 }
 
-function summarizeRequest(request, { requesterName, plantName, lineCount, requestedTotal, requestedUnit }) {
+function summarizeRequest(request, { requesterName, plantName, destinationClientName, lineCount, requestedTotal, requestedUnit }) {
   return {
     id: request.id,
     code: request.code,
@@ -197,6 +203,10 @@ function summarizeRequest(request, { requesterName, plantName, lineCount, reques
     reason: request.reason,
     priority: request.priority,
     destination: request.destination,
+    destination_client_id: request.destination_client_id ?? null,
+    destination_client: request.destination_client_id
+      ? { id: request.destination_client_id, name: destinationClientName }
+      : null,
     required_at: request.required_at,
     requested_by: request.requested_by,
     requester: { id: request.requested_by, display_name: requesterName },
@@ -219,15 +229,18 @@ export async function listMaterialRequests(profile, filters = {}) {
     throw mapOperationsDatabaseError(error);
   });
   const ids = requests.map(request => request.id);
-  const [profiles, plants, lines] = await Promise.all([
+  const [profiles, plants, lines, destinationClients] = await Promise.all([
     listRequesterProfiles(requests.map(request => request.requested_by))
       .catch(error => { throw mapOperationsDatabaseError(error); }),
     listPlantsByIds(requests.map(request => request.plant_id))
       .catch(error => { throw mapOperationsDatabaseError(error); }),
     listRequestLinesByRequestIds(ids).catch(error => { throw mapOperationsDatabaseError(error); }),
+    listDestinationClientsByIds(requests.map(request => request.destination_client_id))
+      .catch(error => { throw mapOperationsDatabaseError(error); }),
   ]);
   const requesterById = new Map(profiles.map(row => [row.id, row.display_name ?? null]));
   const plantById = new Map(plants.map(row => [row.id, row.name ?? null]));
+  const destinationClientById = new Map(destinationClients.map(row => [row.id, row.name ?? null]));
   const productUnits = new Map();
   const productIds = [...new Set(lines.map(line => line.product_id))];
   if (productIds.length > 0) {
@@ -259,6 +272,9 @@ export async function listMaterialRequests(profile, filters = {}) {
     return summarizeRequest(request, {
       requesterName: requesterById.get(request.requested_by) ?? null,
       plantName: request.plant_id ? plantById.get(request.plant_id) ?? null : null,
+      destinationClientName: request.destination_client_id
+        ? destinationClientById.get(request.destination_client_id) ?? null
+        : null,
       lineCount: requestLines.length,
       requestedTotal,
       requestedUnit,
@@ -302,13 +318,16 @@ export async function getMaterialRequestDetail(profile, id) {
   const serialById = new Map(serials.map(item => [item.id, item]));
   let requesterName = null;
   let plantName = null;
+  let destinationClientName = null;
   try {
-    const [profiles, plants] = await Promise.all([
+    const [profiles, plants, destinationClients] = await Promise.all([
       listRequesterProfiles([request.requested_by]),
       listPlantsByIds([request.plant_id]),
+      listDestinationClientsByIds([request.destination_client_id]),
     ]);
     requesterName = profiles[0]?.display_name ?? null;
     plantName = plants[0]?.name ?? null;
+    destinationClientName = destinationClients[0]?.name ?? null;
   } catch (error) {
     throw mapOperationsDatabaseError(error);
   }
@@ -317,6 +336,9 @@ export async function getMaterialRequestDetail(profile, id) {
       ...request,
       requester: { id: request.requested_by, display_name: requesterName },
       plant: request.plant_id ? { id: request.plant_id, name: plantName } : null,
+      destination_client: request.destination_client_id
+        ? { id: request.destination_client_id, name: destinationClientName }
+        : null,
     },
     lines: lines.map(line => {
       const product = productById.get(line.product_id);
@@ -375,20 +397,54 @@ export async function createMaterialRequest(profile, body) {
   const priority = payload.priority === undefined ? 'normal' : payload.priority;
   if (!priorities.includes(priority)) throw codedError(400, 'priority inválido');
   const lines = cleanCreateLines(payload.lines);
+  // Planta solo para maintenance/warranty/replacement; en otro caso se
+  // normaliza a NULL sin error (el frontend puede enviar un valor stale).
+  const plantId = plantReasons.includes(payload.reason)
+    ? optionalUuid(payload.plant_id, 'plant_id')
+    : null;
+  // Cliente destino: catálogo comercial activo. No se usa para autorización.
+  const destinationClientId = optionalUuid(payload.destination_client_id, 'destination_client_id');
+  if (destinationClientId !== null) {
+    let destinationClient;
+    try {
+      destinationClient = await getDestinationClientById(destinationClientId);
+    } catch (error) {
+      throw mapOperationsDatabaseError(error);
+    }
+    if (!destinationClient || destinationClient.active !== true || destinationClient.is_commercial !== true) {
+      throw codedError(404, 'Cliente destino no encontrado');
+    }
+  }
   // requested_by siempre es la identidad autenticada; se ignora el body.
   const args = {
     actorId: profile.id,
     reason: payload.reason,
     lines,
     priority,
-    plantId: optionalUuid(payload.plant_id, 'plant_id'),
+    plantId,
     maintenanceVisitId: optionalUuid(payload.maintenance_visit_id, 'maintenance_visit_id'),
     destination: payload.destination === undefined ? null : cleanText(payload.destination, 'destination', { max: 400 }),
     requiredAt: cleanDateTime(payload.required_at, 'required_at'),
     observations: payload.observations === undefined ? null : cleanText(payload.observations, 'observations'),
+    destinationClientId,
   };
   try {
     return await rpcMaterialRequestCreate(args);
+  } catch (error) {
+    throw mapOperationsDatabaseError(error);
+  }
+}
+
+export async function listDestinationClients(profile) {
+  void profile;
+  try {
+    const clients = await listDestinationClientsRepo();
+    return clients.map(client => ({
+      id: client.id,
+      name: client.name,
+      phone: client.phone ?? null,
+      email: client.email ?? null,
+    }));
   } catch (error) {
     throw mapOperationsDatabaseError(error);
   }
@@ -636,6 +692,7 @@ export function mapOperationsDatabaseError(error) {
     PRODUCT_NOT_FOUND: [404, 'Producto no encontrado'],
     ITEM_NOT_FOUND: [404, 'Unidad no encontrada'],
     ACTOR_NOT_FOUND: [404, 'Solicitante no válido'],
+    INVALID_DESTINATION_CLIENT: [404, 'Cliente destino no encontrado'],
     INVALID_REQUEST_LINES: [400, 'Líneas de solicitud inválidas'],
     DUPLICATE_REQUEST_PRODUCT: [400, 'Producto duplicado en líneas'],
     INVALID_DELIVERIES: [400, 'Entregas inválidas'],

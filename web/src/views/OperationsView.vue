@@ -1,9 +1,9 @@
 <script setup>
-import { computed, onMounted, onUnmounted, ref } from 'vue';
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
 import { useRouter } from 'vue-router';
 import { apiFetch, getMyProfile } from '../services/api.js';
-import { createRequest, listProducts, listRequests } from '../services/operations.js';
-import { buildCreatePayload, canCreateRequest, priorityLabel, reasonLabel, reasonLabels, requestPriorities, requestReasons, statusLabel } from '../utils/operations.js';
+import { createRequest, listClients, listProducts, listRequests } from '../services/operations.js';
+import { buildCreatePayload, canCreateRequest, destinationDisplay, destinationTypeLabels, destinationTypes, filterPickerProducts, availableCategoryOptions, pickerAvailabilityText, priorityLabel, productCategoryLabel, productTypeLabel, reasonAllowsPlant, reasonLabel, reasonLabels, requestPriorities, requestReasons, statusLabel } from '../utils/operations.js';
 
 const router = useRouter();
 
@@ -11,6 +11,8 @@ const requests = ref([]);
 const products = ref([]);
 const plants = ref([]);
 const plantNames = ref({});
+const clients = ref([]);
+const clientsLoaded = ref(false);
 const loading = ref(true);
 const error = ref('');
 const notice = ref('');
@@ -38,14 +40,28 @@ function emptyForm() {
     reason: 'maintenance',
     priority: 'normal',
     plant_id: '',
+    destination_type: 'client',
+    destination_client_id: '',
     destination: '',
     required_at: '',
     observations: '',
-    lines: [emptyLine()],
+    // Sin línea vacía inicial: cada línea nace al elegir un material.
+    lines: [],
   };
 }
 
 const form = ref(emptyForm());
+
+// Planta solo para maintenance/warranty/replacement: al salir de esos
+// motivos se limpia plant_id de inmediato.
+watch(() => form.value.reason, reason => {
+  if (!reasonAllowsPlant(reason)) form.value.plant_id = '';
+});
+
+// Tipo de destino excluyente: al pasar a Otro se limpia el cliente.
+watch(() => form.value.destination_type, type => {
+  if (type !== 'client') form.value.destination_client_id = '';
+});
 
 const canCreate = computed(() => canCreateRequest(myRole.value));
 
@@ -68,6 +84,11 @@ const plantOptions = computed(() => plants.value.map(plant => ({
   name: plant.name ?? plant.id,
 })));
 
+const clientOptions = computed(() => clients.value.map(client => ({
+  id: client.id,
+  name: client.name ?? client.id,
+})));
+
 const filtered = computed(() => requests.value.filter(request => {
   if (statusFilter.value !== 'all' && request.status !== statusFilter.value) return false;
   if (priorityFilter.value !== 'all' && request.priority !== priorityFilter.value) return false;
@@ -81,6 +102,14 @@ const filtered = computed(() => requests.value.filter(request => {
 
 function requesterName(request) {
   return request.requester?.display_name?.trim() || 'Sin datos';
+}
+
+function destinationPrimary(request) {
+  return destinationDisplay(request).primary;
+}
+
+function destinationSecondary(request) {
+  return destinationDisplay(request).secondary;
 }
 
 function plantName(plantId) {
@@ -130,6 +159,18 @@ function openCreate() {
   formError.value = '';
   formSaving.value = false;
   showForm.value = true;
+  void loadClients();
+}
+
+async function loadClients() {
+  if (clientsLoaded.value) return;
+  try {
+    const data = await listClients({ signal: controller.signal });
+    clients.value = Array.isArray(data) ? data : [];
+    clientsLoaded.value = true;
+  } catch {
+    clients.value = [];
+  }
 }
 
 function closeForm() {
@@ -143,8 +184,75 @@ function addLine() {
 }
 
 function removeLine(index) {
-  if (form.value.lines.length <= 1) return;
   form.value.lines.splice(index, 1);
+}
+
+// ---- Selector de materiales (picker con búsqueda, sin <select> masivo) ----
+
+const showPicker = ref(false);
+const pickerTarget = ref(null);
+const pickerSearch = ref('');
+const pickerCategory = ref('all');
+const pickerTrackingMode = ref('all');
+const pickerLimit = ref(20);
+
+const pickerCategoryOptions = computed(() => availableCategoryOptions(products.value));
+
+const pickerExcludeIds = computed(() => {
+  const current = pickerTarget.value !== null
+    ? form.value.lines[pickerTarget.value]?.product_id
+    : '';
+  return form.value.lines
+    .map(line => line.product_id)
+    .filter(id => typeof id === 'string' && id !== '' && id !== current);
+});
+
+const pickerResults = computed(() => filterPickerProducts(products.value, {
+  search: pickerSearch.value,
+  category: pickerCategory.value,
+  trackingMode: pickerTrackingMode.value,
+  excludeIds: pickerExcludeIds.value,
+  limit: pickerLimit.value,
+}));
+
+function productById(productId) {
+  return products.value.find(product => product.id === productId) ?? null;
+}
+
+function openPickerForNew() {
+  pickerTarget.value = null;
+  pickerSearch.value = '';
+  pickerCategory.value = 'all';
+  pickerTrackingMode.value = 'all';
+  pickerLimit.value = 20;
+  showPicker.value = true;
+}
+
+function openPickerForLine(index) {
+  pickerTarget.value = index;
+  pickerSearch.value = '';
+  pickerCategory.value = 'all';
+  pickerTrackingMode.value = 'all';
+  pickerLimit.value = 20;
+  showPicker.value = true;
+}
+
+function closePicker() {
+  showPicker.value = false;
+  pickerTarget.value = null;
+}
+
+function showMorePickerResults() {
+  pickerLimit.value += 20;
+}
+
+function selectPickerProduct(productId) {
+  if (pickerTarget.value === null) {
+    form.value.lines.push({ ...emptyLine(), product_id: productId });
+  } else {
+    form.value.lines[pickerTarget.value].product_id = productId;
+  }
+  closePicker();
 }
 
 async function saveForm() {
@@ -154,6 +262,8 @@ async function saveForm() {
     reason: form.value.reason,
     priority: form.value.priority,
     plant_id: form.value.plant_id || null,
+    destination_type: form.value.destination_type,
+    destination_client_id: form.value.destination_client_id || null,
     destination: form.value.destination,
     required_at: form.value.required_at ? toApiDateTime(form.value.required_at) : null,
     observations: form.value.observations,
@@ -367,7 +477,12 @@ onUnmounted(() => controller.abort());
               <td>
                 <span class="status-badge" :class="request.status">{{ statusLabel(request.status) }}</span>
               </td>
-              <td>{{ request.destination ?? '—' }}</td>
+              <td>
+                <div>{{ destinationPrimary(request) }}</div>
+                <div v-if="destinationSecondary(request)" class="destination-secondary">
+                  {{ destinationSecondary(request) }}
+                </div>
+              </td>
               <td class="date-cell">{{ formatDay(request.required_at) }}</td>
               <td class="date-cell">{{ formatDate(request.created_at) }}</td>
               <td>
@@ -397,15 +512,34 @@ onUnmounted(() => controller.abort());
                 {{ priorityLabel(priority) }}
               </option>
             </select>
-            <label for="request-plant">Planta (opcional)</label>
-            <select id="request-plant" v-model="form.plant_id" :disabled="formSaving">
+            <label for="request-plant" v-if="reasonAllowsPlant(form.reason)">Planta (opcional)</label>
+            <select v-if="reasonAllowsPlant(form.reason)" id="request-plant" v-model="form.plant_id" :disabled="formSaving">
               <option value="">Sin planta específica</option>
               <option v-for="option in plantOptions" :key="option.id" :value="option.id">
                 {{ option.name }}
               </option>
             </select>
-            <label for="request-destination">Destino</label>
-            <input id="request-destination" v-model="form.destination" type="text" maxlength="400" :disabled="formSaving" />
+            <label for="request-destination-type">Tipo de destino *</label>
+            <select id="request-destination-type" v-model="form.destination_type" :disabled="formSaving">
+              <option v-for="type in destinationTypes" :key="type" :value="type">
+                {{ destinationTypeLabels[type] }}
+              </option>
+            </select>
+            <template v-if="form.destination_type === 'client'">
+              <label for="request-client">Cliente *</label>
+              <select id="request-client" v-model="form.destination_client_id" :disabled="formSaving">
+                <option value="" disabled>Selecciona un cliente</option>
+                <option v-for="option in clientOptions" :key="option.id" :value="option.id">
+                  {{ option.name }}
+                </option>
+              </select>
+              <label for="request-destination">Lugar de entrega / referencia (opcional)</label>
+              <input id="request-destination" v-model="form.destination" type="text" maxlength="400" :disabled="formSaving" />
+            </template>
+            <template v-else>
+              <label for="request-destination">Destino *</label>
+              <input id="request-destination" v-model="form.destination" type="text" maxlength="400" :disabled="formSaving" />
+            </template>
             <label for="request-required">Fecha requerida</label>
             <input id="request-required" v-model="form.required_at" type="datetime-local" :disabled="formSaving" />
             <label for="request-observations">Observaciones</label>
@@ -414,15 +548,19 @@ onUnmounted(() => controller.abort());
           <fieldset>
             <legend>Materiales</legend>
             <div v-for="(line, index) in form.lines" :key="index" class="line-editor">
-              <label>
-                <span>Producto *</span>
-                <select v-model="line.product_id" :disabled="formSaving">
-                  <option value="" disabled>Selecciona un producto</option>
-                  <option v-for="product in products" :key="product.id" :value="product.id">
-                    {{ productDetail(product) }}
-                  </option>
-                </select>
-              </label>
+              <div class="line-product">
+                <div v-if="productById(line.product_id)">
+                  <strong>{{ productById(line.product_id).name }}</strong>
+                  <p class="line-sub">{{ productDetail(productById(line.product_id)) }}</p>
+                </div>
+                <div v-else>
+                  <strong>Sin material seleccionado</strong>
+                  <p class="line-sub">Elige un material del catálogo para esta línea.</p>
+                </div>
+                <button class="secondary-button" type="button" :disabled="formSaving" @click="openPickerForLine(index)">
+                  {{ line.product_id ? 'Cambiar material' : 'Seleccionar material' }}
+                </button>
+              </div>
               <label>
                 <span>Cantidad *</span>
                 <input v-model="line.requested_quantity" type="number" min="0" step="any" :disabled="formSaving" />
@@ -431,11 +569,12 @@ onUnmounted(() => controller.abort());
                 <span>Observación</span>
                 <input v-model="line.observations" type="text" maxlength="4000" :disabled="formSaving" />
               </label>
-              <button class="secondary-button line-remove" type="button" :disabled="formSaving || form.lines.length <= 1" @click="removeLine(index)">
+              <button class="secondary-button line-remove" type="button" :disabled="formSaving" @click="removeLine(index)">
                 Eliminar
               </button>
             </div>
-            <button class="secondary-button" type="button" :disabled="formSaving" @click="addLine">
+            <p v-if="!form.lines.length" class="hint">Sin materiales. Agrega el primero con + Agregar material.</p>
+            <button class="secondary-button" type="button" :disabled="formSaving" @click="openPickerForNew">
               + Agregar material
             </button>
             <p class="hint">La disponibilidad es informativa. La validación física final ocurre al entregar.</p>
@@ -448,6 +587,66 @@ onUnmounted(() => controller.abort());
             </button>
           </div>
         </form>
+      </section>
+    </div>
+
+    <div v-if="showPicker" class="modal-backdrop" @click.self="closePicker">
+      <section class="card modal modal-wide" role="dialog" aria-modal="true" aria-label="Seleccionar material">
+        <h2>Seleccionar material</h2>
+        <div class="picker-filters">
+          <label class="picker-search">
+            <span>Buscar por nombre, código, fabricante o modelo</span>
+            <input v-model="pickerSearch" type="search" placeholder="Buscar por nombre, código, fabricante o modelo" />
+          </label>
+          <label>
+            <span>Categoría</span>
+            <select v-model="pickerCategory">
+              <option value="all">Todos</option>
+              <option v-for="option in pickerCategoryOptions" :key="option.value" :value="option.value">
+                {{ option.label }}
+              </option>
+            </select>
+          </label>
+          <label>
+            <span>Tipo</span>
+            <select v-model="pickerTrackingMode">
+              <option value="all">Todos</option>
+              <option value="quantity">Por cantidad</option>
+              <option value="serialized">Serializado</option>
+            </select>
+          </label>
+        </div>
+        <p class="hint" role="status">
+          {{ pickerResults.total }} resultado(s). La disponibilidad es informativa.
+        </p>
+        <ul v-if="pickerResults.results.length" class="picker-list">
+          <li v-for="product in pickerResults.results" :key="product.id" class="picker-row">
+            <div>
+              <strong>{{ product.name }}</strong>
+              <p class="line-sub">
+                {{ [product.manufacturer, product.model].filter(Boolean).join(' · ') || 'Sin fabricante/modelo' }} ·
+                {{ productCategoryLabel(product.category) }} ·
+                {{ productTypeLabel(product.tracking_mode) }} ·
+                {{ pickerAvailabilityText(product) }}
+              </p>
+            </div>
+            <button class="secondary-button" type="button" @click="selectPickerProduct(product.id)">
+              Seleccionar
+            </button>
+          </li>
+        </ul>
+        <p v-else class="hint">Sin resultados para los filtros indicados.</p>
+        <button
+          v-if="pickerResults.total > pickerResults.results.length"
+          class="secondary-button"
+          type="button"
+          @click="showMorePickerResults"
+        >
+          Mostrar más ({{ pickerResults.total - pickerResults.results.length }} restantes)
+        </button>
+        <div class="modal-actions">
+          <button class="secondary-button" type="button" @click="closePicker">Cerrar</button>
+        </div>
       </section>
     </div>
   </div>
@@ -679,6 +878,11 @@ onUnmounted(() => controller.abort());
   font-weight: 600;
 }
 
+.destination-secondary {
+  margin-top: 2px;
+  font-size: 11px;
+}
+
 .status-badge {
   display: inline-flex;
   padding: 5px 9px;
@@ -811,6 +1015,48 @@ onUnmounted(() => controller.abort());
 
 .line-remove {
   justify-self: end;
+}
+
+.line-product {
+  display: grid;
+  gap: 8px;
+}
+
+.line-product .secondary-button {
+  justify-self: start;
+}
+
+.picker-filters {
+  display: grid;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.picker-filters label {
+  display: grid;
+  gap: 4px;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.picker-list {
+  display: grid;
+  gap: 8px;
+  margin: 12px 0;
+  padding: 0;
+  list-style: none;
+  max-height: 320px;
+  overflow-y: auto;
+}
+
+.picker-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--rdx-border);
+  border-radius: 10px;
 }
 
 .hint {

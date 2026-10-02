@@ -3,7 +3,7 @@ import { computed, onMounted, onUnmounted, ref } from 'vue';
 import { useRoute } from 'vue-router';
 import { getMyProfile } from '../services/api.js';
 import { cancelRequest, deliverRequest, getRequest, listAvailableItems, prepareSerializedItem, releaseSerializedItem, setPreparedQuantity, transitionRequest } from '../services/operations.js';
-import { buildDeliveries, cancellableStatus, eventLabel, friendlyOperationsError, isPartialDelivery, isWarehouseRole, newIdempotencyKey, priorityLabel, reasonLabel, statusLabel, transitionActions } from '../utils/operations.js';
+import { buildDeliveries, cancellableStatus, destinationDisplay, eventLabel, friendlyOperationsError, isPartialDelivery, isWarehouseRole, newIdempotencyKey, priorityLabel, reasonLabel, statusLabel, transitionActions } from '../utils/operations.js';
 
 const route = useRoute();
 
@@ -19,6 +19,7 @@ const request = computed(() => detail.value?.request ?? null);
 const lines = computed(() => detail.value?.lines ?? []);
 const items = computed(() => detail.value?.items ?? []);
 const events = computed(() => detail.value?.events ?? []);
+const destinationInfo = computed(() => destinationDisplay(request.value ?? {}));
 
 const isWarehouse = computed(() => isWarehouseRole(myRole.value));
 const actions = computed(() => {
@@ -450,7 +451,8 @@ onUnmounted(() => controller.abort());
       <section class="card info-card">
         <div class="info-grid">
           <div><span class="info-label">Motivo</span><strong>{{ reasonLabel(request.reason) }}</strong></div>
-          <div><span class="info-label">Destino</span><strong>{{ request.destination ?? '—' }}</strong></div>
+          <div v-if="destinationInfo.clientName"><span class="info-label">Cliente destino</span><strong>{{ destinationInfo.clientName }}</strong></div>
+          <div v-if="destinationInfo.reference"><span class="info-label">{{ destinationInfo.clientName ? 'Destino / referencia' : 'Destino' }}</span><strong>{{ destinationInfo.reference }}</strong></div>
           <div><span class="info-label">Fecha requerida</span><strong>{{ formatDay(request.required_at) }}</strong></div>
           <div><span class="info-label">Planta</span><strong>{{ request.plant?.name ?? '—' }}</strong></div>
           <div><span class="info-label">Creada</span><strong>{{ formatDateTime(request.created_at) }}</strong></div>

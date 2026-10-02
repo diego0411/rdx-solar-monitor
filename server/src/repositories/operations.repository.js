@@ -3,8 +3,8 @@ import { supabase } from '../config/supabase.js';
 const pageSize = 1000;
 
 const requestSelect = `id, code, requested_by, plant_id, maintenance_visit_id,
-  reason, priority, status, destination, required_at, observations,
-  created_at, updated_at`;
+  reason, priority, status, destination, destination_client_id,
+  required_at, observations, created_at, updated_at`;
 const lineSelect = `id, request_id, product_id, requested_quantity::text,
   prepared_quantity::text, delivered_quantity::text, observations,
   created_at, updated_at`;
@@ -120,6 +120,35 @@ export async function listRequestEvents(requestId) {
   return data ?? [];
 }
 
+// Clientes comerciales activos para el selector de destino.
+// Solo lectura de catálogo: no se usa para autorización.
+export async function listDestinationClients() {
+  const { data, error } = await supabase.from('clients')
+    .select('id, name, phone, email')
+    .eq('active', true)
+    .eq('is_commercial', true)
+    .order('name', { ascending: true });
+  if (error) throw databaseError(error, 'No se pudieron consultar los clientes destino');
+  return data ?? [];
+}
+
+export async function getDestinationClientById(id) {
+  const { data, error } = await supabase.from('clients')
+    .select('id, name, active, is_commercial').eq('id', id).maybeSingle();
+  if (error) throw databaseError(error, 'No se pudo consultar el cliente destino');
+  return data;
+}
+
+export async function listDestinationClientsByIds(ids) {
+  if (!ids || ids.length === 0) return [];
+  const filtered = [...new Set(ids.filter(Boolean))];
+  if (filtered.length === 0) return [];
+  const { data, error } = await supabase.from('clients')
+    .select('id, name').in('id', filtered);
+  if (error) throw databaseError(error, 'No se pudieron consultar los clientes destino');
+  return data ?? [];
+}
+
 export async function listRequesterProfiles(ids) {
   if (!ids || ids.length === 0) return [];
   const { data, error } = await supabase.from('user_profiles')
@@ -196,7 +225,7 @@ export async function listAvailableSerials(productId) {
 
 export async function rpcMaterialRequestCreate({
   actorId, reason, lines, priority, plantId, maintenanceVisitId,
-  destination, requiredAt, observations,
+  destination, requiredAt, observations, destinationClientId,
 }) {
   const { data, error } = await supabase.rpc('material_request_create', {
     p_actor_id: actorId,
@@ -208,6 +237,7 @@ export async function rpcMaterialRequestCreate({
     p_destination: destination,
     p_required_at: requiredAt,
     p_observations: observations,
+    p_destination_client_id: destinationClientId,
   });
   const result = rpcResult(data);
   if (error || !result) throw databaseError(error, 'No se pudo crear la solicitud de materiales');

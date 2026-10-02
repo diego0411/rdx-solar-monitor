@@ -26,6 +26,7 @@ const state = {
   invItems: [],
   movements: [],
   reserved: [],
+  clients: [],
   calls: [],
   listFilters: null,
   nextError: null,
@@ -75,6 +76,15 @@ mock.module('../src/repositories/operations.repository.js', {
     },
     async listRequesterProfiles(ids) {
       return ids.map(id => ({ id, display_name: `User ${id.slice(0, 4)}` }));
+    },
+    async listDestinationClients() {
+      return state.clients.filter(client => client.active && client.is_commercial);
+    },
+    async getDestinationClientById(id) {
+      return state.clients.find(client => client.id === id) ?? null;
+    },
+    async listDestinationClientsByIds(ids) {
+      return state.clients.filter(client => ids.includes(client.id));
     },
     async listPlantsByIds(ids) {
       return ids.filter(Boolean).map(id => ({ id, name: 'Planta Norte' }));
@@ -242,6 +252,11 @@ function seed() {
     },
   ];
   state.reserved = [ITEM_RESERVED];
+  state.clients = [
+    { id: 'aaaaaaaa-1111-4111-8111-aaaaaaaaaaaa', name: 'Cliente Activo', active: true, is_commercial: true },
+    { id: 'bbbbbbbb-2222-4222-8222-bbbbbbbbbbbb', name: 'Cliente Inactivo', active: false, is_commercial: true },
+    { id: 'cccccccc-3333-4333-8333-cccccccccccc', name: 'Legacy No Comercial', active: true, is_commercial: false },
+  ];
   state.calls = [];
   state.listFilters = null;
   state.nextError = null;
@@ -456,4 +471,79 @@ test('9. errores RPC críticos se mapean sin filtrar detalles', async () => {
     ),
     error => error.statusCode === 409 && error.message === 'Stock insuficiente',
   );
+});
+
+const CLIENT_OK = 'aaaaaaaa-1111-4111-8111-aaaaaaaaaaaa';
+const CLIENT_INACTIVE = 'bbbbbbbb-2222-4222-8222-bbbbbbbbbbbb';
+const CLIENT_LEGACY = 'cccccccc-3333-4333-8333-cccccccccccc';
+const CLIENT_MISSING = 'dddddddd-4444-4444-8444-dddddddddddd';
+
+function createBody(overrides = {}) {
+  return {
+    reason: 'maintenance',
+    lines: [{ product_id: PROD_S, requested_quantity: 1 }],
+    ...overrides,
+  };
+}
+
+test('10. planta se normaliza a NULL según motivo; cliente destino se valida sin autorizar', async () => {
+  // Motivo con planta: se conserva.
+  await service.createMaterialRequest(CLIENT_ADMIN, createBody({ plant_id: PLANT_A }));
+  assert.equal(state.calls.at(-1).args.plantId, PLANT_A.toLowerCase());
+
+  // Motivos sin planta: se normaliza a NULL sin error aunque venga stale.
+  for (const reason of ['installation', 'internal', 'other']) {
+    await service.createMaterialRequest(CLIENT_ADMIN, createBody({ reason, plant_id: PLANT_A }));
+    assert.equal(state.calls.at(-1).args.plantId, null);
+  }
+
+  // Cliente comercial activo: se propaga al RPC (client_user incluido,
+  // sin gate de autorización por cliente).
+  const before = state.calls.length;
+  await service.createMaterialRequest(
+    CLIENT_USER, createBody({ reason: 'installation', destination_client_id: CLIENT_OK }),
+  );
+  assert.equal(state.calls.length, before + 1);
+  assert.equal(state.calls.at(-1).args.destinationClientId, CLIENT_OK);
+
+  // Sin cliente: NULL explícito.
+  await service.createMaterialRequest(CLIENT_USER, createBody({ destination: 'Bodega' }));
+  assert.equal(state.calls.at(-1).args.destinationClientId, null);
+
+  // Cliente inexistente/inactivo/no comercial: 404 sin llamar al RPC.
+  for (const destinationClientId of [CLIENT_MISSING, CLIENT_INACTIVE, CLIENT_LEGACY]) {
+    const calls = state.calls.length;
+    await assert.rejects(
+      service.createMaterialRequest(CLIENT_USER, createBody({ destination_client_id: destinationClientId })),
+      error => error.statusCode === 404,
+    );
+    assert.equal(state.calls.length, calls);
+  }
+
+  // UUID inválido: 400.
+  await assert.rejects(
+    service.createMaterialRequest(CLIENT_USER, createBody({ destination_client_id: 'no-uuid' })),
+    error => error.statusCode === 400,
+  );
+
+  // Respaldo RPC: INVALID_DESTINATION_CLIENT se mapea a 404 sin detalles.
+  const mapped = service.mapOperationsDatabaseError(dbError('boom INVALID_DESTINATION_CLIENT secret'));
+  assert.equal(mapped.statusCode, 404);
+  assert.equal(mapped.message.includes('secret'), false);
+});
+
+test('10b. listado y detalle exponen cliente destino; endpoint solo comerciales activos', async () => {
+  const rows = await service.listDestinationClients(CLIENT_USER);
+  assert.deepEqual(rows.map(row => row.id), [CLIENT_OK]);
+  assert.deepEqual(Object.keys(rows[0]).sort(), ['email', 'id', 'name', 'phone']);
+
+  state.requests[0].destination_client_id = CLIENT_OK;
+  const listed = await service.listMaterialRequests(CLIENT_ADMIN, {});
+  const own = listed.find(row => row.id === REQ_OWN);
+  assert.equal(own.destination_client_id, CLIENT_OK);
+  assert.equal(own.destination_client.name, 'Cliente Activo');
+
+  const detail = await service.getMaterialRequestDetail(CLIENT_ADMIN, REQ_OWN);
+  assert.equal(detail.request.destination_client_id, CLIENT_OK);
+  assert.equal(detail.request.destination_client.name, 'Cliente Activo');
 });

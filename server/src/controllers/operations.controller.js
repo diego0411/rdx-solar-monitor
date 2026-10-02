@@ -5,6 +5,7 @@ import {
   getMaterialRequestDetail,
   listAvailableProducts,
   listAvailableSerials,
+  listDestinationClients,
   listMaterialRequests,
   prepareSerializedItem,
   releaseSerializedItem,
@@ -127,6 +128,14 @@ export async function listAvailableItems(req, res) {
     return res.json(await listAvailableSerials(
       req.profile, req.params.id, req.params.lineId,
     ));
+  } catch (error) {
+    return sendError(res, error);
+  }
+}
+
+export async function listClients(req, res) {
+  try {
+    return res.json(await listDestinationClients(req.profile));
   } catch (error) {
     return sendError(res, error);
   }

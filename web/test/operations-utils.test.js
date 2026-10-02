@@ -2,17 +2,27 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import {
+  PRODUCT_PICKER_PAGE_SIZE,
+  availableCategoryOptions,
   buildCreatePayload,
   buildDeliveries,
   cancellableStatus,
+  destinationDisplay,
+  destinationTypeLabel,
   eventLabel,
+  filterPickerProducts,
   friendlyOperationsError,
   isIdempotencyKey,
   isPartialDelivery,
   isWarehouseRole,
   canCreateRequest,
   newIdempotencyKey,
+  pickerAvailabilityText,
   priorityLabel,
+  productCategoryLabel,
+  productMatchesSearch,
+  productTypeLabel,
+  reasonAllowsPlant,
   reasonLabel,
   statusLabel,
   transitionActions,
@@ -81,6 +91,7 @@ test('4. payload de creación sin requested_by ni client_id', () => {
     reason: 'maintenance',
     priority: 'high',
     plant_id: '',
+    destination_type: 'other',
     destination: 'Bodega norte',
     required_at: '2026-03-01T10:00:00.000Z',
     observations: 'Urgente',
@@ -164,13 +175,182 @@ test('servicio expone el contrato /api/operations con Idempotency-Key', () => {
   const service = readFileSync(new URL('../src/services/operations.js', import.meta.url), 'utf8');
   for (const name of ['listRequests', 'getRequest', 'createRequest', 'transitionRequest',
     'prepareSerializedItem', 'releaseSerializedItem', 'setPreparedQuantity',
-    'cancelRequest', 'deliverRequest', 'listProducts', 'listAvailableItems']) {
+    'cancelRequest', 'deliverRequest', 'listProducts', 'listAvailableItems', 'listClients']) {
     assert.match(service, new RegExp(`export function ${name}\\(`));
   }
   assert.match(service, /\/operations\/requests/);
   assert.match(service, /\/operations\/products/);
+  assert.match(service, /\/operations\/clients/);
   assert.match(service, /available-items/);
   assert.match(service, /prepared-quantity/);
   assert.match(service, /'Idempotency-Key'/);
   assert.match(service, /target_status/);
+});
+
+const CLIENT_OK = 'aaaaaaaa-1111-4111-8111-aaaaaaaaaaaa';
+
+function baseForm(overrides = {}) {
+  return {
+    reason: 'maintenance',
+    priority: 'normal',
+    plant_id: '',
+    destination_type: 'client',
+    destination_client_id: CLIENT_OK,
+    destination: '',
+    required_at: '',
+    observations: '',
+    lines: [{ product_id: PROD_S, requested_quantity: 1 }],
+    ...overrides,
+  };
+}
+
+test('1. planta visible solo para maintenance/warranty/replacement', () => {
+  assert.equal(reasonAllowsPlant('maintenance'), true);
+  assert.equal(reasonAllowsPlant('warranty'), true);
+  assert.equal(reasonAllowsPlant('replacement'), true);
+  assert.equal(reasonAllowsPlant('installation'), false);
+  assert.equal(reasonAllowsPlant('internal'), false);
+  assert.equal(reasonAllowsPlant('other'), false);
+  assert.equal(reasonAllowsPlant('bad'), false);
+});
+
+test('2. planta se omite para installation/internal/other aunque venga valor', () => {
+  for (const reason of ['installation', 'internal', 'other']) {
+    const { payload, error } = buildCreatePayload(baseForm({ reason, plant_id: '66666666-6666-4666-8666-666666666666' }));
+    assert.equal(error, undefined);
+    assert.ok(!('plant_id' in payload));
+  }
+  const { payload } = buildCreatePayload(baseForm({ plant_id: '66666666-6666-4666-8666-666666666666' }));
+  assert.equal(payload.plant_id, '66666666-6666-4666-8666-666666666666');
+});
+
+test('4. cliente seleccionado envía destination_client_id con referencia opcional', () => {
+  const { payload, error } = buildCreatePayload(baseForm({ destination: 'Nave 3' }));
+  assert.equal(error, undefined);
+  assert.equal(payload.destination_client_id, CLIENT_OK);
+  assert.equal(payload.destination, 'Nave 3');
+  const bare = buildCreatePayload(baseForm());
+  assert.equal(bare.error, undefined);
+  assert.equal(bare.payload.destination_client_id, CLIENT_OK);
+  assert.ok(!('destination' in bare.payload));
+
+  // Sin cliente: error sin llamar al servicio.
+  assert.ok(buildCreatePayload(baseForm({ destination_client_id: '' })).error);
+  assert.ok(buildCreatePayload(baseForm({ destination_client_id: 'no-uuid' })).error);
+  assert.ok(buildCreatePayload(baseForm({ destination_type: 'weird' })).error);
+});
+
+test('5. otro envía destination_client_id ausente + destination texto requerido', () => {
+  const { payload, error } = buildCreatePayload(baseForm({
+    destination_type: 'other',
+    destination_client_id: '',
+    destination: 'Obra externa km 12',
+  }));
+  assert.equal(error, undefined);
+  assert.ok(!('destination_client_id' in payload));
+  assert.equal(payload.destination, 'Obra externa km 12');
+
+  assert.ok(buildCreatePayload(baseForm({ destination_type: 'other', destination: '' })).error);
+  assert.ok(buildCreatePayload(baseForm({ destination_type: 'other', destination: '   ' })).error);
+});
+
+test('8. listado y detalle muestran cliente destino sin inferir desde planta', () => {
+  assert.equal(destinationTypeLabel('client'), 'Cliente');
+  assert.equal(destinationTypeLabel('other'), 'Otro');
+  const both = destinationDisplay({
+    destination_client: { id: CLIENT_OK, name: 'Cliente Activo' },
+    destination: 'Nave 3',
+    plant_id: '66666666-6666-4666-8666-666666666666',
+  });
+  assert.equal(both.clientName, 'Cliente Activo');
+  assert.equal(both.reference, 'Nave 3');
+  assert.equal(both.primary, 'Cliente Activo');
+  assert.equal(both.secondary, 'Nave 3');
+  const free = destinationDisplay({ destination_client: null, destination: 'Obra externa' });
+  assert.equal(free.clientName, null);
+  assert.equal(free.primary, 'Obra externa');
+  assert.equal(free.secondary, null);
+  const empty = destinationDisplay({ destination_client: null, destination: null });
+  assert.equal(empty.primary, '—');
+});
+
+const PICK_A = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+const PICK_B = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
+const PICK_C = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc';
+
+function pickCatalog() {
+  return [
+    {
+      id: PICK_A, name: 'Inversor Híbrido 5K', category: 'inverter',
+      manufacturer: 'RDX Tech', model: 'INV-5K', tracking_mode: 'serialized',
+      unit: 'pza', active: true,
+      availability: { available_count: 3, reserved_count: 1, physical_stock: '4' },
+    },
+    {
+      id: PICK_B, name: 'Cable Solar 6mm', category: 'cable',
+      manufacturer: 'TopCable', model: 'SOL-6', tracking_mode: 'quantity',
+      unit: 'm', active: true,
+      availability: { available: '42', physical_stock: '42' },
+    },
+    {
+      id: PICK_C, name: 'Panel Viejo', category: 'solar_panel',
+      manufacturer: 'RDX Tech', model: 'PV-1', tracking_mode: 'quantity',
+      unit: 'pza', active: false,
+      availability: { available: '5', physical_stock: '5' },
+    },
+  ];
+}
+
+test('picker: búsqueda case-insensitive por nombre, fabricante o modelo', () => {
+  const [inverter, cable] = pickCatalog();
+  assert.equal(productMatchesSearch(inverter, ''), true);
+  assert.equal(productMatchesSearch(inverter, 'inversor'), true);
+  assert.equal(productMatchesSearch(inverter, 'INVERSOR HÍBRIDO'), true);
+  assert.equal(productMatchesSearch(inverter, 'rdx inv-5k'), true);
+  assert.equal(productMatchesSearch(inverter, 'topcable'), false);
+  assert.equal(productMatchesSearch(cable, 'CABLE sol-6'), true);
+  assert.equal(productMatchesSearch(cable, 'cable panel'), false);
+});
+
+test('picker: categorías reales, tipos y disponibilidad informativa', () => {
+  assert.deepEqual(
+    availableCategoryOptions(pickCatalog()),
+    [
+      { value: 'cable', label: 'Cable' },
+      { value: 'inverter', label: 'Inversor' },
+      { value: 'solar_panel', label: 'Panel solar' },
+    ],
+  );
+  assert.equal(productCategoryLabel('inverter'), 'Inversor');
+  assert.equal(productTypeLabel('serialized'), 'Serializado');
+  assert.equal(productTypeLabel('quantity'), 'Por cantidad');
+  const [inverter, cable] = pickCatalog();
+  assert.equal(pickerAvailabilityText(inverter), 'Equipos disponibles: 3');
+  assert.equal(pickerAvailabilityText(cable), 'Disponible: 42');
+  assert.equal(pickerAvailabilityText({}), 'Disponibilidad no disponible');
+});
+
+test('picker: filtra inactivos/duplicados y pagina sin render masivo', () => {
+  const big = Array.from({ length: 45 }, (_, index) => ({
+    id: `00000000-0000-4000-8000-${String(index).padStart(12, '0')}`,
+    name: `Producto ${index}`, category: 'other', tracking_mode: 'quantity',
+    unit: 'pza', active: true, availability: { available: '1', physical_stock: '1' },
+  }));
+  const all = [...pickCatalog(), ...big];
+  const first = filterPickerProducts(all, { excludeIds: [PICK_A] });
+  assert.equal(first.total, 46);
+  assert.equal(first.results.length, PRODUCT_PICKER_PAGE_SIZE);
+  assert.ok(first.results.every(product => product.active !== false));
+  assert.ok(!first.results.some(product => product.id === PICK_A));
+  const more = filterPickerProducts(all, { excludeIds: [PICK_A], limit: 40 });
+  assert.equal(more.results.length, 40);
+  const allShown = filterPickerProducts(all, { excludeIds: [PICK_A], limit: 100 });
+  assert.equal(allShown.results.length, 46);
+
+  const byCategory = filterPickerProducts(all, { category: 'cable' });
+  assert.deepEqual(byCategory.results.map(product => product.id), [PICK_B]);
+  const byType = filterPickerProducts(all, { trackingMode: 'serialized' });
+  assert.deepEqual(byType.results.map(product => product.id), [PICK_A]);
+  const bySearch = filterPickerProducts(all, { search: 'topcable' });
+  assert.deepEqual(bySearch.results.map(product => product.id), [PICK_B]);
 });

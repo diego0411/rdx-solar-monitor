@@ -3,6 +3,7 @@ import {
   deleteSerial,
   getRequest,
   listAvailableItems,
+  listClients,
   listProducts,
   listRequests,
   patchPreparedQuantity,
@@ -23,6 +24,7 @@ router.use(requireModuleAccess('operations'));
 const warehouse = requireRoles('rdx_admin', 'client_admin');
 
 router.get('/products', listProducts);
+router.get('/clients', listClients);
 router.get('/requests', listRequests);
 router.post('/requests', postRequest);
 router.get('/requests/:id', getRequest);

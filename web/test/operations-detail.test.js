@@ -256,3 +256,22 @@ test('1. menú y router operations bajo permiso operations', () => {
   assert.match(router, /operations: 'operations'/);
   assert.match(router, /'operations-detail': 'operations'/);
 });
+
+test('8. detalle muestra cliente destino y referencia sin inferir desde planta', async () => {
+  assert.match(source, /Cliente destino/);
+  assert.match(source, /Destino \/ referencia/);
+  assert.doesNotMatch(source, /client_plants/);
+  const data = fixture();
+  data.request.destination_client_id = 'aaaaaaaa-1111-4111-8111-aaaaaaaaaaaa';
+  data.request.destination_client = { id: 'aaaaaaaa-1111-4111-8111-aaaaaaaaaaaa', name: 'Cliente Activo' };
+  data.request.destination = 'Nave 3';
+  const { view } = setup({ api: { getRequest: async () => structuredClone(data) } });
+  await view.load();
+  assert.equal(view.destinationInfo.value.clientName, 'Cliente Activo');
+  assert.equal(view.destinationInfo.value.reference, 'Nave 3');
+
+  const plain = setup();
+  await plain.view.load();
+  assert.equal(plain.view.destinationInfo.value.clientName, null);
+  assert.equal(plain.view.destinationInfo.value.reference, null);
+});

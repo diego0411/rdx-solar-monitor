@@ -21,6 +21,7 @@ mock.module('../src/services/operations.service.js', {
     deliverMaterialRequest: stub,
     listAvailableProducts: stub,
     listAvailableSerials: stub,
+    listDestinationClients: stub,
     resolveIdempotencyKey: (value) => value ?? 'generated',
     mapOperationsDatabaseError: (error) => error,
   },
@@ -120,4 +121,12 @@ test('las rutas de operaciones exigen autenticación en el montaje real', async 
   const app = express();
   app.use('/api/operations', requireAuth, loadProfile, operationsRoutes);
   assert.equal(await request(app, 'GET', '/api/operations/requests'), 401);
+});
+
+test('11. GET /clients exige módulo operations pero no rol de almacén', async () => {
+  assert.equal(await request(appAs('client_user', []), 'GET', '/api/operations/clients'), 403);
+  assert.equal(await request(appAs('client_user', ['inventory']), 'GET', '/api/operations/clients'), 403);
+  assert.equal(await request(appAs('client_user', ['operations']), 'GET', '/api/operations/clients'), 200);
+  assert.equal(await request(appAs('client_admin'), 'GET', '/api/operations/clients'), 200);
+  assert.equal(await request(appAs('rdx_admin'), 'GET', '/api/operations/clients'), 200);
 });
