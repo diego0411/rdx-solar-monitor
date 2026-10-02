@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onMounted, onUnmounted, ref } from 'vue';
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
 import { getMyProfile } from '../services/api.js';
 import { createInventoryProduct, listInventoryProducts } from '../services/inventory.js';
 import { inventoryCategoryLabel as categoryLabel, inventoryCategoryLabels as categories } from '../utils/inventoryCategories.js';
@@ -14,6 +14,50 @@ const controller = new AbortController();
 
 const filters = ref({ search: '', category: '', trackingMode: '', active: '' });
 const canWrite = computed(() => role.value === 'rdx_admin');
+
+const PAGE_SIZE = 10;
+const currentPage = ref(1);
+
+function matchesFilters(product) {
+  const criteria = filters.value;
+  if (criteria.category && product.category !== criteria.category) return false;
+  if (criteria.trackingMode && product.tracking_mode !== criteria.trackingMode) return false;
+  if (criteria.active === 'true' && product.active !== true) return false;
+  if (criteria.active === 'false' && product.active !== false) return false;
+  const term = String(criteria.search ?? '').trim().toLowerCase();
+  if (term) {
+    const haystack = [product.name, product.manufacturer, product.model];
+    if (!haystack.some(value => typeof value === 'string' && value.toLowerCase().includes(term))) return false;
+  }
+  return true;
+}
+
+// Catálogo completo → filtros actuales → resultados → paginación.
+const filteredProducts = computed(() => products.value.filter(matchesFilters));
+const resultCount = computed(() => filteredProducts.value.length);
+const pageCount = computed(() => Math.max(1, Math.ceil(resultCount.value / PAGE_SIZE)));
+const pagedProducts = computed(() => filteredProducts.value.slice(
+  (currentPage.value - 1) * PAGE_SIZE,
+  currentPage.value * PAGE_SIZE,
+));
+const pageRange = computed(() => {
+  if (resultCount.value === 0) return '0 de 0';
+  const start = (currentPage.value - 1) * PAGE_SIZE + 1;
+  const end = Math.min(currentPage.value * PAGE_SIZE, resultCount.value);
+  return `${start}–${end} de ${resultCount.value}`;
+});
+const pageLabel = computed(() => `Página ${currentPage.value} de ${pageCount.value}`);
+
+function prevPage() {
+  if (currentPage.value > 1) currentPage.value -= 1;
+}
+
+function nextPage() {
+  if (currentPage.value < pageCount.value) currentPage.value += 1;
+}
+
+watch(filters, () => { currentPage.value = 1; }, { deep: true });
+watch(pageCount, count => { if (currentPage.value > count) currentPage.value = count; });
 
 function decimalIsPositive(value) {
   const text = String(value ?? '').trim();
@@ -52,6 +96,7 @@ async function loadProducts() {
     const data = await listInventoryProducts(params, { signal: controller.signal });
     if (!Array.isArray(data)) throw new Error('Respuesta inválida');
     products.value = data;
+    currentPage.value = 1;
   } catch {
     if (!controller.signal.aborted) {
       error.value = 'No se pudo cargar el inventario. Comprueba la conexión y vuelve a intentarlo.';
@@ -63,6 +108,7 @@ async function loadProducts() {
 
 function clearFilters() {
   filters.value = { search: '', category: '', trackingMode: '', active: '' };
+  currentPage.value = 1;
   void loadProducts();
 }
 
@@ -161,34 +207,36 @@ onUnmounted(() => controller.abort());
 
     <p v-if="notice" class="notice" role="status">{{ notice }}</p>
 
-    <section class="kpi-grid" aria-label="Resumen de inventario">
-      <article class="card kpi"><span>Productos</span><strong>{{ kpis.products }}</strong><small>productos visibles</small></article>
-      <article class="card kpi"><span>Disponible</span><strong>{{ kpis.available }}</strong><small>productos con saldo</small></article>
-      <article class="card kpi"><span>Despachado</span><strong>{{ kpis.dispatched }}</strong><small>salida operativa de almacén</small></article>
-      <article class="card kpi"><span>Asignado</span><strong>{{ kpis.assigned }}</strong><small>productos con saldo</small></article>
-      <article class="card kpi"><span>Instalado</span><strong>{{ kpis.installed }}</strong><small>productos con saldo</small></article>
-      <article class="card kpi featured"><span>Stock físico</span><strong>{{ kpis.physical }}</strong><small>productos con existencia</small></article>
-    </section>
-    <p class="kpi-note">Los saldos no se suman entre productos con unidades diferentes.</p>
+    <div class="inventory-sticky">
+      <section class="kpi-grid" aria-label="Resumen de inventario">
+        <article class="card kpi"><span>Productos</span><strong>{{ kpis.products }}</strong><small>productos visibles</small></article>
+        <article class="card kpi"><span>Disponible</span><strong>{{ kpis.available }}</strong><small>productos con saldo</small></article>
+        <article class="card kpi"><span>Despachado</span><strong>{{ kpis.dispatched }}</strong><small>salida operativa de almacén</small></article>
+        <article class="card kpi"><span>Asignado</span><strong>{{ kpis.assigned }}</strong><small>productos con saldo</small></article>
+        <article class="card kpi"><span>Instalado</span><strong>{{ kpis.installed }}</strong><small>productos con saldo</small></article>
+        <article class="card kpi featured"><span>Stock físico</span><strong>{{ kpis.physical }}</strong><small>productos con existencia</small></article>
+      </section>
+      <p class="kpi-note">Los saldos no se suman entre productos con unidades diferentes.</p>
 
-    <form class="card filters" aria-label="Filtros de inventario" @submit.prevent="loadProducts">
-      <label><span>Buscar</span><input v-model="filters.search" type="search" placeholder="Nombre, fabricante o modelo" /></label>
-      <label><span>Categoría</span><select v-model="filters.category"><option value="">Todos</option><option v-for="(label, key) in categories" :key="key" :value="key">{{ label }}</option></select></label>
-      <label><span>Tipo de control</span><select v-model="filters.trackingMode"><option value="">Todos</option><option value="serialized">Serializado</option><option value="quantity">Por cantidad</option></select></label>
-      <label><span>Estado</span><select v-model="filters.active"><option value="">Todos</option><option value="true">Activos</option><option value="false">Inactivos</option></select></label>
-      <div class="filter-actions"><button class="primary-button compact" type="submit" :disabled="loading">Aplicar</button><button class="text-button" type="button" :disabled="loading" @click="clearFilters">Limpiar</button></div>
-    </form>
+      <form class="card filters" aria-label="Filtros de inventario" @submit.prevent="loadProducts">
+        <label><span>Buscar</span><input v-model="filters.search" type="search" placeholder="Nombre, fabricante o modelo" /></label>
+        <label><span>Categoría</span><select v-model="filters.category"><option value="">Todos</option><option v-for="(label, key) in categories" :key="key" :value="key">{{ label }}</option></select></label>
+        <label><span>Tipo de control</span><select v-model="filters.trackingMode"><option value="">Todos</option><option value="serialized">Serializado</option><option value="quantity">Por cantidad</option></select></label>
+        <label><span>Estado</span><select v-model="filters.active"><option value="">Todos</option><option value="true">Activos</option><option value="false">Inactivos</option></select></label>
+        <div class="filter-actions"><button class="primary-button compact" type="submit" :disabled="loading">Aplicar</button><button class="text-button" type="button" :disabled="loading" @click="clearFilters">Limpiar</button></div>
+      </form>
+    </div>
 
     <section class="card product-section">
       <div class="section-head"><div><p>CATÁLOGO</p><h2>Productos</h2></div><span>{{ products.length }}</span></div>
       <div v-if="loading" class="page-state" role="status">Consultando inventario…</div>
       <div v-else-if="error" class="page-state error-state" role="alert">{{ error }}</div>
-      <div v-else-if="!products.length" class="page-state">No hay productos para los filtros seleccionados.</div>
+      <div v-else-if="!filteredProducts.length" class="page-state">No hay productos para los filtros seleccionados.</div>
       <div v-else class="table-wrapper">
         <table>
           <thead><tr><th>Producto</th><th>Categoría</th><th>Fabricante / Modelo</th><th>Control</th><th>Disponible</th><th>Despachado</th><th>Asignado</th><th>Instalado</th><th>Stock físico</th><th>Estado</th><th>Acción</th></tr></thead>
           <tbody>
-            <tr v-for="product in products" :key="product.id">
+            <tr v-for="product in pagedProducts" :key="product.id">
               <td class="product-name"><strong>{{ product.name }}</strong><small>{{ product.unit }}</small></td>
               <td>{{ categoryLabel(product.category) }}</td>
               <td>{{ manufacturerModel(product) }}</td>
@@ -203,6 +251,14 @@ onUnmounted(() => controller.abort());
             </tr>
           </tbody>
         </table>
+      </div>
+      <div v-if="!loading && !error" class="pagination">
+        <span class="page-range">{{ pageRange }}</span>
+        <div class="page-controls">
+          <button class="secondary-button compact" type="button" :disabled="currentPage <= 1" @click="prevPage">Anterior</button>
+          <span class="page-label">{{ pageLabel }}</span>
+          <button class="secondary-button compact" type="button" :disabled="currentPage >= pageCount" @click="nextPage">Siguiente</button>
+        </div>
       </div>
     </section>
 
@@ -238,14 +294,19 @@ onUnmounted(() => controller.abort());
 .secondary-button { border: 1px solid var(--rdx-border); background: var(--rdx-surface); color: var(--rdx-text-strong); }
 button:disabled { opacity: .6; cursor: wait; }
 .notice { padding: 10px 14px; border-radius: var(--rdx-radius-sm); background: var(--rdx-success-soft); color: var(--rdx-success); font-size: 13px; }
-.kpi-grid { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 12px; }
-.kpi { display: grid; min-width: 0; padding: 17px 18px; }
-.kpi span { font-size: 12px; font-weight: 700; color: var(--rdx-text-muted); }
-.kpi strong { margin: 5px 0; color: var(--rdx-text-strong); font-size: 29px; line-height: 1.1; }
-.kpi small { color: var(--rdx-text-faint); font-size: 11px; }
+.inventory-sticky { position: sticky; top: 0; z-index: 20; background: var(--rdx-background); padding: 12px 0; }
+.kpi-grid { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 10px; }
+.kpi { display: grid; min-width: 0; padding: 9px 12px; }
+.kpi span { font-size: 11px; font-weight: 700; color: var(--rdx-text-muted); }
+.kpi strong { margin: 2px 0; color: var(--rdx-text-strong); font-size: 20px; line-height: 1.1; }
+.kpi small { color: var(--rdx-text-faint); font-size: 10px; }
 .kpi.featured { border-color: color-mix(in srgb, var(--rdx-primary) 30%, var(--rdx-border)); background: var(--rdx-primary-soft); }
-.kpi-note { margin: 7px 0 17px; color: var(--rdx-text-muted); font-size: 11px; }
-.filters { display: grid; grid-template-columns: 1.5fr repeat(3, 1fr) auto; align-items: end; gap: 12px; padding: 15px; margin-bottom: 17px; }
+.kpi-note { margin: 6px 0 10px; color: var(--rdx-text-muted); font-size: 11px; }
+.filters { display: grid; grid-template-columns: 1.5fr repeat(3, 1fr) auto; align-items: end; gap: 12px; padding: 15px; margin-bottom: 0; }
+.pagination { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 13px 20px; border-top: 1px solid var(--rdx-border); color: var(--rdx-text-muted); font-size: 12px; }
+.page-controls { display: flex; align-items: center; gap: 10px; }
+.page-label, .page-range { white-space: nowrap; }
+.page-label { font-weight: 700; }
 .filters label, .modal label { display: grid; gap: 6px; min-width: 0; color: var(--rdx-text-muted); font-size: 12px; font-weight: 650; }
 .filters input, .filters select, .modal input, .modal select, .modal textarea { width: 100%; min-height: 40px; padding: 8px 11px; border: 1px solid var(--rdx-border); border-radius: var(--rdx-radius-sm); background: var(--rdx-surface); color: var(--rdx-text-strong); font: inherit; }
 .filter-actions { display: flex; align-items: center; gap: 7px; }
@@ -287,6 +348,6 @@ td { padding: 14px 13px; border-top: 1px solid var(--rdx-border); color: var(--r
 .form-error { margin: 0; color: var(--rdx-danger); font-size: 12px; }
 .modal-actions { display: flex; justify-content: flex-end; gap: 9px; }
 @media (max-width: 1100px) { .kpi-grid { grid-template-columns: repeat(3, 1fr); } .filters { grid-template-columns: repeat(2, 1fr); } .filter-actions { align-self: end; } }
-@media (max-width: 700px) { .inventory-header { flex-direction: column; } .kpi-grid { grid-template-columns: repeat(2, 1fr); } .filters, .form-grid { grid-template-columns: 1fr; } .filter-actions { justify-content: flex-end; } }
+@media (max-width: 700px) { .inventory-header { flex-direction: column; } .inventory-sticky { position: static; } .kpi-grid { grid-template-columns: repeat(2, 1fr); } .filters, .form-grid { grid-template-columns: 1fr; } .filter-actions { justify-content: flex-end; } .pagination { flex-direction: column; } }
 @media (max-width: 440px) { .kpi-grid { grid-template-columns: 1fr; } .modal-actions { flex-direction: column-reverse; } .modal-actions button { width: 100%; } }
 </style>

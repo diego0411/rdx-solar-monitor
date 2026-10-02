@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { parse, compileScript } from '@vue/compiler-sfc';
-import { computed, ref } from 'vue';
+import { computed, nextTick, ref, watch } from 'vue';
 import { inventoryCategoryLabel, inventoryCategoryLabels } from '../src/utils/inventoryCategories.js';
 
 const source = readFileSync(new URL('../src/views/InventoryView.vue', import.meta.url), 'utf8');
@@ -12,7 +12,7 @@ const code = compileScript(descriptor, { id: 'inventory-view-test' }).content
 
 function setup({ role = 'rdx_admin', products = [], create = null, listError = null } = {}) {
   const deps = {
-    ref, computed, onMounted() {}, onUnmounted() {},
+    ref, computed, watch, onMounted() {}, onUnmounted() {},
     categories: inventoryCategoryLabels,
     categoryLabel: inventoryCategoryLabel,
     getMyProfile: async () => ({ profile: { role } }),
@@ -101,6 +101,130 @@ test('validación y errores mantienen el modal abierto', async () => {
   await denied.saveProduct();
   assert.equal(denied.formError.value, 'No tienes permiso para crear productos.');
   assert.equal(denied.showCreate.value, true);
+});
+
+function manyProducts(count, overrides = {}) {
+  return Array.from({ length: count }, (_, index) => product({
+    id: `p-${index}`,
+    name: `Producto ${index}`,
+    ...overrides,
+  }));
+}
+
+test('zona fija de KPIs/filtros y controles de paginación en template', () => {
+  const template = readFileSync(new URL('../src/views/InventoryView.vue', import.meta.url), 'utf8');
+  assert.match(template, /class="inventory-sticky"/);
+  assert.match(template, /position: sticky/);
+  assert.match(template, /v-for="product in pagedProducts"/);
+  assert.match(template, /Anterior/);
+  assert.match(template, /Siguiente/);
+  assert.match(template, /\{\{ pageRange \}\}/);
+  assert.match(template, /\{\{ pageLabel \}\}/);
+});
+
+test('KPIs compactos en una sola fila en desktop sin perder información', () => {
+  const template = readFileSync(new URL('../src/views/InventoryView.vue', import.meta.url), 'utf8');
+  assert.match(template, /grid-template-columns: repeat\(6, minmax\(0, 1fr\)\)/);
+  for (const label of ['Productos', 'Disponible', 'Despachado', 'Asignado', 'Instalado', 'Stock físico']) {
+    assert.match(template, new RegExp(label));
+  }
+});
+
+test('paginación: 24 productos muestran 10 en página 1', async () => {
+  const view = setup({ products: manyProducts(24) });
+  await view.loadProducts();
+  assert.equal(view.resultCount.value, 24);
+  assert.equal(view.pageCount.value, 3);
+  assert.equal(view.pagedProducts.value.length, 10);
+  assert.deepEqual(view.pagedProducts.value.map(product => product.id),
+    Array.from({ length: 10 }, (_, index) => `p-${index}`));
+  assert.equal(view.pageRange.value, '1–10 de 24');
+  assert.equal(view.pageLabel.value, 'Página 1 de 3');
+});
+
+test('paginación: páginas 2 y 3 muestran 10 y 4 productos', async () => {
+  const view = setup({ products: manyProducts(24) });
+  await view.loadProducts();
+  view.nextPage();
+  assert.equal(view.currentPage.value, 2);
+  assert.equal(view.pagedProducts.value.length, 10);
+  assert.equal(view.pagedProducts.value[0].id, 'p-10');
+  assert.equal(view.pageRange.value, '11–20 de 24');
+  view.nextPage();
+  assert.equal(view.currentPage.value, 3);
+  assert.equal(view.pagedProducts.value.length, 4);
+  assert.equal(view.pagedProducts.value[0].id, 'p-20');
+  assert.equal(view.pageRange.value, '21–24 de 24');
+  assert.equal(view.pageLabel.value, 'Página 3 de 3');
+});
+
+test('paginación: Anterior/Siguiente respetan los límites', async () => {
+  const view = setup({ products: manyProducts(24) });
+  await view.loadProducts();
+  view.prevPage();
+  assert.equal(view.currentPage.value, 1);
+  view.nextPage();
+  view.nextPage();
+  view.nextPage();
+  assert.equal(view.currentPage.value, 3);
+  const template = readFileSync(new URL('../src/views/InventoryView.vue', import.meta.url), 'utf8');
+  assert.match(template, /:disabled="currentPage <= 1"/);
+  assert.match(template, /:disabled="currentPage >= pageCount"/);
+});
+
+test('paginación: el filtro se aplica sobre el catálogo completo y luego pagina', async () => {
+  const view = setup({ products: [
+    ...manyProducts(12, { category: 'cable', name: 'Cable solar' }).map((item, index) => ({ ...item, id: `cable-${index}` })),
+    ...manyProducts(12, { category: 'inverter', name: 'Inversor' }).map((item, index) => ({ ...item, id: `inverter-${index}` })),
+  ] });
+  await view.loadProducts();
+  assert.equal(view.resultCount.value, 24);
+  view.filters.value.category = 'cable';
+  await nextTick();
+  assert.equal(view.resultCount.value, 12);
+  assert.equal(view.pageCount.value, 2);
+  assert.equal(view.pagedProducts.value.length, 10);
+  assert.ok(view.pagedProducts.value.every(product => product.category === 'cable'));
+});
+
+test('paginación: aplicar/cambiar/limpiar filtro vuelve a página 1', async () => {
+  const view = setup({ products: manyProducts(24) });
+  await view.loadProducts();
+  view.nextPage();
+  view.nextPage();
+  assert.equal(view.currentPage.value, 3);
+  view.filters.value.search = 'Producto 1';
+  await nextTick();
+  assert.equal(view.currentPage.value, 1);
+  view.nextPage();
+  view.clearFilters();
+  assert.equal(view.currentPage.value, 1);
+  assert.deepEqual(view.filters.value, { search: '', category: '', trackingMode: '', active: '' });
+});
+
+test('paginación: 0 resultados no genera Página 1 de 0', async () => {
+  const view = setup({ products: manyProducts(5) });
+  await view.loadProducts();
+  view.filters.value.search = 'sin-coincidencias';
+  await nextTick();
+  assert.equal(view.resultCount.value, 0);
+  assert.deepEqual(view.pagedProducts.value, []);
+  assert.equal(view.pageRange.value, '0 de 0');
+  assert.equal(view.pageLabel.value, 'Página 1 de 1');
+  assert.doesNotMatch(view.pageLabel.value, /1 de 0/);
+});
+
+test('paginación: los KPIs no dependen de la página visible', async () => {
+  const view = setup({ products: manyProducts(24, {
+    summary: { available: '5', dispatched: '0', assigned: '0', installed: '0', physical_stock: '5' },
+  }) });
+  await view.loadProducts();
+  const firstPage = { ...view.kpis.value };
+  assert.deepEqual(firstPage, { products: 24, available: 24, dispatched: 0, assigned: 0, installed: 0, physical: 24 });
+  view.nextPage();
+  view.nextPage();
+  assert.equal(view.currentPage.value, 3);
+  assert.deepEqual(view.kpis.value, firstPage);
 });
 
 test('estado vacío y error de carga quedan diferenciados', async () => {
