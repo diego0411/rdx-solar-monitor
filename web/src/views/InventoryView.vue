@@ -257,20 +257,15 @@ onUnmounted(() => controller.abort());
       <div v-else-if="!filteredProducts.length" class="page-state">No hay productos para los filtros seleccionados.</div>
       <div v-else class="table-wrapper">
         <table>
-          <thead><tr><th>Producto</th><th>Categoría</th><th>Fabricante / Modelo</th><th>Control</th><th>Disponible</th><th>Despachado</th><th>Asignado</th><th>Instalado</th><th>Stock físico</th><th>Estado</th><th>Acción</th></tr></thead>
-          <tbody>
-            <tr v-for="product in pagedProducts" :key="product.id">
-              <td class="product-name"><strong>{{ product.name }}</strong><small>{{ product.unit }}</small></td>
-              <td>{{ categoryLabel(product.category) }}</td>
-              <td>{{ manufacturerModel(product) }}</td>
-              <td><span class="badge control">{{ trackingLabel(product.tracking_mode) }}</span></td>
-              <td>{{ formatDecimal(product.summary?.available) }}</td>
-              <td>{{ formatDecimal(product.summary?.dispatched) }}</td>
-              <td>{{ formatDecimal(product.summary?.assigned) }}</td>
-              <td>{{ formatDecimal(product.summary?.installed) }}</td>
-              <td class="stock-cell">{{ formatDecimal(product.summary?.physical_stock) }}</td>
-              <td><span class="badge" :class="product.active ? 'active' : 'inactive'">{{ product.active ? 'Activo' : 'Inactivo' }}</span></td>
-              <td><RouterLink class="detail-link" :to="`/inventory/${product.id}`">Ver detalle</RouterLink></td>
+<thead><tr><th>Producto</th><th>Categoría</th><th>Fabricante</th><th>Disponible</th><th>Stock físico</th><th>Acción</th></tr></thead>
+            <tbody>
+              <tr v-for="product in pagedProducts" :key="product.id">
+                <td class="product-name"><strong>{{ product.name }}</strong><small>{{ product.unit }}</small></td>
+                <td>{{ categoryLabel(product.category) }}</td>
+                <td>{{ product.manufacturer ?? '—' }}</td>
+                <td>{{ formatDecimal(product.summary?.available) }}</td>
+                <td class="stock-cell">{{ formatDecimal(product.summary?.physical_stock) }}</td>
+                <td><RouterLink class="detail-link" :to="`/inventory/${product.id}`">Ver detalle</RouterLink></td>
             </tr>
           </tbody>
         </table>
