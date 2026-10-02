@@ -15,7 +15,8 @@ function setup({
   create = null, pushed = null,
 } = {}) {
   const deps = {
-    ref, computed, watch, onMounted() {}, onUnmounted() {},
+    ref, computed, watch, nextTick, onMounted() {}, onUnmounted() {},
+    SearchableSelect: {},
     useRouter: () => ({ push: async path => { if (pushed) pushed.paths.push(path); } }),
     getMyProfile: async () => ({ profile: { role } }),
     apiFetch: async () => plants,
@@ -169,7 +170,9 @@ test('3b. selector cliente carga comerciales y envía destination_client_id', as
   await view.load();
   view.openCreate();
   await nextTick();
-  assert.deepEqual(view.clientOptions.value, [{ id: clients[0].id, name: 'Cliente Activo' }]);
+  assert.deepEqual(view.clientOptions.value, [{
+    id: clients[0].id, name: 'Cliente Activo', phone: null, email: null,
+  }]);
   view.form.value = {
     reason: 'installation',
     priority: 'normal',
@@ -185,6 +188,27 @@ test('3b. selector cliente carga comerciales y envía destination_client_id', as
   assert.equal(sent.destination_client_id, clients[0].id);
   assert.equal(sent.destination, 'Nave 3');
   assert.ok(!('plant_id' in sent));
+});
+
+test('selector Cliente usa SearchableSelect y no select nativo', () => {
+  const template = readFileSync(new URL('../src/views/OperationsView.vue', import.meta.url), 'utf8');
+  assert.match(template, /<SearchableSelect/);
+  assert.match(template, /\['name', 'phone', 'email'\]/);
+  assert.match(template, /Buscar cliente por nombre, teléfono o correo/);
+  assert.doesNotMatch(template, /<select id="request-client"/);
+});
+
+test('cambiar Cliente a Otro limpia destination_client_id y cierra sugerencias', async () => {
+  const view = setup();
+  await view.load();
+  view.openCreate();
+  let closed = 0;
+  view.clientSelect.value = { close: () => { closed += 1; } };
+  view.form.value.destination_client_id = 'aaaaaaaa-1111-4111-8111-aaaaaaaaaaaa';
+  view.form.value.destination_type = 'other';
+  await nextTick();
+  assert.equal(view.form.value.destination_client_id, '');
+  assert.equal(closed, 1);
 });
 
 test('5b. tipo otro envía texto sin cliente y exige destino', async () => {
@@ -241,10 +265,34 @@ function catalog() {
 test('picker: modal con buscador, filtros y paginación en template', () => {
   const template = readFileSync(new URL('../src/views/OperationsView.vue', import.meta.url), 'utf8');
   assert.match(template, /Seleccionar material/);
-  assert.match(template, /Buscar por nombre, código, fabricante o modelo/);
+  assert.match(template, /Buscar por nombre, fabricante o modelo/);
+  assert.doesNotMatch(template, /Buscar por nombre, código/);
   assert.match(template, /Mostrar más/);
+  assert.match(template, /Escribe para buscar un material o utiliza los filtros\./);
   assert.match(template, /Cambiar material/);
   assert.doesNotMatch(template, /<select v-model="line\.product_id"/);
+});
+
+test('picker: limita a 10 resultados y permite mostrar más', async () => {
+  const manyProducts = Array.from({ length: 12 }, (_, index) => ({
+    id: `product-${index}`,
+    name: `Cable Solar ${index}`,
+    category: 'cable',
+    manufacturer: 'TopCable',
+    model: `SOL-${index}`,
+    tracking_mode: 'quantity',
+    active: true,
+    availability: { available: '1' },
+  }));
+  const view = setup({ products: manyProducts });
+  await view.load();
+  view.openCreate();
+  view.openPickerForNew();
+  view.pickerSearch.value = 'cable';
+  assert.equal(view.pickerResults.value.results.length, 10);
+  assert.equal(view.pickerResults.value.total, 12);
+  view.showMorePickerResults();
+  assert.equal(view.pickerResults.value.results.length, 12);
 });
 
 test('picker: agregar abre modal y seleccionar crea la línea', async () => {
@@ -255,7 +303,10 @@ test('picker: agregar abre modal y seleccionar crea la línea', async () => {
   assert.equal(view.showPicker.value, false);
   view.openPickerForNew();
   assert.equal(view.showPicker.value, true);
-  assert.equal(view.pickerResults.value.total, 2);
+  assert.equal(view.pickerResults.value.total, 0);
+  assert.equal(view.pickerHasCriteria.value, false);
+  view.pickerSearch.value = 'inversor';
+  assert.equal(view.pickerResults.value.total, 1);
   view.selectPickerProduct(PROD_S);
   assert.equal(view.showPicker.value, false);
   assert.equal(view.form.value.lines.length, 1);
@@ -309,6 +360,7 @@ test('picker: excluye ya agregados e inactivos; filtra y pagina', async () => {
   view.openCreate();
   view.form.value.lines = [{ product_id: PROD_S, requested_quantity: '1', observations: '' }];
   view.openPickerForNew();
+  view.pickerCategory.value = 'cable';
   const ids = view.pickerResults.value.results.map(product => product.id);
   assert.ok(!ids.includes(PROD_S));
   assert.ok(!ids.some(id => id === '33333333-3333-4333-8333-333333333333'));
@@ -320,6 +372,7 @@ test('picker: excluye ya agregados e inactivos; filtra y pagina', async () => {
   assert.equal(view.pickerResults.value.total, 1);
 
   view.pickerSearch.value = '';
+  view.pickerCategory.value = 'all';
   view.pickerTrackingMode.value = 'serialized';
   assert.deepEqual(view.pickerResults.value.results.map(product => product.id), []);
   view.pickerTrackingMode.value = 'all';

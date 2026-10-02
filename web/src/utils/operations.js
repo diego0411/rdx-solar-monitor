@@ -70,7 +70,7 @@ export function productTypeLabel(trackingMode) {
 }
 
 // Límite inicial de resultados del selector (no renderizar cientos).
-export const PRODUCT_PICKER_PAGE_SIZE = 20;
+export const PRODUCT_PICKER_PAGE_SIZE = 10;
 
 // Categorías presentes en los datos cargados, etiquetadas y ordenadas.
 export function availableCategoryOptions(products = []) {
@@ -83,8 +83,8 @@ export function availableCategoryOptions(products = []) {
     .sort((a, b) => a.label.localeCompare(b.label, 'es'));
 }
 
-// Búsqueda case-insensitive por nombre, fabricante o modelo (el modelo
-// actúa como código). Multi-término con AND.
+// Búsqueda case-insensitive por los campos expuestos por el contrato:
+// nombre, fabricante y modelo. Multi-término con AND.
 export function productMatchesSearch(product = {}, search = '') {
   const query = String(search ?? '').trim().toLowerCase();
   if (query === '') return true;

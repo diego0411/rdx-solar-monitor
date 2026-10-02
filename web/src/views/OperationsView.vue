@@ -1,6 +1,7 @@
 <script setup>
-import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue';
 import { useRouter } from 'vue-router';
+import SearchableSelect from '../components/SearchableSelect.vue';
 import { apiFetch, getMyProfile } from '../services/api.js';
 import { createRequest, listClients, listProducts, listRequests } from '../services/operations.js';
 import { buildCreatePayload, canCreateRequest, destinationDisplay, destinationTypeLabels, destinationTypes, filterPickerProducts, availableCategoryOptions, pickerAvailabilityText, priorityLabel, productCategoryLabel, productTypeLabel, reasonAllowsPlant, reasonLabel, reasonLabels, requestPriorities, requestReasons, statusLabel } from '../utils/operations.js';
@@ -51,6 +52,7 @@ function emptyForm() {
 }
 
 const form = ref(emptyForm());
+const clientSelect = ref(null);
 
 // Planta solo para maintenance/warranty/replacement: al salir de esos
 // motivos se limpia plant_id de inmediato.
@@ -60,7 +62,10 @@ watch(() => form.value.reason, reason => {
 
 // Tipo de destino excluyente: al pasar a Otro se limpia el cliente.
 watch(() => form.value.destination_type, type => {
-  if (type !== 'client') form.value.destination_client_id = '';
+  if (type !== 'client') {
+    form.value.destination_client_id = '';
+    clientSelect.value?.close();
+  }
 });
 
 const canCreate = computed(() => canCreateRequest(myRole.value));
@@ -87,7 +92,17 @@ const plantOptions = computed(() => plants.value.map(plant => ({
 const clientOptions = computed(() => clients.value.map(client => ({
   id: client.id,
   name: client.name ?? client.id,
+  phone: client.phone ?? null,
+  email: client.email ?? null,
 })));
+
+function clientPrimaryText(client) {
+  return client.name;
+}
+
+function clientSecondaryText(client) {
+  return [client.phone, client.email].filter(Boolean).join(' · ');
+}
 
 const filtered = computed(() => requests.value.filter(request => {
   if (statusFilter.value !== 'all' && request.status !== statusFilter.value) return false;
@@ -194,7 +209,8 @@ const pickerTarget = ref(null);
 const pickerSearch = ref('');
 const pickerCategory = ref('all');
 const pickerTrackingMode = ref('all');
-const pickerLimit = ref(20);
+const pickerLimit = ref(10);
+const pickerSearchInput = ref(null);
 
 const pickerCategoryOptions = computed(() => availableCategoryOptions(products.value));
 
@@ -207,13 +223,22 @@ const pickerExcludeIds = computed(() => {
     .filter(id => typeof id === 'string' && id !== '' && id !== current);
 });
 
-const pickerResults = computed(() => filterPickerProducts(products.value, {
-  search: pickerSearch.value,
-  category: pickerCategory.value,
-  trackingMode: pickerTrackingMode.value,
-  excludeIds: pickerExcludeIds.value,
-  limit: pickerLimit.value,
-}));
+const pickerHasCriteria = computed(() => (
+  pickerSearch.value.trim() !== ''
+  || pickerCategory.value !== 'all'
+  || pickerTrackingMode.value !== 'all'
+));
+
+const pickerResults = computed(() => {
+  if (!pickerHasCriteria.value) return { results: [], total: 0 };
+  return filterPickerProducts(products.value, {
+    search: pickerSearch.value,
+    category: pickerCategory.value,
+    trackingMode: pickerTrackingMode.value,
+    excludeIds: pickerExcludeIds.value,
+    limit: pickerLimit.value,
+  });
+});
 
 function productById(productId) {
   return products.value.find(product => product.id === productId) ?? null;
@@ -224,8 +249,9 @@ function openPickerForNew() {
   pickerSearch.value = '';
   pickerCategory.value = 'all';
   pickerTrackingMode.value = 'all';
-  pickerLimit.value = 20;
+  pickerLimit.value = 10;
   showPicker.value = true;
+  void nextTick(() => pickerSearchInput.value?.focus());
 }
 
 function openPickerForLine(index) {
@@ -233,8 +259,9 @@ function openPickerForLine(index) {
   pickerSearch.value = '';
   pickerCategory.value = 'all';
   pickerTrackingMode.value = 'all';
-  pickerLimit.value = 20;
+  pickerLimit.value = 10;
   showPicker.value = true;
+  void nextTick(() => pickerSearchInput.value?.focus());
 }
 
 function closePicker() {
@@ -243,7 +270,7 @@ function closePicker() {
 }
 
 function showMorePickerResults() {
-  pickerLimit.value += 20;
+  pickerLimit.value += 10;
 }
 
 function selectPickerProduct(productId) {
@@ -526,13 +553,20 @@ onUnmounted(() => controller.abort());
               </option>
             </select>
             <template v-if="form.destination_type === 'client'">
-              <label for="request-client">Cliente *</label>
-              <select id="request-client" v-model="form.destination_client_id" :disabled="formSaving">
-                <option value="" disabled>Selecciona un cliente</option>
-                <option v-for="option in clientOptions" :key="option.id" :value="option.id">
-                  {{ option.name }}
-                </option>
-              </select>
+              <label>Cliente *</label>
+              <SearchableSelect
+                ref="clientSelect"
+                v-model="form.destination_client_id"
+                :options="clientOptions"
+                :search-fields="['name', 'phone', 'email']"
+                :primary-text="clientPrimaryText"
+                :secondary-text="clientSecondaryText"
+                placeholder="Buscar cliente por nombre, teléfono o correo"
+                aria-label="Cliente"
+                :max-results="8"
+                :disabled="formSaving"
+                required
+              />
               <label for="request-destination">Lugar de entrega / referencia (opcional)</label>
               <input id="request-destination" v-model="form.destination" type="text" maxlength="400" :disabled="formSaving" />
             </template>
@@ -595,8 +629,8 @@ onUnmounted(() => controller.abort());
         <h2>Seleccionar material</h2>
         <div class="picker-filters">
           <label class="picker-search">
-            <span>Buscar por nombre, código, fabricante o modelo</span>
-            <input v-model="pickerSearch" type="search" placeholder="Buscar por nombre, código, fabricante o modelo" />
+            <span>Buscar por nombre, fabricante o modelo</span>
+            <input ref="pickerSearchInput" v-model="pickerSearch" type="search" placeholder="Buscar por nombre, fabricante o modelo" autofocus />
           </label>
           <label>
             <span>Categoría</span>
@@ -616,18 +650,19 @@ onUnmounted(() => controller.abort());
             </select>
           </label>
         </div>
-        <p class="hint" role="status">
+        <p v-if="pickerHasCriteria" class="hint" role="status">
           {{ pickerResults.total }} resultado(s). La disponibilidad es informativa.
+        </p>
+        <p v-else class="picker-initial" role="status">
+          Escribe para buscar un material o utiliza los filtros.
         </p>
         <ul v-if="pickerResults.results.length" class="picker-list">
           <li v-for="product in pickerResults.results" :key="product.id" class="picker-row">
             <div>
               <strong>{{ product.name }}</strong>
+              <p class="line-sub">{{ [product.manufacturer, product.model].filter(Boolean).join(' · ') || 'Sin fabricante/modelo' }}</p>
               <p class="line-sub">
-                {{ [product.manufacturer, product.model].filter(Boolean).join(' · ') || 'Sin fabricante/modelo' }} ·
-                {{ productCategoryLabel(product.category) }} ·
-                {{ productTypeLabel(product.tracking_mode) }} ·
-                {{ pickerAvailabilityText(product) }}
+                {{ productCategoryLabel(product.category) }} · {{ productTypeLabel(product.tracking_mode) }} · {{ pickerAvailabilityText(product) }}
               </p>
             </div>
             <button class="secondary-button" type="button" @click="selectPickerProduct(product.id)">
@@ -635,7 +670,7 @@ onUnmounted(() => controller.abort());
             </button>
           </li>
         </ul>
-        <p v-else class="hint">Sin resultados para los filtros indicados.</p>
+        <p v-else-if="pickerHasCriteria" class="hint">Sin resultados para los filtros indicados.</p>
         <button
           v-if="pickerResults.total > pickerResults.results.length"
           class="secondary-button"
@@ -1047,6 +1082,16 @@ onUnmounted(() => controller.abort());
   list-style: none;
   max-height: 320px;
   overflow-y: auto;
+}
+
+.picker-initial {
+  margin: 18px 0;
+  padding: 22px 14px;
+  border: 1px dashed var(--rdx-border);
+  border-radius: 10px;
+  color: var(--rdx-text-muted);
+  font-size: 13px;
+  text-align: center;
 }
 
 .picker-row {
