@@ -57,6 +57,8 @@ mock.module('../src/controllers/inventory.controller.js', {
   namedExports: {
     listProducts: ok, getProduct: ok, postProduct: ok, patchProduct: ok, listItems: ok,
     postItem: ok, postItemTransition: ok, postQuantityMovement: ok, listMovements: ok,
+    listOperations: ok, getOperation: ok, postOperation: ok, postOperationConfirm: ok,
+    postOperationCancel: ok,
   },
 });
 mock.module('../src/controllers/dashboard.controller.js', { namedExports: { getSummary: ok } });

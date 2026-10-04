@@ -1,4 +1,11 @@
 import {
+  cancelInventoryOperationDoc,
+  confirmInventoryOperationDoc,
+  createInventoryOperationDoc,
+  getInventoryOperationDoc,
+  listInventoryOperationDocs,
+} from '../services/inventory.operations.service.js';
+import {
   createInventoryItem,
   createInventoryProduct,
   createQuantityMovement,
@@ -14,6 +21,14 @@ function sendError(res, error) {
   const status = Number.isSafeInteger(error?.statusCode) ? error.statusCode : 503;
   const known = [400, 403, 404, 409].includes(status);
   return res.status(status).json({ error: known ? error.message : 'Error interno' });
+}
+
+function idempotencyKey(req) {
+  const header = req.get?.('Idempotency-Key');
+  if (typeof header === 'string' && header.trim() !== '') return header.trim();
+  const bodyKey = req.body?.idempotency_key;
+  if (typeof bodyKey === 'string' && bodyKey.trim() !== '') return bodyKey.trim();
+  return null;
 }
 
 export async function listProducts(req, res) {
@@ -85,6 +100,52 @@ export async function postQuantityMovement(req, res) {
 export async function listMovements(req, res) {
   try {
     return res.json(await getInventoryMovements(req.profile, req.scope, req.query));
+  } catch (error) {
+    return sendError(res, error);
+  }
+}
+
+export async function listOperations(req, res) {
+  try {
+    return res.json(await listInventoryOperationDocs(req.profile, req.query));
+  } catch (error) {
+    return sendError(res, error);
+  }
+}
+
+export async function getOperation(req, res) {
+  try {
+    return res.json(await getInventoryOperationDoc(req.profile, req.params.id));
+  } catch (error) {
+    return sendError(res, error);
+  }
+}
+
+export async function postOperation(req, res) {
+  try {
+    return res.status(201).json(await createInventoryOperationDoc(
+      req.profile, req.body, idempotencyKey(req),
+    ));
+  } catch (error) {
+    return sendError(res, error);
+  }
+}
+
+export async function postOperationConfirm(req, res) {
+  try {
+    return res.json(await confirmInventoryOperationDoc(
+      req.profile, req.params.id, idempotencyKey(req),
+    ));
+  } catch (error) {
+    return sendError(res, error);
+  }
+}
+
+export async function postOperationCancel(req, res) {
+  try {
+    return res.json(await cancelInventoryOperationDoc(
+      req.profile, req.params.id, idempotencyKey(req),
+    ));
   } catch (error) {
     return sendError(res, error);
   }

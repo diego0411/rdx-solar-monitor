@@ -57,3 +57,32 @@ export function createQuantityInventoryMovement(productId, payload, options = {}
 export function listInventoryMovements(params = {}, options = {}) {
   return apiFetch(`/inventory/movements${query(params)}`, { signal: options.signal });
 }
+
+function jsonWithKey(method, payload, signal, idempotencyKey) {
+  const init = json(method, payload, signal);
+  if (idempotencyKey) init.headers['Idempotency-Key'] = idempotencyKey;
+  return init;
+}
+
+export function listOperations(params = {}, options = {}) {
+  return apiFetch(`/inventory/operations${query(params)}`, { signal: options.signal });
+}
+
+export function getOperation(id, options = {}) {
+  return apiFetch(`/inventory/operations/${encodeURIComponent(id)}`, { signal: options.signal });
+}
+
+export function createOperation(payload, idempotencyKey = null, options = {}) {
+  return apiFetch('/inventory/operations',
+    jsonWithKey('POST', payload, options.signal, idempotencyKey));
+}
+
+export function confirmOperation(id, idempotencyKey = null, options = {}) {
+  return apiFetch(`/inventory/operations/${encodeURIComponent(id)}/confirm`,
+    jsonWithKey('POST', {}, options.signal, idempotencyKey));
+}
+
+export function cancelOperation(id, idempotencyKey = null, options = {}) {
+  return apiFetch(`/inventory/operations/${encodeURIComponent(id)}/cancel`,
+    jsonWithKey('POST', {}, options.signal, idempotencyKey));
+}

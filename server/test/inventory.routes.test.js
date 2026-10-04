@@ -21,6 +21,11 @@ mock.module('../src/controllers/inventory.controller.js', {
     postItemTransition: created,
     postQuantityMovement: created,
     listMovements: ok,
+    listOperations: ok,
+    getOperation: ok,
+    postOperation: created,
+    postOperationConfirm: ok,
+    postOperationCancel: ok,
   },
 });
 
