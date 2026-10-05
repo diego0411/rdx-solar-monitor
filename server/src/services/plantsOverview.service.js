@@ -3,7 +3,7 @@ import { listStoredDevices } from '../repositories/devices.repository.js';
 import { listDeviceLatestData } from '../repositories/deviceLatestData.repository.js';
 import { listPlantEnergySummaries } from '../repositories/plantEnergySummary.repository.js';
 import { latestPlantConsumption } from '../repositories/plantPowerIntervals.repository.js';
-import { telemetryFreshness } from './telemetryFreshness.js';
+import { operationalPlantStatus, telemetryFreshness } from './telemetryFreshness.js';
 import { resolvePlantLoadPower } from './plantLoadPower.service.js';
 import {
   isSameCalendarDay,
@@ -281,6 +281,16 @@ export async function getPlantOverview(plantId) {
     provider: plant.provider,
   });
 
+  // Estado operativo derivado (misma regla que dashboard y lista):
+  // solo online con telemetría de inversor reciente.
+  const singleOperationalStatus =
+    operationalPlantStatus(
+      plant,
+      devices.filter(device => device.active === true),
+      deviceId =>
+        latestById.get(deviceId),
+    );
+
   return {
     plant: {
       ...Object.fromEntries(
@@ -289,7 +299,6 @@ export async function getPlantOverview(plantId) {
           'external_plant_id',
           'name',
           'provider',
-          'status',
           'plant_type',
           'timezone',
           'address',
@@ -298,6 +307,7 @@ export async function getPlantOverview(plantId) {
             [key, plant[key] ?? null],
         ),
       ),
+      status: singleOperationalStatus,
 
       capacity_kwp:
         rounded(plant.capacity_kwp),
@@ -626,6 +636,17 @@ export async function getPlantsOverview(plantIds = null) {
         activeDevicesByPlant.get(plant.id)
         ?? [];
 
+      // Estado operativo derivado (misma regla que el dashboard):
+      // el plants.status persistido no basta sin telemetría reciente.
+      const operationalStatus =
+        operationalPlantStatus(
+          plant,
+          plantDevices,
+          deviceId =>
+            latestByDeviceId.get(deviceId),
+          now,
+        );
+
       const growattInverterLatest =
         plantDevices
           .filter(
@@ -704,7 +725,7 @@ export async function getPlantsOverview(plantIds = null) {
           plant.provider,
 
         status:
-          plant.status,
+          operationalStatus,
 
         capacity_kwp:
           rounded(plant.capacity_kwp),

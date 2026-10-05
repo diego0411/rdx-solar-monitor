@@ -4,7 +4,7 @@ import { useRouter } from 'vue-router';
 import SearchableSelect from '../components/SearchableSelect.vue';
 import { apiFetch, getMyProfile } from '../services/api.js';
 import { createRequest, listClients, listProducts, listRequests } from '../services/operations.js';
-import { buildCreatePayload, canCreateRequest, destinationDisplay, destinationTypeLabels, destinationTypes, filterPickerProducts, pickerAvailabilityText, priorityLabel, productCategoryLabel, productCategoryOptions, reasonAllowsPlant, reasonLabel, reasonLabels, requestPriorities, requestReasons, statusLabel } from '../utils/operations.js';
+import { buildCreatePayload, canCreateRequest, destinationDisplay, destinationTypeLabels, destinationTypes, filterPickerProducts, pickerAvailabilityText, priorityLabel, productCategoryLabel, reasonAllowsPlant, reasonLabel, reasonLabels, requestPriorities, requestReasons, statusLabel } from '../utils/operations.js';
 import { exportOperationsToExcel, downloadExcel } from '../utils/excelExport.js';
 
 const router = useRouter();
@@ -33,10 +33,6 @@ const showForm = ref(false);
 const formSaving = ref(false);
 const formError = ref('');
 const exporting = ref(false);
-
-function emptyLine() {
-  return { product_id: '', requested_quantity: '1', observations: '' };
-}
 
 function emptyForm() {
   return {
@@ -161,21 +157,6 @@ function requestPlantName(plantId) {
   return found?.plant?.name ?? 'Sin datos';
 }
 
-function availabilityText(product) {
-  const availability = product.availability;
-  if (!availability) return 'Disponibilidad no disponible';
-  if (product.tracking_mode === 'serialized') {
-    return `Disponibles: ${availability.available_count ?? '—'}`;
-  }
-  return `Disponible: ${availability.available ?? '—'}`;
-}
-
-function productDetail(product) {
-  const maker = [product.manufacturer, product.model].filter(Boolean).join(' · ');
-  const kind = product.tracking_mode === 'serialized' ? 'Serializado' : 'Por cantidad';
-  return `${product.name} · ${maker ? `${maker} · ` : ''}${kind} · ${availabilityText(product)}`;
-}
-
 function formatDate(value) {
   if (!value) return '—';
   const date = new Date(value);
@@ -197,6 +178,10 @@ function openCreate() {
   form.value = emptyForm();
   formError.value = '';
   formSaving.value = false;
+  quickSearch.value = '';
+  quickQuantity.value = '1';
+  quickSelectedId.value = '';
+  quickError.value = '';
   showForm.value = true;
   void loadClients();
 }
@@ -218,93 +203,89 @@ function closeForm() {
   formError.value = '';
 }
 
-function addLine() {
-  form.value.lines.push(emptyLine());
-}
-
 function removeLine(index) {
   form.value.lines.splice(index, 1);
 }
 
-// ---- Selector de materiales (picker con búsqueda, sin <select> masivo) ----
-
-const showPicker = ref(false);
-const pickerTarget = ref(null);
-const pickerSearch = ref('');
-const pickerCategory = ref('all');
-const pickerLimit = ref(10);
-const pickerSearchInput = ref(null);
-
-const pickerCategoryOptions = computed(() => productCategoryOptions);
-
-const pickerExcludeIds = computed(() => {
-  const current = pickerTarget.value !== null
-    ? form.value.lines[pickerTarget.value]?.product_id
-    : '';
-  return form.value.lines
-    .map(line => line.product_id)
-    .filter(id => typeof id === 'string' && id !== '' && id !== current);
-});
-
-const pickerHasCriteria = computed(() => (
-  pickerSearch.value.trim() !== ''
-  || pickerCategory.value !== 'all'
-));
-
-const pickerResults = computed(() => {
-  if (!pickerHasCriteria.value) return { results: [], total: 0 };
-  return filterPickerProducts(products.value, {
-    search: pickerSearch.value,
-    category: pickerCategory.value,
-    excludeIds: pickerExcludeIds.value,
-    limit: pickerLimit.value,
-  });
-});
-
-const pickerEmptyMessage = computed(() => (
-  pickerCategory.value !== 'all'
-    ? 'No hay productos disponibles en esta categoría.'
-    : 'Sin resultados para los filtros indicados.'
-));
+// ---- Captura rápida de materiales (selector permanente, sin modal) ----
 
 function productById(productId) {
   return products.value.find(product => product.id === productId) ?? null;
 }
 
-function openPickerForNew() {
-  pickerTarget.value = null;
-  pickerSearch.value = '';
-  pickerCategory.value = 'all';
-  pickerLimit.value = 10;
-  showPicker.value = true;
-  void nextTick(() => pickerSearchInput.value?.focus());
+const quickSearch = ref('');
+const quickQuantity = ref('1');
+const quickSelectedId = ref('');
+const quickError = ref('');
+const quickSearchInput = ref(null);
+
+const usedProductIds = computed(() => new Set(
+  form.value.lines
+    .map(line => line.product_id)
+    .filter(id => typeof id === 'string' && id !== ''),
+));
+
+const quickResults = computed(() => {
+  if (quickSearch.value.trim() === '') return { results: [], total: 0 };
+  return filterPickerProducts(products.value, {
+    search: quickSearch.value,
+    category: 'all',
+    excludeIds: [...usedProductIds.value],
+    limit: 6,
+  });
+});
+
+function quickSelectedProduct() {
+  return quickSelectedId.value ? productById(quickSelectedId.value) : null;
 }
 
-function openPickerForLine(index) {
-  pickerTarget.value = index;
-  pickerSearch.value = '';
-  pickerCategory.value = 'all';
-  pickerLimit.value = 10;
-  showPicker.value = true;
-  void nextTick(() => pickerSearchInput.value?.focus());
+function chooseQuickProduct(productId) {
+  quickSelectedId.value = productId;
+  quickError.value = '';
 }
 
-function closePicker() {
-  showPicker.value = false;
-  pickerTarget.value = null;
+function clearQuickSelection() {
+  quickSelectedId.value = '';
 }
 
-function showMorePickerResults() {
-  pickerLimit.value += 10;
-}
-
-function selectPickerProduct(productId) {
-  if (pickerTarget.value === null) {
-    form.value.lines.push({ ...emptyLine(), product_id: productId });
-  } else {
-    form.value.lines[pickerTarget.value].product_id = productId;
+function validQuickQuantity(value) {
+  if (typeof value === 'number') {
+    return Number.isFinite(value) && value > 0 ? value : null;
   }
-  closePicker();
+  if (typeof value === 'string') {
+    const text = value.trim();
+    if (!/^[+]?(\d+(\.\d*)?|\.\d+)([eE][+-]?\d+)?$/.test(text)) return null;
+    const numeric = Number(text);
+    return Number.isFinite(numeric) && numeric > 0 ? text : null;
+  }
+  return null;
+}
+
+function resetQuickAdd(focus = true) {
+  quickSelectedId.value = '';
+  quickQuantity.value = '1';
+  quickSearch.value = '';
+  if (focus) void nextTick(() => quickSearchInput.value?.focus());
+}
+
+function addQuickLine() {
+  quickError.value = '';
+  const product = productById(quickSelectedId.value);
+  if (!product) {
+    quickError.value = 'Selecciona un material del catálogo.';
+    return;
+  }
+  if (usedProductIds.value.has(product.id)) {
+    quickError.value = 'Este material ya fue agregado.';
+    return;
+  }
+  const quantity = validQuickQuantity(quickQuantity.value);
+  if (quantity === null) {
+    quickError.value = 'La cantidad debe ser un número mayor a 0.';
+    return;
+  }
+  form.value.lines.push({ product_id: product.id, requested_quantity: quantity, observations: '' });
+  resetQuickAdd();
 }
 
 async function saveForm() {
@@ -612,36 +593,60 @@ onUnmounted(() => controller.abort());
           </fieldset>
           <fieldset>
             <legend>Materiales</legend>
-            <div v-for="(line, index) in form.lines" :key="index" class="line-editor">
-              <div class="line-product">
-                <div v-if="productById(line.product_id)">
-                  <strong>{{ productById(line.product_id).name }}</strong>
-                  <p class="line-sub">{{ productDetail(productById(line.product_id)) }}</p>
+            <div class="quick-add">
+              <label class="quick-search">
+                <span>Buscar material</span>
+                <input ref="quickSearchInput" v-model="quickSearch" type="search" placeholder="Buscar por nombre/modelo..." :disabled="formSaving" />
+              </label>
+              <ul v-if="quickSearch.trim() !== '' && quickResults.results.length" class="quick-list">
+                <li v-for="product in quickResults.results" :key="product.id" class="quick-row">
+                  <button class="quick-pick" type="button" :disabled="formSaving" @click="chooseQuickProduct(product.id)">
+                    <strong>{{ product.name }}</strong>
+                    <small>{{ [product.manufacturer, product.model].filter(Boolean).join(' · ') || 'Sin fabricante/modelo' }}</small>
+                    <small>{{ productCategoryLabel(product.category) }} · {{ pickerAvailabilityText(product) }}</small>
+                  </button>
+                </li>
+              </ul>
+              <p v-else-if="quickSearch.trim() !== ''" class="hint" role="status">Sin resultados para la búsqueda.</p>
+              <div v-if="quickSelectedProduct()" class="quick-selected">
+                <div>
+                  <strong>{{ quickSelectedProduct().name }}</strong>
+                  <small>{{ [quickSelectedProduct().manufacturer, quickSelectedProduct().model].filter(Boolean).join(' · ') || 'Sin fabricante/modelo' }}</small>
+                  <small>{{ pickerAvailabilityText(quickSelectedProduct()) }}</small>
                 </div>
-                <div v-else>
-                  <strong>Sin material seleccionado</strong>
-                  <p class="line-sub">Elige un material del catálogo para esta línea.</p>
+                <button class="text-button" type="button" :disabled="formSaving" @click="clearQuickSelection">Quitar</button>
+              </div>
+              <div class="quick-add-row">
+                <label>
+                  <span>Cantidad *</span>
+                  <input v-model="quickQuantity" type="number" min="0" step="any" :disabled="formSaving" />
+                </label>
+                <button class="primary-button" type="button" :disabled="formSaving" @click="addQuickLine">+ Agregar</button>
+              </div>
+              <p v-if="quickError" class="form-error" role="alert">{{ quickError }}</p>
+            </div>
+            <p class="added-title">Materiales agregados</p>
+            <p v-if="!form.lines.length" class="hint">Aún no agregaste materiales.</p>
+            <div v-else class="added-list">
+              <div v-for="(line, index) in form.lines" :key="line.product_id || index" class="added-row">
+                <div class="added-product">
+                  <strong>{{ productById(line.product_id)?.name ?? '—' }}</strong>
+                  <small>{{ [productById(line.product_id)?.manufacturer, productById(line.product_id)?.model].filter(Boolean).join(' · ') || 'Sin fabricante/modelo' }}</small>
+                  <small>{{ productById(line.product_id) ? pickerAvailabilityText(productById(line.product_id)) : '' }}</small>
                 </div>
-                <button class="secondary-button" type="button" :disabled="formSaving" @click="openPickerForLine(index)">
-                  {{ line.product_id ? 'Cambiar material' : 'Seleccionar material' }}
+                <label>
+                  <span>Cantidad *</span>
+                  <input v-model="line.requested_quantity" type="number" min="0" step="any" :disabled="formSaving" />
+                </label>
+                <label>
+                  <span>Observación</span>
+                  <input v-model="line.observations" type="text" maxlength="4000" :disabled="formSaving" />
+                </label>
+                <button class="secondary-button line-remove" type="button" :disabled="formSaving" @click="removeLine(index)">
+                  Eliminar
                 </button>
               </div>
-              <label>
-                <span>Cantidad *</span>
-                <input v-model="line.requested_quantity" type="number" min="0" step="any" :disabled="formSaving" />
-              </label>
-              <label>
-                <span>Observación</span>
-                <input v-model="line.observations" type="text" maxlength="4000" :disabled="formSaving" />
-              </label>
-              <button class="secondary-button line-remove" type="button" :disabled="formSaving" @click="removeLine(index)">
-                Eliminar
-              </button>
             </div>
-            <p v-if="!form.lines.length" class="hint">Sin materiales. Agrega el primero con + Agregar material.</p>
-            <button class="secondary-button" type="button" :disabled="formSaving" @click="openPickerForNew">
-              + Agregar material
-            </button>
             <p class="hint">La disponibilidad es informativa. La validación física final ocurre al entregar.</p>
           </fieldset>
           <p v-if="formError" class="form-error" role="alert">{{ formError }}</p>
@@ -655,58 +660,6 @@ onUnmounted(() => controller.abort());
       </section>
     </div>
 
-    <div v-if="showPicker" class="modal-backdrop" @click.self="closePicker">
-      <section class="card modal modal-wide" role="dialog" aria-modal="true" aria-label="Seleccionar material">
-        <h2>Seleccionar material</h2>
-        <div class="picker-filters">
-          <label class="picker-search">
-            <span>Buscar por nombre, fabricante o modelo</span>
-            <input ref="pickerSearchInput" v-model="pickerSearch" type="search" placeholder="Buscar por nombre, fabricante o modelo" autofocus />
-          </label>
-          <label>
-            <span>Categoría</span>
-            <select v-model="pickerCategory">
-              <option value="all">Todos</option>
-              <option v-for="option in pickerCategoryOptions" :key="option.value" :value="option.value">
-                {{ option.label }}
-              </option>
-            </select>
-          </label>
-        </div>
-        <p v-if="pickerHasCriteria" class="hint" role="status">
-          {{ pickerResults.total }} resultado(s). La disponibilidad es informativa.
-        </p>
-        <p v-else class="picker-initial" role="status">
-          Escribe para buscar un material o utiliza los filtros.
-        </p>
-        <ul v-if="pickerResults.results.length" class="picker-list">
-          <li v-for="product in pickerResults.results" :key="product.id" class="picker-row">
-            <div>
-              <strong>{{ product.name }}</strong>
-              <p class="line-sub">{{ [product.manufacturer, product.model].filter(Boolean).join(' · ') || 'Sin fabricante/modelo' }}</p>
-              <p class="line-sub">
-                {{ productCategoryLabel(product.category) }} · {{ pickerAvailabilityText(product) }}
-              </p>
-            </div>
-            <button class="secondary-button" type="button" @click="selectPickerProduct(product.id)">
-              Seleccionar
-            </button>
-          </li>
-        </ul>
-        <p v-else-if="pickerHasCriteria" class="hint">{{ pickerEmptyMessage }}</p>
-        <button
-          v-if="pickerResults.total > pickerResults.results.length"
-          class="secondary-button"
-          type="button"
-          @click="showMorePickerResults"
-        >
-          Mostrar más ({{ pickerResults.total - pickerResults.results.length }} restantes)
-        </button>
-        <div class="modal-actions">
-          <button class="secondary-button" type="button" @click="closePicker">Cerrar</button>
-        </div>
-      </section>
-    </div>
   </div>
 </template>
 
@@ -1058,73 +1011,142 @@ onUnmounted(() => controller.abort());
   resize: vertical;
 }
 
-.line-editor {
-  display: grid;
-  gap: 8px;
-  padding: 12px;
-  border: 1px solid var(--rdx-border);
-  border-radius: 10px;
-}
-
-.line-editor label {
-  display: grid;
-  gap: 4px;
-}
-
 .line-remove {
   justify-self: end;
 }
 
-.line-product {
+.quick-add {
   display: grid;
-  gap: 8px;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid var(--rdx-border);
+  border-radius: 10px;
+  background: var(--rdx-neutral-soft);
 }
 
-.line-product .secondary-button {
-  justify-self: start;
-}
-
-.picker-filters {
-  display: grid;
-  gap: 8px;
-  margin-bottom: 8px;
-}
-
-.picker-filters label {
+.quick-search {
   display: grid;
   gap: 4px;
   font-size: 13px;
   font-weight: 600;
 }
 
-.picker-list {
+.quick-list {
   display: grid;
-  gap: 8px;
-  margin: 12px 0;
+  gap: 6px;
+  margin: 0;
   padding: 0;
   list-style: none;
-  max-height: 320px;
+  max-height: 240px;
   overflow-y: auto;
 }
 
-.picker-initial {
-  margin: 18px 0;
-  padding: 22px 14px;
-  border: 1px dashed var(--rdx-border);
+.quick-pick {
+  display: grid;
+  gap: 2px;
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid var(--rdx-border);
   border-radius: 10px;
-  color: var(--rdx-text-muted);
-  font-size: 13px;
-  text-align: center;
+  background: var(--rdx-surface);
+  color: var(--rdx-text-strong);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
 }
 
-.picker-row {
+.quick-pick small {
+  color: var(--rdx-text-muted);
+  font-weight: 400;
+}
+
+.quick-selected {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 10px;
+  padding: 8px 10px;
+  border: 1px solid var(--rdx-primary);
+  border-radius: 10px;
+  background: var(--rdx-primary-soft);
+}
+
+.quick-selected strong, .quick-selected small {
+  display: block;
+  color: var(--rdx-text-strong);
+}
+
+.quick-selected small {
+  color: var(--rdx-text-muted);
+  font-weight: 400;
+}
+
+.quick-add-row {
+  display: grid;
+  grid-template-columns: 140px auto;
+  align-items: end;
+  gap: 10px;
+}
+
+.quick-add-row label {
+  display: grid;
+  gap: 4px;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.added-title {
+  margin: 14px 0 0;
+  font-size: 11px;
+  font-weight: 750;
+  letter-spacing: .09em;
+  color: var(--rdx-text-muted);
+}
+
+.added-list {
+  display: grid;
+  gap: 8px;
+}
+
+.added-row {
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) 110px minmax(0, 1.4fr) auto;
+  align-items: end;
+  gap: 10px;
   padding: 10px 12px;
   border: 1px solid var(--rdx-border);
   border-radius: 10px;
+}
+
+.added-row label {
+  display: grid;
+  gap: 4px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--rdx-text-muted);
+}
+
+.added-product strong, .added-product small {
+  display: block;
+}
+
+.added-product strong {
+  color: var(--rdx-text-strong);
+}
+
+.added-product small {
+  color: var(--rdx-text-muted);
+  font-weight: 400;
+}
+
+@media (max-width: 700px) {
+  .quick-add-row {
+    grid-template-columns: 1fr;
+  }
+
+  .added-row {
+    grid-template-columns: 1fr;
+  }
 }
 
 .hint {

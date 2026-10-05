@@ -519,7 +519,7 @@ onUnmounted(() => {
                   </strong>
 
                   <span>
-                    Sin conexión
+                    Sin conexión / espera
                   </span>
                 </div>
               </div>
@@ -571,12 +571,13 @@ onUnmounted(() => {
             El estado de planta corresponde a la condición
             reportada por cada plataforma; la telemetría
             refleja la vigencia de los últimos datos.
+            «En línea» requiere telemetría reciente del inversor.
           </p>
           </div>
 
           <div class="state-group telemetry-group">
             <p class="group-label">
-              Telemetría
+              Telemetría de dispositivos
             </p>
 
             <div class="status-list telemetry-list">
@@ -1055,7 +1056,7 @@ onUnmounted(() => {
                     </strong>
 
                     <small>
-                      Sin conexión
+                      Sin conexión / espera
                     </small>
                   </span>
 

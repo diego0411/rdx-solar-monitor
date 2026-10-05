@@ -1,5 +1,5 @@
 import { readDashboardData } from '../repositories/dashboard.repository.js';
-import { telemetryFreshness } from './telemetryFreshness.js';
+import { operationalPlantStatus, telemetryFreshness } from './telemetryFreshness.js';
 import {
   growattDeviceState,
   isSameCalendarDay,
@@ -220,6 +220,29 @@ function summarize(
     latest.map(row => [row.device_id, row])
   );
 
+  /*
+   * Estado operativo por planta: el plants.status persistido es el
+   * último estado reportado por la plataforma y puede quedar viejo
+   * (p. ej. de noche). Solo cuenta online con telemetría de inversor
+   * reciente; el resto cae en su categoría no-online real.
+   */
+  const operationalByPlant = new Map(
+    plants.map(plant => {
+      const plantDevices = devices.filter(
+        device => device.plant_id === plant.id
+      );
+      return [
+        plant.id,
+        operationalPlantStatus(
+          plant,
+          plantDevices,
+          deviceId => latestById.get(deviceId),
+          now,
+        ),
+      ];
+    })
+  );
+
   const growattStateEquals = (device, state) =>
     device.provider === 'growatt'
       ? growattDeviceState(
@@ -305,22 +328,22 @@ function summarize(
 
     online_plants:
       plants.filter(
-        plant => plant.status === 'online'
+        plant => operationalByPlant.get(plant.id) === 'online'
       ).length,
 
     offline_plants:
       plants.filter(
-        plant => plant.status === 'offline'
+        plant => operationalByPlant.get(plant.id) === 'offline'
       ).length,
 
     alarm_plants:
       plants.filter(
-        plant => plant.status === 'alarm'
+        plant => operationalByPlant.get(plant.id) === 'alarm'
       ).length,
 
     unknown_plants:
       plants.filter(
-        plant => plant.status === 'unknown'
+        plant => operationalByPlant.get(plant.id) === 'unknown'
       ).length,
 
     telemetry_current:

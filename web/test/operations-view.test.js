@@ -260,99 +260,43 @@ function catalog() {
   ];
 }
 
-test('picker: modal con buscador, filtros y paginación en template', () => {
+test('quick-add: selector permanente visible sin modal ni "+ Agregar material"', () => {
   const template = readFileSync(new URL('../src/views/OperationsView.vue', import.meta.url), 'utf8');
-  assert.match(template, /Seleccionar material/);
-  assert.match(template, /Buscar por nombre, fabricante o modelo/);
-  assert.doesNotMatch(template, /Buscar por nombre, código/);
-  assert.match(template, /<span>Categoría<\/span>/);
-  assert.doesNotMatch(template, /pickerTrackingMode/);
-  assert.doesNotMatch(template, /<span>Tipo<\/span>/);
-  assert.doesNotMatch(template, />Por cantidad</);
-  assert.doesNotMatch(template, />Serializado</);
-  assert.match(template, /Mostrar más/);
-  assert.match(template, /Escribe para buscar un material o utiliza los filtros\./);
-  assert.match(template, /Cambiar material/);
+  assert.match(template, /Buscar material/);
+  assert.match(template, /Buscar por nombre\/modelo/);
+  assert.match(template, /\+ Agregar/);
+  assert.match(template, /Materiales agregados/);
+  assert.match(template, /Aún no agregaste materiales/);
+  assert.doesNotMatch(template, /showPicker/);
+  assert.doesNotMatch(template, /openPickerForNew/);
+  assert.doesNotMatch(template, /openPickerForLine/);
+  assert.doesNotMatch(template, /\+ Agregar material/);
+  assert.doesNotMatch(template, /Cambiar material/);
   assert.doesNotMatch(template, /<select v-model="line\.product_id"/);
 });
 
-test('picker: muestra las nueve categorías del dominio aunque no existan productos', async () => {
-  const view = setup({ products: [] });
-  await view.load();
-  assert.deepEqual(view.pickerCategoryOptions.value, [
-    { value: 'inverter', label: 'Inversor' },
-    { value: 'solar_panel', label: 'Panel solar' },
-    { value: 'smart_meter', label: 'Smart meter' },
-    { value: 'battery', label: 'Batería' },
-    { value: 'datalogger', label: 'Datalogger' },
-    { value: 'protection', label: 'Protección' },
-    { value: 'structure', label: 'Estructura' },
-    { value: 'cable', label: 'Cable' },
-    { value: 'other', label: 'Otros' },
-  ]);
-});
-
-test('picker: categoría vacía permanece visible y muestra estado vacío', async () => {
+test('quick-add: cantidad default 1 y estado limpio al abrir', async () => {
   const view = setup({ products: catalog() });
   await view.load();
   view.openCreate();
-  view.openPickerForNew();
-  view.pickerCategory.value = 'battery';
-  assert.ok(view.pickerCategoryOptions.value.some(option => option.value === 'battery'));
-  assert.deepEqual(view.pickerResults.value, { results: [], total: 0 });
-  assert.equal(view.pickerEmptyMessage.value, 'No hay productos disponibles en esta categoría.');
+  assert.equal(view.quickQuantity.value, '1');
+  assert.equal(view.quickSelectedId.value, '');
+  assert.equal(view.quickSearch.value, '');
+  assert.equal(view.quickError.value, '');
 });
 
-test('picker: limita a 10 resultados y permite mostrar más', async () => {
-  const manyProducts = Array.from({ length: 12 }, (_, index) => ({
-    id: `product-${index}`,
-    name: `Cable Solar ${index}`,
-    category: 'cable',
-    manufacturer: 'TopCable',
-    model: `SOL-${index}`,
-    tracking_mode: 'quantity',
-    active: true,
-    availability: { available: '1' },
-  }));
-  const view = setup({ products: manyProducts });
+test('quick-add: buscar filtra por nombre/modelo excluyendo agregados', async () => {
+  const view = setup({ products: catalog() });
   await view.load();
   view.openCreate();
-  view.openPickerForNew();
-  view.pickerSearch.value = 'cable';
-  assert.equal(view.pickerResults.value.results.length, 10);
-  assert.equal(view.pickerResults.value.total, 12);
-  view.showMorePickerResults();
-  assert.equal(view.pickerResults.value.results.length, 12);
+  view.quickSearch.value = 'cable';
+  assert.equal(view.quickResults.value.total, 1);
+  assert.deepEqual(view.quickResults.value.results.map(product => product.id), [PICK_PROD_Q]);
+  view.quickSearch.value = '';
+  assert.deepEqual(view.quickResults.value, { results: [], total: 0 });
 });
 
-test('picker: búsqueda y límite no reducen las categorías del catálogo completo', async () => {
-  const products = Array.from({ length: 11 }, (_, index) => ({
-    id: `product-${index}`,
-    name: `Inversor ${index}`,
-    category: 'inverter',
-    tracking_mode: 'quantity',
-    active: true,
-    availability: { available: '1' },
-  }));
-  products.push({
-    id: 'zero-stock-battery',
-    name: 'Batería sin stock',
-    category: 'battery',
-    tracking_mode: 'quantity',
-    active: true,
-    availability: { available: '0' },
-  });
-  const view = setup({ products });
-  await view.load();
-  view.openCreate();
-  view.openPickerForNew();
-  view.pickerSearch.value = 'inversor';
-  assert.equal(view.pickerResults.value.results.length, 10);
-  assert.equal(view.pickerCategoryOptions.value.length, 9);
-  assert.ok(view.pickerCategoryOptions.value.some(option => option.value === 'battery'));
-});
-
-test('picker: producto activo con stock cero sigue siendo seleccionable', async () => {
+test('quick-add: producto activo con stock cero sigue seleccionable', async () => {
   const product = {
     id: PICK_PROD_Q,
     name: 'Batería sin stock',
@@ -364,56 +308,83 @@ test('picker: producto activo con stock cero sigue siendo seleccionable', async 
   const view = setup({ products: [product] });
   await view.load();
   view.openCreate();
-  view.openPickerForNew();
-  view.pickerCategory.value = 'battery';
-  assert.deepEqual(view.pickerResults.value.results, [product]);
-  view.selectPickerProduct(product.id);
+  view.quickSearch.value = 'batería';
+  assert.deepEqual(view.quickResults.value.results, [product]);
+  view.chooseQuickProduct(product.id);
+  view.addQuickLine();
   assert.equal(view.form.value.lines[0].product_id, product.id);
 });
 
-test('picker: agregar abre modal y seleccionar crea la línea', async () => {
+test('quick-add: agregar crea la línea y resetea selector y cantidad', async () => {
   const view = setup({ products: catalog() });
   await view.load();
   view.openCreate();
   assert.deepEqual(view.form.value.lines, []);
-  assert.equal(view.showPicker.value, false);
-  view.openPickerForNew();
-  assert.equal(view.showPicker.value, true);
-  assert.equal(view.pickerResults.value.total, 0);
-  assert.equal(view.pickerHasCriteria.value, false);
-  view.pickerSearch.value = 'inversor';
-  assert.equal(view.pickerResults.value.total, 1);
-  view.selectPickerProduct(PROD_S);
-  assert.equal(view.showPicker.value, false);
-  assert.equal(view.form.value.lines.length, 1);
-  assert.equal(view.form.value.lines[0].product_id, PROD_S);
+  view.quickSearch.value = 'inversor';
+  assert.equal(view.quickResults.value.total, 1);
+  view.chooseQuickProduct(PROD_S);
+  assert.ok(view.quickSelectedProduct());
+  view.quickQuantity.value = '2';
+  view.addQuickLine();
+  assert.deepEqual(view.form.value.lines, [{
+    product_id: PROD_S,
+    requested_quantity: '2',
+    observations: '',
+  }]);
+  assert.equal(view.quickSelectedId.value, '');
+  assert.equal(view.quickQuantity.value, '1');
+  assert.equal(view.quickSearch.value, '');
   assert.ok(view.productById(PROD_S));
 });
 
-test('picker: quantity y serialized crean líneas solicitadas por cantidad', async () => {
-  for (const productId of [PROD_S, PICK_PROD_Q]) {
-    const view = setup({ products: catalog() });
-    await view.load();
-    view.openCreate();
-    view.openPickerForNew();
-    view.selectPickerProduct(productId);
-    assert.deepEqual(view.form.value.lines, [{
-      product_id: productId,
-      requested_quantity: '1',
-      observations: '',
-    }]);
-  }
-});
-
-test('picker: cancelar no crea línea vacía', async () => {
+test('quick-add: segundo material sin paso extra y cantidad default', async () => {
   const view = setup({ products: catalog() });
   await view.load();
   view.openCreate();
-  view.openPickerForNew();
-  assert.equal(view.showPicker.value, true);
-  view.closePicker();
-  assert.equal(view.showPicker.value, false);
+  view.quickSearch.value = 'inversor';
+  view.chooseQuickProduct(PROD_S);
+  view.addQuickLine();
+  assert.equal(view.quickQuantity.value, '1');
+  view.quickSearch.value = 'cable';
+  view.chooseQuickProduct(PICK_PROD_Q);
+  view.addQuickLine();
+  assert.equal(view.form.value.lines.length, 2);
+  assert.deepEqual(view.form.value.lines[1], {
+    product_id: PICK_PROD_Q,
+    requested_quantity: '1',
+    observations: '',
+  });
+});
+
+test('quick-add: sin selección o cantidad inválida no agrega', async () => {
+  const view = setup({ products: catalog() });
+  await view.load();
+  view.openCreate();
+  view.addQuickLine();
+  assert.equal(view.quickError.value, 'Selecciona un material del catálogo.');
   assert.deepEqual(view.form.value.lines, []);
+  view.quickSearch.value = 'cable';
+  view.chooseQuickProduct(PICK_PROD_Q);
+  view.quickQuantity.value = '0';
+  view.addQuickLine();
+  assert.equal(view.quickError.value, 'La cantidad debe ser un número mayor a 0.');
+  assert.deepEqual(view.form.value.lines, []);
+  view.quickQuantity.value = 'abc';
+  view.addQuickLine();
+  assert.equal(view.form.value.lines.length, 0);
+});
+
+test('quick-add: duplicado rechazado con mensaje sin fusionar', async () => {
+  const view = setup({ products: catalog() });
+  await view.load();
+  view.openCreate();
+  view.form.value.lines = [{ product_id: PROD_S, requested_quantity: '1', observations: '' }];
+  view.quickSearch.value = 'inversor';
+  assert.equal(view.quickResults.value.total, 0);
+  view.chooseQuickProduct(PROD_S);
+  view.addQuickLine();
+  assert.equal(view.quickError.value, 'Este material ya fue agregado.');
+  assert.equal(view.form.value.lines.length, 1);
 });
 
 test('9. payload final createRequest permanece compatible', async () => {
@@ -428,8 +399,9 @@ test('9. payload final createRequest permanece compatible', async () => {
   });
   await view.load();
   view.openCreate();
-  view.openPickerForNew();
-  view.selectPickerProduct(PICK_PROD_Q);
+  view.quickSearch.value = 'cable';
+  view.chooseQuickProduct(PICK_PROD_Q);
+  view.addQuickLine();
   view.form.value.reason = 'installation';
   view.form.value.destination_type = 'client';
   view.form.value.destination_client_id = clientId;
@@ -445,36 +417,56 @@ test('9. payload final createRequest permanece compatible', async () => {
   assert.deepEqual(pushed.paths, ['/operations/created-id']);
 });
 
-test('picker: excluye ya agregados e inactivos; filtra y pagina', async () => {
-  const view = setup({ products: catalog() });
+test('quick-add: cantidad y observación editables en lista y eliminar funciona', async () => {
+  let sent = null;
+  const view = setup({
+    products: catalog(),
+    create: async payload => { sent = payload; return { id: 'created-id', code: 'MAT-2026-0001' }; },
+  });
   await view.load();
   view.openCreate();
-  view.form.value.lines = [{ product_id: PROD_S, requested_quantity: '1', observations: '' }];
-  view.openPickerForNew();
-  view.pickerCategory.value = 'cable';
-  const ids = view.pickerResults.value.results.map(product => product.id);
-  assert.ok(!ids.includes(PROD_S));
-  assert.ok(!ids.some(id => id === '33333333-3333-4333-8333-333333333333'));
-  assert.deepEqual(ids, [PICK_PROD_Q]);
-
-  view.pickerSearch.value = 'INVERSOR híbrido';
-  assert.equal(view.pickerResults.value.total, 0);
-  view.pickerSearch.value = 'cable sol-6';
-  assert.equal(view.pickerResults.value.total, 1);
-
-  view.pickerSearch.value = '';
-  view.pickerCategory.value = 'all';
-  view.pickerCategory.value = 'cable';
-  assert.deepEqual(view.pickerResults.value.results.map(product => product.id), [PICK_PROD_Q]);
+  view.quickSearch.value = 'cable';
+  view.chooseQuickProduct(PICK_PROD_Q);
+  view.addQuickLine();
+  view.form.value.lines[0].requested_quantity = '3';
+  view.form.value.lines[0].observations = 'Urgente';
+  view.form.value.reason = 'maintenance';
+  view.form.value.destination_type = 'other';
+  view.form.value.destination = 'Bodega';
+  await view.saveForm();
+  assert.deepEqual(sent.lines, [{
+    product_id: PICK_PROD_Q, requested_quantity: '3', observations: 'Urgente',
+  }]);
+  const view2 = setup({ products: catalog() });
+  await view2.load();
+  view2.openCreate();
+  view2.quickSearch.value = 'cable';
+  view2.chooseQuickProduct(PICK_PROD_Q);
+  view2.addQuickLine();
+  assert.equal(view2.form.value.lines.length, 1);
+  view2.removeLine(0);
+  assert.deepEqual(view2.form.value.lines, []);
 });
 
-test('picker: cambiar material de una línea existente', async () => {
-  const view = setup({ products: catalog() });
+test('quick-add: sin materiales el guardado exige agregar uno', async () => {
+  let calls = 0;
+  const view = setup({ create: async () => { calls += 1; return { id: 'x' }; } });
   await view.load();
   view.openCreate();
-  view.form.value.lines = [{ product_id: PROD_S, requested_quantity: '1', observations: '' }];
-  view.openPickerForLine(0);
-  view.selectPickerProduct(PICK_PROD_Q);
-  assert.equal(view.form.value.lines.length, 1);
-  assert.equal(view.form.value.lines[0].product_id, PICK_PROD_Q);
+  view.form.value.reason = 'maintenance';
+  await view.saveForm();
+  assert.equal(calls, 0);
+  assert.match(view.formError.value, /al menos un material/);
+});
+
+test('quick-add: lista compacta con disponibilidad y layout responsive', () => {
+  const template = readFileSync(new URL('../src/views/OperationsView.vue', import.meta.url), 'utf8');
+  assert.match(template, /class="added-row"/);
+  assert.match(template, /v-model="line\.requested_quantity"/);
+  assert.match(template, /v-model="line\.observations"/);
+  assert.match(template, /@click="removeLine\(index\)"/);
+  assert.match(template, /pickerAvailabilityText\(productById\(line\.product_id\)\)/);
+  assert.match(template, /La disponibilidad es informativa/);
+  assert.match(template, /added-row/);
+  assert.match(template, /@media \(max-width: 700px\)/);
 });
