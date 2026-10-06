@@ -129,3 +129,91 @@ export async function getAlarmById(id, plantIds = null) {
   if (error) throw new Error('No se pudo consultar la alarma');
   return data ?? null;
 }
+
+/*
+ * Lectura para la API normalizada (Fase API): una sola consulta con joins
+ * embebidos (sin N+1) + count exacto para paginación. El search cubre solo
+ * alarm_code/title/description: PostgREST no permite or() sobre tablas
+ * embebidas (PGRST100), así que plant/device name quedan fuera del search
+ * sin una migración con índices trigram/RPC.
+ */
+const ALARM_WITH_RELATIONS = '*, plant:plants(id,name), device:devices(id,name,serial_number,device_type)';
+
+function escapeIlikeTerm(value) {
+  return String(value).replace(/[\\%_]/g, char => `\\${char}`).replace(/[,()]/g, ' ');
+}
+
+function applyAlarmPageFilters(query, filters = {}) {
+  const { provider, status, severity, plantIds, plantId, deviceId, dateFrom, dateTo, search } = filters;
+  if (plantIds !== null && plantIds !== undefined) query = query.in('plant_id', [...plantIds]);
+  if (provider) query = query.eq('provider', provider);
+  if (status) query = query.eq('status', status);
+  if (severity) query = query.eq('severity', severity);
+  if (plantId) query = query.eq('plant_id', plantId);
+  if (deviceId) query = query.eq('device_id', deviceId);
+  if (dateFrom) query = query.gte('first_seen_at', dateFrom);
+  if (dateTo) query = query.lte('first_seen_at', dateTo);
+  if (search) {
+    const term = `%${escapeIlikeTerm(search)}%`;
+    query = query.or(`alarm_code.ilike.${term},title.ilike.${term},description.ilike.${term}`);
+  }
+  return query;
+}
+
+export async function listAlarmsPage({
+  plantIds = null,
+  provider = null,
+  status = null,
+  severity = null,
+  plantId = null,
+  deviceId = null,
+  dateFrom = null,
+  dateTo = null,
+  search = null,
+  page = 1,
+  pageSize = 20,
+} = {}) {
+  if (plantIds !== null && plantIds !== undefined && plantIds.size === 0) return { alarms: [], total: 0 };
+  let query = supabase.from('alarms').select(ALARM_WITH_RELATIONS, { count: 'exact' })
+    .order('status', { ascending: true })
+    .order('first_seen_at', { ascending: false })
+    .order('id', { ascending: false });
+  query = applyAlarmPageFilters(query, {
+    provider, status, severity, plantIds, plantId, deviceId, dateFrom, dateTo, search,
+  });
+  const offset = (page - 1) * pageSize;
+  const { data, error, count } = await query.range(offset, offset + pageSize - 1);
+  if (error) throw new Error('No se pudieron consultar las alarmas');
+  return { alarms: data, total: count ?? 0 };
+}
+
+export async function getAlarmDetail(id, plantIds = null) {
+  if (plantIds !== null && plantIds !== undefined && plantIds.size === 0) return null;
+  let query = supabase.from('alarms').select(ALARM_WITH_RELATIONS).eq('id', id);
+  if (plantIds !== null && plantIds !== undefined) query = query.in('plant_id', [...plantIds]);
+  const { data, error } = await query.maybeSingle();
+  if (error) throw new Error('No se pudo consultar la alarma');
+  return data ?? null;
+}
+
+export async function getAlarmsSummary({ plantIds = null, resolvedSince = null } = {}) {
+  if (plantIds !== null && plantIds !== undefined && plantIds.size === 0) {
+    return { active: 0, critical: 0, warning: 0, resolved_7d: 0 };
+  }
+  const scoped = (query) => (
+    plantIds !== null && plantIds !== undefined ? query.in('plant_id', [...plantIds]) : query
+  );
+  const specs = [
+    ['active', scoped(supabase.from('alarms').select('id', { count: 'exact', head: true }).eq('status', 'active'))],
+    ['critical', scoped(supabase.from('alarms').select('id', { count: 'exact', head: true }).eq('status', 'active').eq('severity', 'critical'))],
+    ['warning', scoped(supabase.from('alarms').select('id', { count: 'exact', head: true }).eq('status', 'active').eq('severity', 'warning'))],
+    ['resolved_7d', scoped(supabase.from('alarms').select('id', { count: 'exact', head: true }).eq('status', 'resolved').gte('resolved_at', resolvedSince))],
+  ];
+  const summary = {};
+  for (const [key, query] of specs) {
+    const { count, error } = await query;
+    if (error) throw new Error('No se pudo consultar el resumen de alarmas');
+    summary[key] = count ?? 0;
+  }
+  return summary;
+}
