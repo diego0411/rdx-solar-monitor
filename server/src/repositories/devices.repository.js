@@ -27,7 +27,7 @@ export async function listActiveGrowattDevices() {
   const pageSize = 1000;
   for (let offset = 0; ; offset += pageSize) {
     const { data, error } = await supabase.from('devices')
-      .select('id, serial_number, device_type, name, active, plant:plants(timezone)')
+      .select('id, plant_id, serial_number, device_type, name, active, plant:plants(timezone)')
       .eq('provider', 'growatt').eq('active', true)
       .order('id', { ascending: true }).range(offset, offset + pageSize - 1);
     if (error) throw new Error(`No se pudieron consultar los dispositivos Growatt: ${error.message}`);

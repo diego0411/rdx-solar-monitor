@@ -6,6 +6,7 @@ import {
 } from '../repositories/devices.repository.js';
 import { GrowattProvider } from '../providers/growatt/GrowattProvider.js';
 import { normalizeGrowattLatestData } from '../providers/growatt/normalizeGrowattLatestData.js';
+import { syncGrowattAlarmSnapshot } from './growattAlarmSync.service.js';
 import { env } from '../config/env.js';
 
 const provider = new GrowattProvider();
@@ -87,6 +88,25 @@ export async function syncGrowattLatest(now = Date.now()) {
           await updateGrowattDeviceTelemetryState(
             device.id, normalized.device_status, normalized.collected_at,
           );
+          // Episodios persistentes desde el snapshot ya obtenido: sin
+          // llamadas extra al fabricante. Best-effort aislado: una falla
+          // aquí no corrompe la telemetría recién persistida.
+          if (String(device.device_type).toUpperCase() === 'MIN' && device.plant_id) {
+            try {
+              await syncGrowattAlarmSnapshot({
+                deviceId: device.id,
+                plantId: device.plant_id,
+                raw: data,
+                collectedAt: normalized.collected_at,
+              });
+            } catch (error) {
+              console.error('Growatt alarm sync failed:', {
+                device_id: device.id,
+                plant_id: device.plant_id,
+                message: String(error?.message ?? error).slice(0, 200),
+              });
+            }
+          }
           result.updated += 1;
           const alias = aliasOf(data);
           if (alias && !device.name) {

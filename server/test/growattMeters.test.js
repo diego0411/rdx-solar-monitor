@@ -127,6 +127,17 @@ function installMocks() {
       async upsertGrowattLatestData() {},
     },
   });
+  // Episodios de alarma: el flujo syncGrowattLatest los toca best-effort;
+  // en este archivo la telemetría es mockeada y ningún test necesita BD.
+  mock.module('../src/repositories/alarms.repository.js', {
+    exports: {
+      async findActiveAlarm() { return null; },
+      async createAlarmEpisode() { return { alarm: null, created: true }; },
+      async touchActiveAlarm() { return null; },
+      async resolveAlarm() { return null; },
+      async listAlarms() { return []; },
+    },
+  });
   // env real lee .env vía fs (mockeado arriba); se sustituye por stub vacío:
   // los providers están mockeados y ningún test necesita credenciales.
   mock.module('../src/config/env.js', {

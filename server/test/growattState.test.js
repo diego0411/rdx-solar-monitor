@@ -99,6 +99,15 @@ if (supportsModuleMocks) {
       },
     },
   });
+  mock.module('../src/repositories/alarms.repository.js', {
+    exports: {
+      async findActiveAlarm() { return null; },
+      async createAlarmEpisode() { return { alarm: null, created: true }; },
+      async touchActiveAlarm() { return null; },
+      async resolveAlarm() { return null; },
+      async listAlarms() { return []; },
+    },
+  });
   mock.module('../src/repositories/plants.repository.js', {
     exports: {
       async upsertGrowattPlant() { plantWrites.push('upsertGrowattPlant'); },
