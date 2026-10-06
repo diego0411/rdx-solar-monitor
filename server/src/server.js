@@ -9,6 +9,7 @@ import { syncHyxiPlants } from './services/hyxiPlants.service.js';
 import { syncHyxiDevices } from './services/hyxiDevices.service.js';
 import { syncHyxiRealtime } from './services/hyxiRealtime.service.js';
 import { syncHyxiEnergySummary } from './services/hyxiEnergySummary.service.js';
+import { createHyxiAlarmSync } from './services/hyxiAlarmSync.service.js';
 import { createScheduledSync } from './services/scheduledSync.js';
 import { localDateForTimezone, syncHyxiPowerHistoryWindow } from './services/hyxiPowerHistory.service.js';
 import { syncHyxiEnergyHistory } from './services/hyxiEnergyHistory.service.js';
@@ -76,6 +77,9 @@ const runHyxiRealtimeSync = createScheduledSync({
 });
 const runHyxiEnergySummarySync = createScheduledSync({
   name: 'energy-summary', sync: syncHyxiEnergySummary, timeoutMs: HYXI_TASK_TIMEOUT_MS,
+});
+const runHyxiAlarmsSync = createScheduledSync({
+  name: 'alarms', sync: createHyxiAlarmSync(), timeoutMs: HYXI_TASK_TIMEOUT_MS,
 });
 
 function currentBoliviaDate() {
@@ -149,6 +153,7 @@ app.listen(env.PORT, () => {
       runHyxiDevicesSync,
       runHyxiRealtimeSync,
       runHyxiEnergySummarySync,
+      runHyxiAlarmsSync,
     ]) {
       void runSync();
       setInterval(runSync, HYXI_SYNC_INTERVAL_MS);

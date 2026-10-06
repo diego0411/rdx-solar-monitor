@@ -27,6 +27,22 @@ export async function findActiveAlarm(identity) {
   return data ?? null;
 }
 
+/*
+ * Lookup por evento del fabricante en CUALQUIER estado (HYXi: identidad
+ * del episodio = external_alarm_id = String(item.id)). Con 035 aplicada,
+ * (provider, external_alarm_id) no-null es UNIQUE: este lookup + manejo
+ * 23505 en los create hacen el flujo idempotente ante concurrencia.
+ */
+export async function findAlarmByExternalId(provider, externalAlarmId) {
+  if (!provider || !externalAlarmId) return null;
+  const { data, error } = await supabase.from('alarms').select('*')
+    .eq('provider', provider)
+    .eq('external_alarm_id', externalAlarmId)
+    .maybeSingle();
+  if (error) throw new Error('No se pudo consultar la alarma por ID externo');
+  return data ?? null;
+}
+
 export async function createAlarmEpisode({
   plantId,
   deviceId = null,
@@ -69,14 +85,20 @@ export async function createAlarmEpisode({
   };
   const { data, error } = await supabase.from('alarms').insert(values).select().single();
   if (!error) return { alarm: data, created: true };
-  // Conflicto con el UNIQUE PARCIAL de episodio activo: otro proceso ya
-  // creó el episodio. Devolver el existente de forma determinista en vez
-  // de duplicar (el patrón SELECT→INSERT tendría carrera).
+  // 23505: otro proceso creó el episodio concurrente. Puede ser por el
+  // UNIQUE PARCIAL de activo (misma identidad lógica) o, con 035 aplicada,
+  // por alarms_provider_external_uidx (mismo provider/external_alarm_id en
+  // cualquier estado: el otro proceso pudo importarlo ya resuelto).
+  // Releer por ID externo cubre ambos casos sin retry de INSERT.
   if (error.code === '23505') {
     const existing = await findActiveAlarm({
       provider, deviceId, plantId, alarmCode, externalAlarmId,
     });
     if (existing) return { alarm: existing, created: false };
+    if (externalAlarmId) {
+      const byExternalId = await findAlarmByExternalId(provider, externalAlarmId);
+      if (byExternalId) return { alarm: byExternalId, created: false };
+    }
   }
   throw new Error('No se pudo crear el episodio de alarma');
 }
@@ -89,6 +111,84 @@ export async function touchActiveAlarm(id, { lastSeenAt = null, rawPayload = und
     .eq('id', id).eq('status', 'active').select().maybeSingle();
   if (error) throw new Error('No se pudo actualizar la alarma activa');
   return data ?? null;
+}
+
+/*
+ * Re-observación de un episodio en CUALQUIER estado (HYXi: un episodio
+ * ya resuelto puede reaparecer en pageData). Actualiza por PK: sin
+ * condición de status, sin conflicto posible. Solo last_seen_at +
+ * raw_payload: jamás cambia status/resolved_at (eso lo decide
+ * resolveAlarm con endTime del fabricante).
+ */
+export async function touchAlarmObservation(id, { lastSeenAt = null, rawPayload = undefined } = {}) {
+  const now = new Date().toISOString();
+  const values = { last_seen_at: lastSeenAt ?? now, updated_at: now };
+  if (rawPayload !== undefined) values.raw_payload = rawPayload;
+  const { data, error } = await supabase.from('alarms').update(values)
+    .eq('id', id).select().maybeSingle();
+  if (error) throw new Error('No se pudo actualizar la observación de la alarma');
+  return data ?? null;
+}
+
+/*
+ * Creación directa de episodio RESUELTO (HYXi: primer poll ya trae
+ * endTime). Un solo INSERT con status resolved + resolved_at (los CHECK
+ * de 034 lo exigen juntos). Con 035 aplicada, un 23505 por
+ * alarms_provider_external_uidx significa que otro proceso importó el
+ * mismo evento concurrente: se relee por ID externo y se devuelve el
+ * existente (sin retry de INSERT). Si 23505 ocurre y la fila no aparece,
+ * se falla explícitamente. Cualquier otro error propaga.
+ */
+export async function createResolvedAlarmEpisode({
+  plantId,
+  deviceId = null,
+  provider,
+  externalAlarmId = null,
+  alarmCode,
+  title,
+  description = null,
+  severity = null,
+  startedAt = null,
+  resolvedAt,
+  firstSeenAt = null,
+  lastSeenAt = null,
+  rawPayload = null,
+}) {
+  if (!plantId) throw new Error('La alarma requiere plant_id');
+  if (!alarmCode) throw new Error('La alarma requiere alarm_code');
+  if (!title) throw new Error('La alarma requiere title');
+  if (!resolvedAt) throw new Error('La alarma resuelta requiere resolved_at');
+  const now = new Date().toISOString();
+  const firstSeen = firstSeenAt ?? now;
+  const lastSeen = lastSeenAt ?? firstSeen;
+  if (Date.parse(lastSeen) < Date.parse(firstSeen)) {
+    throw new Error('last_seen_at no puede ser anterior a first_seen_at');
+  }
+  const values = {
+    plant_id: plantId,
+    device_id: deviceId,
+    provider,
+    external_alarm_id: externalAlarmId,
+    alarm_code: alarmCode,
+    title,
+    description,
+    severity,
+    status: 'resolved',
+    started_at: startedAt,
+    resolved_at: resolvedAt,
+    first_seen_at: firstSeen,
+    last_seen_at: lastSeen,
+    raw_payload: rawPayload,
+    updated_at: now,
+  };
+  const { data, error } = await supabase.from('alarms').insert(values).select().single();
+  if (!error) return { alarm: data, created: true };
+  if (error.code === '23505' && externalAlarmId) {
+    const existing = await findAlarmByExternalId(provider, externalAlarmId);
+    if (existing) return { alarm: existing, created: false };
+    throw new Error('No se pudo crear el episodio de alarma resuelto');
+  }
+  throw new Error('No se pudo crear el episodio de alarma resuelto');
 }
 
 export async function resolveAlarm(id, { resolvedAt = null } = {}) {

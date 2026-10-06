@@ -1,11 +1,15 @@
 import test, { mock } from 'node:test';
 import assert from 'node:assert/strict';
 
-// Fake en memoria que replica la semántica de 034_alarms.sql: identidad
-// de episodio ACTIVO (device o planta) con COALESCE(external,'') y sin
-// UUID mágicos. La BD real aplica lo mismo vía índices parciales.
+// Fake en memoria que replica la semántica de 034_alarms.sql + 035:
+// identidad de episodio ACTIVO (device o planta) con
+// COALESCE(external,'') y unicidad (provider, external_alarm_id) para
+// external no-null en CUALQUIER estado (035). Sin UUID mágicos. La BD
+// real aplica lo mismo vía índices parciales.
 const store = [];
 let seq = 0;
+// Ganchos de prueba: simulan respuestas del INSERT sin tocar el store.
+const forcedInsertErrors = new Map();
 
 function identityKey(row) {
   const ext = row.external_alarm_id ?? '';
@@ -42,8 +46,12 @@ class Query {
   run(mode) {
     if (this.pendingInsert) {
       const row = { id: `a${++seq}`, created_at: '2026-01-01T00:00:00.000Z', ...this.pendingInsert };
+      const forced = forcedInsertErrors.get(row.external_alarm_id);
+      if (forced) return { data: null, error: { code: forced, message: 'forced insert error' } };
       const clash = store.some(existing => existing.status === 'active' && identityKey(existing) === identityKey(row));
-      if (clash) return { data: null, error: { code: '23505', message: 'duplicate active episode' } };
+      const clashExternal = row.external_alarm_id != null && store.some(existing =>
+        existing.provider === row.provider && existing.external_alarm_id === row.external_alarm_id);
+      if (clash || clashExternal) return { data: null, error: { code: '23505', message: 'duplicate episode' } };
       store.push(row);
       return mode === 'single' && !row ? { data: null, error: { message: 'empty' } } : { data: row, error: null };
     }
@@ -239,4 +247,89 @@ test('15: alarma a nivel planta sin device convive y se deduplica', async () => 
   assert.equal(dup.alarm.id, first.alarm.id);
   const found = await repository.findActiveAlarm({ provider: 'hyxi', plantId: PLANT2, alarmCode: 'plant-offline' });
   assert.equal(found.id, first.alarm.id);
+});
+
+// 16. resolved insert normal (HYXi primer poll con endTime)
+test('16: createResolvedAlarmEpisode crea episodio resolved con resolved_at', async () => {
+  const { alarm, created } = await repository.createResolvedAlarmEpisode({
+    plantId: PLANT, deviceId: MIN, provider: 'hyxi', externalAlarmId: '2400800',
+    alarmCode: '5459', title: 'Grid Frequency Overrun Fault',
+    startedAt: T0, resolvedAt: T1, firstSeenAt: T1, lastSeenAt: T1,
+    rawPayload: { id: 2400800 },
+  });
+  assert.equal(created, true);
+  assert.equal(alarm.status, 'resolved');
+  assert.equal(alarm.resolved_at, T1);
+  assert.equal(alarm.started_at, T0);
+  assert.equal(alarm.external_alarm_id, '2400800');
+});
+
+// 17. resolved insert 23505 → relectura del existente (proceso concurrente)
+test('17: resolved concurrente devuelve el episodio existente sin duplicar', async () => {
+  const before = (await repository.listAlarms({})).length;
+  const { alarm, created } = await repository.createResolvedAlarmEpisode({
+    plantId: PLANT, deviceId: MIN, provider: 'hyxi', externalAlarmId: '2400800',
+    alarmCode: '5459', title: 'Grid Frequency Overrun Fault',
+    startedAt: T0, resolvedAt: T1, firstSeenAt: T1, lastSeenAt: T1,
+    rawPayload: { id: 2400800 },
+  });
+  assert.equal(created, false);
+  assert.equal(alarm.external_alarm_id, '2400800');
+  assert.equal((await repository.listAlarms({})).length, before);
+});
+
+// 18. active concurrente contra resolved existente → 23505 → relectura por ID externo
+test('18: active concurrente sobre resolved existente no duplica', async () => {
+  const before = (await repository.listAlarms({})).length;
+  const { alarm, created } = await repository.createAlarmEpisode({
+    plantId: PLANT, deviceId: MIN, provider: 'hyxi', externalAlarmId: '2400800',
+    alarmCode: '5459', title: 'Grid Frequency Overrun Fault',
+  });
+  assert.equal(created, false);
+  assert.equal(alarm.status, 'resolved');
+  assert.equal(alarm.external_alarm_id, '2400800');
+  assert.equal((await repository.listAlarms({})).length, before);
+});
+
+// 19. 23505 sin fila visible → error explícito (no se oculta)
+test('19: 23505 fantasma falla explícitamente', async () => {
+  forcedInsertErrors.set('PHANTOM-1', '23505');
+  try {
+    await assert.rejects(repository.createResolvedAlarmEpisode({
+      plantId: PLANT, deviceId: MIN, provider: 'hyxi', externalAlarmId: 'PHANTOM-1',
+      alarmCode: '5459', title: 'Fantasma', resolvedAt: T1,
+    }), /resuelto/);
+  } finally {
+    forcedInsertErrors.delete('PHANTOM-1');
+  }
+});
+
+// 20. error distinto de 23505 propaga
+test('20: error de insert no-23505 propaga sin releer', async () => {
+  forcedInsertErrors.set('BOOM-1', 'XX000');
+  try {
+    await assert.rejects(repository.createResolvedAlarmEpisode({
+      plantId: PLANT, deviceId: MIN, provider: 'hyxi', externalAlarmId: 'BOOM-1',
+      alarmCode: '5459', title: 'Boom', resolvedAt: T1,
+    }), /resuelto/);
+    await assert.rejects(repository.createAlarmEpisode({
+      plantId: PLANT, deviceId: MIN, provider: 'hyxi', externalAlarmId: 'BOOM-1',
+      alarmCode: '5459', title: 'Boom',
+    }), /episodio de alarma/);
+  } finally {
+    forcedInsertErrors.delete('BOOM-1');
+  }
+});
+
+// 21. findAlarmByExternalId en cualquier estado + touch de observación
+test('21: lookup por ID externo encuentra resolved y touch no degrada', async () => {
+  const found = await repository.findAlarmByExternalId('hyxi', '2400800');
+  assert.equal(found.status, 'resolved');
+  assert.equal(await repository.findAlarmByExternalId('hyxi', 'NO-EXISTE'), null);
+  assert.equal(await repository.findAlarmByExternalId('hyxi', null), null);
+  const touched = await repository.touchAlarmObservation(found.id, { lastSeenAt: T2, rawPayload: { id: 2400800, seen: 2 } });
+  assert.equal(touched.last_seen_at, T2);
+  assert.equal(touched.status, 'resolved');
+  assert.equal(touched.started_at, T0);
+  assert.equal(touched.resolved_at, T1);
 });
