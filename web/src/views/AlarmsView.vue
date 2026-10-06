@@ -1,172 +1,248 @@
 <script setup>
 import { computed, onMounted, onUnmounted, ref } from 'vue';
 import { apiFetch } from '../services/api.js';
+import { getAlarm, getAlarmSummary, listAlarms } from '../services/alarms.js';
 
-const hyxiResult = ref(null);
-const growattResult = ref(null);
+const PAGE_SIZE = 10;
 
-const hyxiLoading = ref(true);
-const growattLoading = ref(true);
+const statusLabels = {
+  active: 'Activa',
+  resolved: 'Resuelta',
+};
 
-const hyxiError = ref('');
-const growattError = ref('');
+const severityLabels = {
+  critical: 'Crítica',
+  warning: 'Advertencia',
+  information: 'Información',
+};
+
+const providerLabels = {
+  growatt: 'Growatt',
+  hyxi: 'HYXiPOWER',
+};
+
+const technicalFields = [
+  'status',
+  'statusText',
+  'faultType',
+  'warnCode',
+  'newWarnCode',
+  'errorText',
+  'warnText',
+];
+
+const alarms = ref([]);
+const pagination = ref({ page: 1, page_size: PAGE_SIZE, total: 0, total_pages: 0 });
+const summary = ref({ active: 0, critical: 0, warning: 0, resolved_7d: 0 });
+const plants = ref([]);
+const plantNames = ref({});
+
+const loading = ref(true);
+const tableLoading = ref(false);
+const error = ref('');
+const summaryError = ref('');
+
+const statusFilter = ref('all');
+const severityFilter = ref('all');
+const providerFilter = ref('all');
+const plantFilter = ref('all');
+const search = ref('');
+
+const detail = ref(null);
+const showDetail = ref(false);
+const detailLoading = ref(false);
+const detailError = ref('');
+const technicalOpen = ref(false);
 
 const controller = new AbortController();
 
-onMounted(async () => {
-  try {
-    const data = await apiFetch('/integrations/hyxi/alarms/recent', {
-      signal: controller.signal,
-    });
-
-    if (!data || !Array.isArray(data.alarms)) {
-      throw new Error('Respuesta inválida');
-    }
-
-    hyxiResult.value = data;
-  } catch {
-    if (!controller.signal.aborted) {
-      hyxiError.value = 'No se pudo consultar el servicio de alarmas HYXi.';
-    }
-  } finally {
-    hyxiLoading.value = false;
-  }
-});
-
-onMounted(async () => {
-  try {
-    const data = await apiFetch('/integrations/growatt/alarms/current', {
-      signal: controller.signal,
-    });
-
-    if (!data || !Array.isArray(data.alarms)) {
-      throw new Error('Respuesta inválida');
-    }
-
-    growattResult.value = data;
-  } catch {
-    if (!controller.signal.aborted) {
-      growattError.value = 'No se pudo consultar el servicio de alarmas Growatt.';
-    }
-  } finally {
-    growattLoading.value = false;
-  }
-});
-
-onUnmounted(() => controller.abort());
-
-const hyxiAvailable = computed(() =>
-  !hyxiLoading.value &&
-  !hyxiError.value &&
-  hyxiResult.value &&
-  !hyxiResult.value.partial
-);
-
-const growattAvailable = computed(() =>
-  !growattLoading.value &&
-  !growattError.value &&
-  growattResult.value
-);
-
-const hyxiAlarms = computed(() => hyxiResult.value?.alarms ?? []);
-const growattAlarms = computed(() => growattResult.value?.alarms ?? []);
-
-const totalActive = computed(
-  () => hyxiAlarms.value.length + growattAlarms.value.length
-);
-
-const unifiedAlarms = computed(() => {
-  const hyxi = hyxiAlarms.value.map((item) => {
-    const alarm = item.alarm ?? {};
-
-    return {
-      provider: 'HYXi',
-      plant:
-        item.plant?.name ??
-        alarm.plantName ??
-        item.plant?.external_plant_id ??
-        'Sin datos',
-      device:
-        alarm.deviceName ??
-        alarm.deviceSn ??
-        'Sin datos',
-      code:
-        alarm.alarmCode ??
-        'Sin datos',
-      description:
-        alarm.alarmName ??
-        'Alarma HYXi',
-      date:
-        alarm.beginTime ?? null,
-    };
-  });
-
-  const growatt = growattAlarms.value.map((item) => ({
-    provider: 'Growatt',
-    plant:
-      item.plant?.name ??
-      item.plant_name ??
-      item.plant?.external_plant_id ??
-      'Sin datos',
-    device:
-      item.device?.name ??
-      item.device?.serial_number ??
-      item.serial_number ??
-      'Sin datos',
-    code:
-      item.faultType && Number(item.faultType) !== 0
-        ? `Falla ${item.faultType}`
-        : item.warnCode && Number(item.warnCode) !== 0
-          ? `Aviso ${item.warnCode}`
-          : 'Incidencia',
-    description:
-      usableText(item.errorText) ??
-      usableText(item.warnText) ??
-      'Incidencia detectada',
-    date:
-      item.collected_at ?? null,
-  }));
-
-  return [...hyxi, ...growatt].sort(
-    (a, b) => timestamp(b.date) - timestamp(a.date)
-  );
-});
-
-function usableText(value) {
-  if (!value || typeof value !== 'string') return null;
-
-  const text = value.trim();
-
-  if (!text || text.toLowerCase() === 'unknown') return null;
-
-  return text;
+function statusLabel(status) {
+  return statusLabels[status] ?? status ?? 'Sin datos';
 }
 
-function timestamp(value) {
-  if (!value) return 0;
+function severityLabel(severity) {
+  if (severity === null || severity === undefined || severity === '') return 'Sin clasificación';
+  return severityLabels[severity] ?? severity;
+}
 
-  if (typeof value === 'number') return value;
+function providerLabel(provider) {
+  return providerLabels[provider] ?? provider ?? 'Sin datos';
+}
 
-  const parsed = new Date(value).getTime();
-
-  return Number.isFinite(parsed) ? parsed : 0;
+function isRdxClassified(alarm) {
+  return alarm?.provider === 'growatt' && alarm?.severity !== null && alarm?.severity !== undefined;
 }
 
 function formatDate(value) {
   if (!value) return 'Sin datos';
-
-  const date =
-    typeof value === 'number'
-      ? new Date(value)
-      : new Date(value);
-
+  const date = new Date(value);
   if (Number.isNaN(date.getTime())) return 'Sin datos';
-
   return new Intl.DateTimeFormat('es-BO', {
     dateStyle: 'short',
     timeStyle: 'short',
   }).format(date);
 }
+
+function plantName(alarm) {
+  return alarm?.plant?.name ?? plantNames.value[alarm?.plant?.id] ?? 'Sin datos';
+}
+
+function deviceName(alarm) {
+  return alarm?.device?.name ?? 'Sin planta';
+}
+
+function deviceSerial(alarm) {
+  return alarm?.device?.serial_number ?? null;
+}
+
+const plantOptions = computed(() => plants.value.map(plant => ({
+  id: plant.id,
+  name: plant.name ?? plant.id,
+})));
+
+const hasActiveFilters = computed(() => (
+  statusFilter.value !== 'all'
+  || severityFilter.value !== 'all'
+  || providerFilter.value !== 'all'
+  || plantFilter.value !== 'all'
+  || search.value.trim() !== ''
+));
+
+// El backend no filtra severity NULL: "Sin clasificación" se aplica sobre
+// la página recibida (limitación documentada del contrato actual).
+const visibleAlarms = computed(() => {
+  if (severityFilter.value !== 'none') return alarms.value;
+  return alarms.value.filter(alarm => alarm.severity === null || alarm.severity === undefined);
+});
+
+function buildParams(page) {
+  const params = { page, pageSize: PAGE_SIZE };
+  if (statusFilter.value !== 'all') params.status = statusFilter.value;
+  if (severityFilter.value !== 'all' && severityFilter.value !== 'none') params.severity = severityFilter.value;
+  if (providerFilter.value !== 'all') params.provider = providerFilter.value;
+  if (plantFilter.value !== 'all') params.plantId = plantFilter.value;
+  const term = search.value.trim();
+  if (term) params.search = term;
+  return params;
+}
+
+async function loadAlarms({ resetPage = false } = {}) {
+  if (resetPage) pagination.value.page = 1;
+  tableLoading.value = true;
+  if (alarms.value.length === 0) loading.value = true;
+  error.value = '';
+  try {
+    const data = await listAlarms(buildParams(pagination.value.page), { signal: controller.signal });
+    if (!data || !Array.isArray(data.alarms) || !data.pagination) throw new Error('Respuesta inválida');
+    alarms.value = data.alarms;
+    pagination.value = {
+      page: data.pagination.page ?? 1,
+      page_size: data.pagination.page_size ?? PAGE_SIZE,
+      total: data.pagination.total ?? 0,
+      total_pages: data.pagination.total_pages ?? 0,
+    };
+  } catch (failure) {
+    if (!controller.signal.aborted) {
+      error.value = 'No se pudieron cargar las alarmas. Comprueba la conexión y vuelve a intentarlo.';
+    }
+  } finally {
+    loading.value = false;
+    tableLoading.value = false;
+  }
+}
+
+async function loadSummary() {
+  summaryError.value = '';
+  try {
+    const data = await getAlarmSummary({ signal: controller.signal });
+    if (!data || typeof data !== 'object') throw new Error('Respuesta inválida');
+    summary.value = {
+      active: data.active ?? 0,
+      critical: data.critical ?? 0,
+      warning: data.warning ?? 0,
+      resolved_7d: data.resolved_7d ?? 0,
+    };
+  } catch (failure) {
+    if (!controller.signal.aborted) {
+      summaryError.value = 'No se pudo cargar el resumen.';
+    }
+  }
+}
+
+async function loadPlants() {
+  try {
+    const data = await apiFetch('/plants', { signal: controller.signal });
+    const plantList = Array.isArray(data) ? data : [];
+    plants.value = plantList;
+    plantNames.value = Object.fromEntries(
+      plantList.map(plant => [plant.id, plant.name ?? plant.id]),
+    );
+  } catch {
+    plants.value = [];
+    plantNames.value = {};
+  }
+}
+
+function onFilterChange() {
+  void loadAlarms({ resetPage: true });
+}
+
+function goToPage(page) {
+  if (page < 1 || page > pagination.value.total_pages || page === pagination.value.page) return;
+  pagination.value.page = page;
+  void loadAlarms();
+}
+
+function retry() {
+  void loadSummary();
+  void loadAlarms();
+}
+
+async function openDetail(id) {
+  showDetail.value = true;
+  detail.value = null;
+  detailError.value = '';
+  technicalOpen.value = false;
+  detailLoading.value = true;
+  try {
+    const data = await getAlarm(id, { signal: controller.signal });
+    if (!data || typeof data !== 'object' || !data.id) throw new Error('Respuesta inválida');
+    detail.value = data;
+  } catch (failure) {
+    if (!controller.signal.aborted) {
+      detailError.value = 'No se pudo cargar el detalle de la alarma.';
+    }
+  } finally {
+    detailLoading.value = false;
+  }
+}
+
+function closeDetail() {
+  if (detailLoading.value) return;
+  showDetail.value = false;
+  detail.value = null;
+  detailError.value = '';
+}
+
+function toggleTechnical() {
+  technicalOpen.value = !technicalOpen.value;
+}
+
+function technicalEntries(payload) {
+  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) return [];
+  return technicalFields
+    .filter(field => payload[field] !== undefined && payload[field] !== null && payload[field] !== '')
+    .map(field => ({ field, value: payload[field] }));
+}
+
+async function load() {
+  loading.value = true;
+  await loadPlants();
+  await Promise.all([loadSummary(), loadAlarms()]);
+}
+
+onMounted(load);
+onUnmounted(() => controller.abort());
 </script>
 
 <template>
@@ -176,198 +252,222 @@ function formatDate(value) {
         <p class="eyebrow">RDX SOLAR MONITOR</p>
         <h1>Alarmas</h1>
         <p class="page-description">
-          Supervisión centralizada de incidencias de las plantas fotovoltaicas.
+          Monitoreo e historial de alarmas de las plantas y dispositivos.
         </p>
-      </div>
-
-      <div class="status-pill">
-        <span
-          class="status-dot"
-          :class="{ active: totalActive > 0 }"
-        ></span>
-        {{ totalActive }} incidencias activas
       </div>
     </header>
 
     <section class="kpi-grid">
       <article class="card kpi-card">
-        <div class="kpi-top">
-          <span class="kpi-label">INCIDENCIAS ACTIVAS</span>
-          <span class="kpi-icon">!</span>
-        </div>
-
-        <strong class="kpi-value">{{ totalActive }}</strong>
-
-        <span
-          class="kpi-state"
-          :class="{ warning: totalActive > 0 }"
-        >
-          {{ totalActive ? 'Requieren revisión' : 'Sin incidencias detectadas' }}
+        <div class="kpi-top"><span class="kpi-label">ACTIVAS</span></div>
+        <strong class="kpi-value">{{ summaryError ? '—' : summary.active }}</strong>
+        <span class="kpi-state" :class="{ warning: summary.active > 0 }">
+          {{ summaryError ? summaryError : 'Episodios activos' }}
         </span>
       </article>
-
       <article class="card kpi-card">
-        <div class="kpi-top">
-          <span class="kpi-label">HYXi</span>
-          <span class="provider-tag">HYXi</span>
-        </div>
-
-        <strong v-if="hyxiLoading" class="kpi-value muted">—</strong>
-        <strong v-else-if="hyxiAvailable" class="kpi-value">
-          {{ hyxiAlarms.length }}
-        </strong>
-        <strong v-else class="kpi-value muted">—</strong>
-
-        <span
-          class="kpi-state"
-          :class="{ unavailable: !hyxiLoading && !hyxiAvailable }"
-        >
-          <template v-if="hyxiLoading">Consultando…</template>
-          <template v-else-if="hyxiAvailable">
-            {{ hyxiAlarms.length ? 'Incidencias detectadas' : 'Sin incidencias' }}
-          </template>
-          <template v-else>Servicio no disponible</template>
+        <div class="kpi-top"><span class="kpi-label">CRÍTICAS</span></div>
+        <strong class="kpi-value">{{ summaryError ? '—' : summary.critical }}</strong>
+        <span class="kpi-state" :class="{ warning: summary.critical > 0 }">
+          Activas críticas
         </span>
       </article>
-
       <article class="card kpi-card">
-        <div class="kpi-top">
-          <span class="kpi-label">GROWATT</span>
-          <span class="provider-tag">Growatt</span>
-        </div>
-
-        <strong v-if="growattLoading" class="kpi-value muted">—</strong>
-        <strong v-else-if="growattAvailable" class="kpi-value">
-          {{ growattAlarms.length }}
-        </strong>
-        <strong v-else class="kpi-value muted">—</strong>
-
-        <span
-          class="kpi-state"
-          :class="{ unavailable: !growattLoading && !growattAvailable }"
-        >
-          <template v-if="growattLoading">Consultando…</template>
-          <template v-else-if="growattAvailable">
-            {{ growattAlarms.length ? 'Incidencias detectadas' : 'Sin incidencias' }}
-          </template>
-          <template v-else>Servicio no disponible</template>
-        </span>
+        <div class="kpi-top"><span class="kpi-label">ADVERTENCIAS</span></div>
+        <strong class="kpi-value">{{ summaryError ? '—' : summary.warning }}</strong>
+        <span class="kpi-state">Activas de advertencia</span>
+      </article>
+      <article class="card kpi-card">
+        <div class="kpi-top"><span class="kpi-label">RESUELTAS (7 DÍAS)</span></div>
+        <strong class="kpi-value">{{ summaryError ? '—' : summary.resolved_7d }}</strong>
+        <span class="kpi-state">Resueltas últimos 7 días</span>
       </article>
     </section>
 
-    <div
-      v-if="!hyxiLoading && !hyxiAvailable"
-      class="service-warning"
-      role="status"
-    >
-      <div class="warning-icon">!</div>
-
-      <div>
-        <strong>Servicio de alarmas HYXi no disponible</strong>
-        <p>
-          Las alarmas HYXi no pudieron consultarse. La supervisión Growatt
-          continúa operativa.
-        </p>
+    <section class="card filters-card">
+      <div class="filters-grid">
+        <label class="filter-field">
+          <span>Estado</span>
+          <select v-model="statusFilter" @change="onFilterChange">
+            <option value="all">Todos</option>
+            <option value="active">Activa</option>
+            <option value="resolved">Resuelta</option>
+          </select>
+        </label>
+        <label class="filter-field">
+          <span>Severidad</span>
+          <select v-model="severityFilter" @change="onFilterChange">
+            <option value="all">Todas</option>
+            <option value="critical">Crítica</option>
+            <option value="warning">Advertencia</option>
+            <option value="information">Información</option>
+            <option value="none">Sin clasificación</option>
+          </select>
+        </label>
+        <label class="filter-field">
+          <span>Fabricante</span>
+          <select v-model="providerFilter" @change="onFilterChange">
+            <option value="all">Todos</option>
+            <option value="growatt">Growatt</option>
+            <option value="hyxi">HYXiPOWER</option>
+          </select>
+        </label>
+        <label class="filter-field">
+          <span>Planta</span>
+          <select v-model="plantFilter" @change="onFilterChange">
+            <option value="all">Todas</option>
+            <option v-for="option in plantOptions" :key="option.id" :value="option.id">
+              {{ option.name }}
+            </option>
+          </select>
+        </label>
+        <label class="filter-field">
+          <span>Búsqueda <small class="soon-note">(código, título, descripción)</small></span>
+          <input v-model="search" type="search" placeholder="Código, título o descripción" @change="onFilterChange" />
+        </label>
       </div>
-    </div>
+    </section>
 
-    <div
-      v-if="!growattLoading && !growattAvailable"
-      class="service-warning"
-      role="status"
-    >
-      <div class="warning-icon">!</div>
-
-      <div>
-        <strong>Servicio de alarmas Growatt no disponible</strong>
-        <p>
-          No fue posible consultar las incidencias actuales de Growatt.
-        </p>
-      </div>
-    </div>
-
-    <section class="card incidents-card">
+    <section class="card alarms-card">
       <div class="section-header">
         <div>
-          <p class="section-eyebrow">SUPERVISIÓN</p>
-          <h2>Incidencias activas</h2>
+          <p class="section-eyebrow">EPISODIOS</p>
+          <h2>Listado de alarmas</h2>
         </div>
-
-        <span class="incident-count">
-          {{ unifiedAlarms.length }}
-        </span>
+        <span class="visit-count">{{ pagination.total }}</span>
       </div>
 
-      <div
-        v-if="hyxiLoading || growattLoading"
-        class="empty-state"
-        role="status"
-      >
+      <div v-if="loading" class="empty-state" role="status">
         <div class="empty-icon loading-icon">↻</div>
-        <strong>Consultando incidencias</strong>
-        <p>Recopilando información de los proveedores.</p>
+        <strong>Consultando alarmas</strong>
+        <p>Recopilando el historial de episodios.</p>
       </div>
 
-      <div
-        v-else-if="!unifiedAlarms.length"
-        class="empty-state"
-      >
+      <div v-else-if="error" class="empty-state" role="alert">
+        <div class="empty-icon error-icon">!</div>
+        <strong>No se pudo cargar</strong>
+        <p>{{ error }}</p>
+        <button class="secondary-button retry-button" type="button" @click="retry">Reintentar</button>
+      </div>
+
+      <div v-else-if="!visibleAlarms.length" class="empty-state">
         <div class="empty-icon success-icon">✓</div>
-        <strong>No hay incidencias activas</strong>
-        <p>
-          No se detectaron alarmas en las fuentes disponibles.
-        </p>
+        <strong>Sin alarmas</strong>
+        <p>{{ hasActiveFilters ? 'No se registraron alarmas con los filtros seleccionados.' : 'No se registraron alarmas todavía.' }}</p>
       </div>
 
       <div v-else class="table-wrapper">
         <table class="alarm-table">
           <thead>
             <tr>
-              <th>Proveedor</th>
+              <th>Estado</th>
+              <th>Severidad</th>
+              <th>Alarma</th>
               <th>Planta</th>
               <th>Dispositivo</th>
-              <th>Código / Tipo</th>
-              <th>Descripción</th>
-              <th>Fecha</th>
+              <th>Fabricante</th>
+              <th>Detectada</th>
+              <th>Última detección</th>
+              <th>Resolución</th>
+              <th>Acción</th>
             </tr>
           </thead>
-
           <tbody>
-            <tr
-              v-for="(alarm, index) in unifiedAlarms"
-              :key="`${alarm.provider}-${alarm.device}-${alarm.code}-${index}`"
-            >
+            <tr v-for="alarm in visibleAlarms" :key="alarm.id">
               <td>
-                <span
-                  class="provider-badge"
-                  :class="alarm.provider.toLowerCase()"
-                >
-                  {{ alarm.provider }}
-                </span>
+                <span class="status-badge" :class="alarm.status">{{ statusLabel(alarm.status) }}</span>
               </td>
-
-              <td class="plant-name">
-                {{ alarm.plant }}
-              </td>
-
-              <td>{{ alarm.device }}</td>
-
               <td>
-                <span class="alarm-code">
-                  {{ alarm.code }}
-                </span>
+                <span class="status-badge" :class="`sev-${alarm.severity ?? 'none'}`">{{ severityLabel(alarm.severity) }}</span>
               </td>
-
-              <td>{{ alarm.description }}</td>
-
-              <td class="date-cell">
-                {{ formatDate(alarm.date) }}
+              <td>
+                <strong class="alarm-title">{{ alarm.title }}</strong>
+                <small class="alarm-code">{{ alarm.alarm_code }}</small>
+              </td>
+              <td class="plant-name">{{ plantName(alarm) }}</td>
+              <td>
+                {{ deviceName(alarm) }}
+                <small v-if="deviceSerial(alarm)" class="alarm-code">{{ deviceSerial(alarm) }}</small>
+              </td>
+              <td>{{ providerLabel(alarm.provider) }}</td>
+              <td class="date-cell">{{ formatDate(alarm.first_seen_at) }}</td>
+              <td class="date-cell">{{ formatDate(alarm.last_seen_at) }}</td>
+              <td class="date-cell">{{ alarm.status === 'resolved' ? formatDate(alarm.resolved_at) : '—' }}</td>
+              <td>
+                <button class="detail-link link-button" type="button" @click="openDetail(alarm.id)">Ver detalle</button>
               </td>
             </tr>
           </tbody>
         </table>
       </div>
+
+      <div v-if="!loading && !error && pagination.total_pages > 1" class="pagination">
+        <button class="secondary-button" type="button" :disabled="pagination.page <= 1 || tableLoading" @click="goToPage(pagination.page - 1)">Anterior</button>
+        <span class="pagination-label">Página {{ pagination.page }} de {{ pagination.total_pages }}</span>
+        <button class="secondary-button" type="button" :disabled="pagination.page >= pagination.total_pages || tableLoading" @click="goToPage(pagination.page + 1)">Siguiente</button>
+      </div>
     </section>
+
+    <div v-if="showDetail" class="modal-backdrop" @click.self="closeDetail">
+      <section class="card modal" role="dialog" aria-modal="true" aria-label="Detalle de alarma">
+        <h2>Detalle de alarma</h2>
+
+        <div v-if="detailLoading" class="empty-state" role="status">
+          <div class="empty-icon loading-icon">↻</div>
+          <strong>Cargando detalle</strong>
+        </div>
+
+        <div v-else-if="detailError" class="empty-state" role="alert">
+          <div class="empty-icon error-icon">!</div>
+          <strong>No se pudo cargar el detalle</strong>
+          <p>{{ detailError }}</p>
+        </div>
+
+        <div v-else-if="detail" class="detail-grid">
+          <dl>
+            <div><dt>Estado</dt><dd><span class="status-badge" :class="detail.status">{{ statusLabel(detail.status) }}</span></dd></div>
+            <div>
+              <dt>Severidad</dt>
+              <dd>
+                <span class="status-badge" :class="`sev-${detail.severity ?? 'none'}`">{{ severityLabel(detail.severity) }}</span>
+                <small v-if="isRdxClassified(detail)" class="rdx-note">Clasificación RDX</small>
+              </dd>
+            </div>
+            <div><dt>Fabricante</dt><dd>{{ providerLabel(detail.provider) }}</dd></div>
+            <div><dt>Código</dt><dd><span class="alarm-code">{{ detail.alarm_code }}</span></dd></div>
+            <div><dt>Título</dt><dd>{{ detail.title }}</dd></div>
+            <div><dt>Descripción</dt><dd>{{ detail.description ?? 'Sin datos' }}</dd></div>
+            <div><dt>Planta</dt><dd>{{ plantName(detail) }}</dd></div>
+            <div><dt>Dispositivo</dt><dd>{{ deviceName(detail) }}</dd></div>
+            <div><dt>Número de serie</dt><dd>{{ deviceSerial(detail) ?? 'Sin datos' }}</dd></div>
+            <div><dt>Tipo de dispositivo</dt><dd>{{ detail.device?.device_type ?? 'Sin datos' }}</dd></div>
+            <div><dt>Inicio fabricante</dt><dd>{{ detail.started_at ? formatDate(detail.started_at) : 'No informado por el fabricante' }}</dd></div>
+            <div><dt>Primera detección RDX</dt><dd>{{ formatDate(detail.first_seen_at) }}</dd></div>
+            <div><dt>Última detección</dt><dd>{{ formatDate(detail.last_seen_at) }}</dd></div>
+            <div><dt>Resolución</dt><dd>{{ detail.status === 'resolved' ? formatDate(detail.resolved_at) : '—' }}</dd></div>
+          </dl>
+
+          <section class="technical-section">
+            <button class="secondary-button" type="button" @click="toggleTechnical">
+              {{ technicalOpen ? 'Ocultar información técnica' : 'Información técnica' }}
+            </button>
+            <div v-if="technicalOpen">
+              <dl v-if="technicalEntries(detail.raw_payload).length" class="technical-list">
+                <div v-for="entry in technicalEntries(detail.raw_payload)" :key="entry.field">
+                  <dt>{{ entry.field }}</dt>
+                  <dd>{{ String(entry.value) }}</dd>
+                </div>
+              </dl>
+              <p v-else class="technical-empty">Sin datos técnicos disponibles.</p>
+            </div>
+          </section>
+        </div>
+
+        <div class="modal-actions">
+          <button class="secondary-button" type="button" @click="closeDetail">Cerrar</button>
+        </div>
+      </section>
+    </div>
   </div>
 </template>
 
@@ -390,34 +490,9 @@ function formatDate(value) {
   color: var(--rdx-text-muted);
 }
 
-.status-pill {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  flex-shrink: 0;
-  padding: 9px 14px;
-  border: 1px solid var(--rdx-border);
-  border-radius: 999px;
-  background: var(--rdx-surface);
-  color: var(--rdx-text-muted);
-  font-size: 13px;
-  font-weight: 600;
-}
-
-.status-dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: var(--rdx-success);
-}
-
-.status-dot.active {
-  background: var(--rdx-warning);
-}
-
 .kpi-grid {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 18px;
   margin-bottom: 18px;
 }
@@ -442,36 +517,12 @@ function formatDate(value) {
   color: var(--rdx-text-muted);
 }
 
-.kpi-icon {
-  display: grid;
-  place-items: center;
-  width: 30px;
-  height: 30px;
-  border-radius: 9px;
-  background: var(--rdx-neutral-soft);
-  color: var(--rdx-text-muted);
-  font-weight: 800;
-}
-
-.provider-tag {
-  padding: 5px 9px;
-  border-radius: 999px;
-  background: var(--rdx-neutral-soft);
-  color: var(--rdx-text-muted);
-  font-size: 11px;
-  font-weight: 700;
-}
-
 .kpi-value {
   display: block;
   margin: 13px 0 8px;
   font-size: 34px;
   line-height: 1;
   color: var(--rdx-text-strong);
-}
-
-.kpi-value.muted {
-  color: var(--rdx-text-faint);
 }
 
 .kpi-state {
@@ -483,44 +534,42 @@ function formatDate(value) {
   color: var(--rdx-warning);
 }
 
-.kpi-state.unavailable {
-  color: var(--rdx-warning);
-}
-
-.service-warning {
-  display: flex;
-  align-items: flex-start;
-  gap: 13px;
+.filters-card {
+  padding: 18px 22px;
   margin-bottom: 18px;
-  padding: 15px 18px;
-  border: 1px solid var(--rdx-warning-soft);
-  border-radius: 12px;
-  background: var(--rdx-warning-soft);
-  color: var(--rdx-warning);
 }
 
-.warning-icon {
+.filters-grid {
   display: grid;
-  place-items: center;
-  width: 25px;
-  height: 25px;
-  flex: 0 0 25px;
-  border-radius: 50%;
-  background: #f2dfbd;
-  font-weight: 800;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 14px;
 }
 
-.service-warning strong {
-  display: block;
-  font-size: 14px;
+.filter-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--rdx-text-muted);
 }
 
-.service-warning p {
-  margin: 3px 0 0;
+.filter-field select,
+.filter-field input {
+  padding: 9px 12px;
+  border: 1px solid var(--rdx-border);
+  border-radius: 9px;
+  background: var(--rdx-surface);
+  color: var(--rdx-text-strong);
   font-size: 13px;
 }
 
-.incidents-card {
+.soon-note {
+  font-weight: 400;
+}
+
+.alarms-card {
   min-width: 0;
   padding: 0;
   overflow: hidden;
@@ -540,7 +589,7 @@ function formatDate(value) {
   font-size: 18px;
 }
 
-.incident-count {
+.visit-count {
   display: grid;
   place-items: center;
   min-width: 30px;
@@ -561,6 +610,11 @@ function formatDate(value) {
   justify-content: center;
   padding: 35px 20px;
   text-align: center;
+}
+
+.alarms-card .empty-state {
+  min-height: 190px;
+  padding: 28px 20px;
 }
 
 .empty-icon {
@@ -584,6 +638,11 @@ function formatDate(value) {
   color: var(--rdx-text-muted);
 }
 
+.error-icon {
+  background: var(--rdx-warning-soft);
+  color: var(--rdx-warning);
+}
+
 .empty-state strong {
   color: var(--rdx-text-strong);
   font-size: 15px;
@@ -593,6 +652,10 @@ function formatDate(value) {
   margin: 6px 0 0;
   color: var(--rdx-text-muted);
   font-size: 13px;
+}
+
+.retry-button {
+  margin-top: 14px;
 }
 
 .table-wrapper {
@@ -629,47 +692,234 @@ function formatDate(value) {
   font-weight: 600;
 }
 
-.provider-badge {
+.status-badge {
   display: inline-flex;
   padding: 5px 9px;
   border-radius: 999px;
-  background: var(--rdx-primary-soft);
-  color: var(--rdx-accent);
+  background: var(--rdx-neutral-soft);
+  color: var(--rdx-text-muted);
   font-size: 11px;
   font-weight: 700;
+  white-space: nowrap;
 }
 
-.provider-badge.growatt {
+.status-badge.active {
+  background: var(--rdx-warning-soft);
+  color: var(--rdx-warning);
+}
+
+.status-badge.resolved {
+  background: var(--rdx-success-soft);
+  color: var(--rdx-success);
+}
+
+.status-badge.sev-critical {
+  background: var(--rdx-danger-soft);
+  color: var(--rdx-danger);
+}
+
+.status-badge.sev-warning {
+  background: var(--rdx-warning-soft);
+  color: var(--rdx-warning);
+}
+
+.status-badge.sev-information {
   background: var(--rdx-primary-soft);
+  color: var(--rdx-accent);
+}
+
+.status-badge.sev-none {
+  background: var(--rdx-neutral-soft);
+  color: var(--rdx-text-muted);
+}
+
+.alarm-title {
+  display: block;
+  color: var(--rdx-text-strong);
 }
 
 .alarm-code {
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-size: 12px;
-  color: var(--rdx-text-muted);
+  display: block;
+  margin-top: 2px;
+  font-size: 11px;
+  color: var(--rdx-text-faint, var(--rdx-text-muted));
 }
 
 .date-cell {
   white-space: nowrap;
 }
 
-@media (max-width: 900px) {
+.detail-link {
+  color: var(--rdx-accent);
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.link-button {
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  cursor: pointer;
+}
+
+.secondary-button {
+  padding: 10px 16px;
+  border-radius: 8px;
+  border: 1px solid var(--rdx-border);
+  background: var(--rdx-surface);
+  color: var(--rdx-text-strong);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.secondary-button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.pagination {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  padding: 16px 22px;
+  border-top: 1px solid var(--rdx-border);
+}
+
+.pagination-label {
+  font-size: 13px;
+  color: var(--rdx-text-muted);
+}
+
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  background: rgb(0 0 0 / 0.45);
+  z-index: 50;
+}
+
+.modal {
+  width: 100%;
+  max-width: 560px;
+  max-height: calc(100dvh - 40px);
+  overflow-y: auto;
+}
+
+.modal h2 {
+  margin: 0 0 12px;
+  font-size: 18px;
+}
+
+.detail-grid dl {
+  display: grid;
+  gap: 10px;
+  margin: 0 0 16px;
+  padding: 0;
+}
+
+.detail-grid dl > div {
+  display: grid;
+  grid-template-columns: 170px minmax(0, 1fr);
+  gap: 10px;
+  align-items: baseline;
+}
+
+.detail-grid dt {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--rdx-text-muted);
+}
+
+.detail-grid dd {
+  margin: 0;
+  font-size: 13px;
+  color: var(--rdx-text-strong);
+  overflow-wrap: anywhere;
+}
+
+.rdx-note {
+  display: inline-block;
+  margin-left: 8px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--rdx-neutral-soft);
+  color: var(--rdx-text-muted);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.technical-section {
+  margin-bottom: 16px;
+}
+
+.technical-list {
+  display: grid;
+  gap: 8px;
+  margin: 12px 0 0;
+  padding: 12px 14px;
+  border: 1px solid var(--rdx-border);
+  border-radius: 8px;
+  background: var(--rdx-neutral-soft);
+}
+
+.technical-list > div {
+  display: grid;
+  grid-template-columns: 150px minmax(0, 1fr);
+  gap: 10px;
+  font-size: 13px;
+}
+
+.technical-list dt {
+  font-weight: 700;
+  color: var(--rdx-text-muted);
+}
+
+.technical-list dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.technical-empty {
+  margin-top: 10px;
+  font-size: 13px;
+  color: var(--rdx-text-muted);
+}
+
+.modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 4px;
+}
+
+@media (max-width: 1100px) {
   .kpi-grid {
-    grid-template-columns: 1fr;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
-  .alarms-header {
-    flex-direction: column;
+  .filters-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
 
 @media (max-width: 600px) {
-  .kpi-card {
-    padding: 18px;
+  .kpi-grid,
+  .filters-grid {
+    grid-template-columns: 1fr;
   }
 
   .section-header {
     padding: 17px 18px;
+  }
+
+  .detail-grid dl > div {
+    grid-template-columns: 1fr;
+    gap: 2px;
   }
 }
 </style>
