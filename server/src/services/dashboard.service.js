@@ -21,12 +21,14 @@ function growattEffectiveTimestamp(row) {
 }
 
 /**
- * Marca temporal de telemetría de un dispositivo.
+ * Marca temporal de telemetría de un dispositivo para contadores de
+ * sincronización (telemetry_current/stale/no_data).
  *
  * Para Growatt con dato eléctrico permite el fallback a
- * updated_at (mismo criterio que plants overview), de modo
- * que la telemetría del parque y la de cada planta
- * coincidan.
+ * updated_at (mismo criterio que plants overview). Este fallback es
+ * solo salud de sincronización: el estado operativo online/offline
+ * (operationalPlantStatus) y el estado de dispositivo Growatt usan
+ * exclusivamente collected_at.
  */
 function telemetryTimestamp(row) {
   if (!row) return null;

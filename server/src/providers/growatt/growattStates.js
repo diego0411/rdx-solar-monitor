@@ -175,7 +175,10 @@ function isNormal(signals) {
 }
 
 function effectiveTimestamp(row) {
-  return row?.collected_at ?? row?.updated_at ?? null;
+  // Conectividad operativa = medición real del inversor. updated_at es
+  // hora de sincronización/escritura local, no evidencia de que el
+  // dispositivo siga en línea: sin collected_at no hay fresh.
+  return row?.collected_at ?? null;
 }
 
 export function communicationStatus(row, now = Date.now()) {

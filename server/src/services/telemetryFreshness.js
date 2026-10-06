@@ -27,19 +27,19 @@ export function isOperationalInverter(device) {
   return OPERATIONAL_INVERTER_TYPES.includes(String(device?.device_type ?? '').toUpperCase());
 }
 
-function operationalTelemetryTimestamp(device, row) {
+function operationalTelemetryTimestamp(row) {
   if (!row) return null;
-  if (row.collected_at) return row.collected_at;
-  // Mismo fallback que el dashboard: Growatt eléctrico puede usar
-  // updated_at cuando no hay collected_at.
-  if (device?.provider === 'growatt') return row.updated_at ?? null;
-  return null;
+  // Frescura operativa = momento real de medición del dispositivo.
+  // updated_at solo refleja sincronización/escritura local (cada upsert
+  // lo refresca) y nunca es evidencia de conectividad: collected_at
+  // NULL o inválido => no fresh, sin fallback.
+  return row.collected_at ?? null;
 }
 
 export function plantHasFreshOperationalTelemetry(devices, getLatestRow, now = Date.now()) {
   for (const device of devices ?? []) {
     if (!isOperationalInverter(device)) continue;
-    const timestamp = operationalTelemetryTimestamp(device, getLatestRow?.(device.id));
+    const timestamp = operationalTelemetryTimestamp(getLatestRow?.(device.id));
     if (telemetryFreshness(timestamp, now).data_status === 'fresh') return true;
   }
   return false;
