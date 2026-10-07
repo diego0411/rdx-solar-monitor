@@ -152,6 +152,13 @@ function date(value) {
     .format(new Date(`${value}T00:00:00.000Z`));
 }
 
+function dateTime(value) {
+  if (!value) return '';
+  const parsed = value instanceof Date ? value : new Date(value);
+  if (!Number.isFinite(parsed.getTime())) return '';
+  return new Intl.DateTimeFormat('es-BO', { dateStyle: 'short', timeStyle: 'short' }).format(parsed);
+}
+
 // Cobertura por métrica (aditiva y backward-compatible): sin summary.metrics
 // (API antigua) se usa el escalar legacy. EXACT conserva el escalar legacy;
 // PARTIAL muestra el valor observado con su cobertura; UNAVAILABLE muestra '—'.
@@ -242,6 +249,12 @@ const creditValueCoverage = computed(() => {
 });
 
 const coverageLabel = computed(() => {
+  // data_observation describe SOLO lo almacenado en RDX: con rango vacío
+  // confirmado se muestra el aviso RDX en lugar del genérico (sin duplicar).
+  // Ausente (deploy desfasado) → comportamiento legacy intacto.
+  if (summary.value?.data_observation?.has_stored_data === false) {
+    return 'RDX no tiene datos energéticos almacenados para este período.';
+  }
   const coverage = summary.value?.coverage;
   if (!coverage || coverage.status === 'none') return 'Sin datos energéticos para el periodo';
   if (coverage.meter_suspect) return 'Medición de red/carga no confirmada. Verifique el medidor/CT y su configuración.';
@@ -258,6 +271,17 @@ const coverageClass = computed(() => {
 
 const showCredit = computed(() => summary.value
   && ['energy_credit', 'mixed'].includes(summary.value.compensation_type));
+// Metadata observacional de disponibilidad (backend 08706ae). Solo lectura:
+// nunca deriva EXACT/PARTIAL/SUSPECT ni duplica el aviso de período en curso.
+const observation = computed(() => summary.value?.data_observation ?? null);
+const hasNoStoredData = computed(() => observation.value?.has_stored_data === false);
+const showNotConfirmedNote = computed(() => hasNoStoredData.value);
+const lastStoredText = computed(() => {
+  const formatted = dateTime(observation.value?.last_stored_at);
+  return formatted ? `Último dato almacenado: ${formatted}` : '';
+});
+const multiProviderStored = computed(() => Array.isArray(observation.value?.providers)
+  && observation.value.providers.length > 1);
 const compensation = computed(() => compensationValue(summary.value));
 const creditValue = computed(() => creditEstimatedValue(summary.value));
 
@@ -425,6 +449,7 @@ onBeforeUnmount(() => {
       <div>
         <h2 id="economics-title">Valor económico</h2>
         <p>{{ periodNames[period] }} · estimación basada en energía registrada</p>
+        <p v-if="lastStoredText">{{ lastStoredText }}</p>
       </div>
       <button v-if="canManage" class="economics-button secondary" type="button" @click="newTariff">
         Configurar tarifas
@@ -449,6 +474,7 @@ onBeforeUnmount(() => {
     <p v-else-if="error" class="economics-state error" role="alert">{{ error }}</p>
     <template v-else-if="summary">
       <p v-if="coverageLabel" class="coverage-note" :class="coverageClass">{{ coverageLabel }}</p>
+      <p v-if="showNotConfirmedNote" class="economics-disclaimer">Esto no confirma que el fabricante no disponga de información.</p>
       <div class="economics-columns">
         <div>
           <h3>Resumen energético</h3>
@@ -491,6 +517,7 @@ onBeforeUnmount(() => {
         </div>
       </div>
       <p class="economics-disclaimer">El autoconsumo se estima como producción menos exportación. En plantas con batería puede no representar todos los flujos internos.</p>
+      <p v-if="multiProviderStored" class="economics-disclaimer">Este período contiene datos almacenados de más de un proveedor.</p>
     </template>
 
     <div v-if="canManage" class="tariff-history">
