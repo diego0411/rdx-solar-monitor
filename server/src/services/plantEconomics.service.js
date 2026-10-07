@@ -56,6 +56,34 @@ function combineQuality(...qualities) {
   return 'EXACT';
 }
 
+// Metadata observacional: describe ÚNICAMENTE lo almacenado en
+// energy_intervals tipo 1 utilizado para el cálculo. No afirma sync,
+// completitud del fabricante ni frescura normativa: solo timestamps y
+// campos reales existentes. Sin granularidad esperada (varía por provider).
+function observeStoredData(inputRows, { start, end, periodInProgress }) {
+  const total = inputRows.length;
+  const starts = inputRows
+    .map(row => row.interval_start)
+    .filter(value => value !== null && value !== undefined);
+  const stored = inputRows
+    .map(row => row.updated_at)
+    .filter(value => value !== null && value !== undefined);
+  const providers = [...new Set(inputRows
+    .map(row => row.provider)
+    .filter(value => value !== null && value !== undefined))];
+  return {
+    interval_type: 1,
+    rows: { total },
+    first_interval_at: starts.length ? starts.reduce((min, value) => (value < min ? value : min)) : null,
+    last_interval_at: starts.length ? starts.reduce((max, value) => (value > max ? value : max)) : null,
+    last_stored_at: stored.length ? stored.reduce((max, value) => (value > max ? value : max)) : null,
+    providers,
+    period: { start, end },
+    period_in_progress: periodInProgress,
+    has_stored_data: total > 0,
+  };
+}
+
 export function calculatePlantEconomics(rows, tariffs, { period, start, end, now = Date.now() }) {
   const intervalResults = rows.map(row => {
     const values = Object.fromEntries(energyFields.map(field => [field, numeric(row[field])]));
@@ -414,6 +442,7 @@ export function calculatePlantEconomics(rows, tariffs, { period, start, end, now
         : 'No existen intervalos energéticos para el periodo.',
     },
     metrics,
+    data_observation: observeStoredData(rows, { start, end, periodInProgress }),
   };
 }
 

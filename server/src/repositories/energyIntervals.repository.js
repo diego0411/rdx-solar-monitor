@@ -7,7 +7,9 @@ const ENERGY_SERIES_COLUMNS = 'interval_start, timezone, generation_kwh, consump
 const ENERGY_INTRADAY_COLUMNS = `${ENERGY_SERIES_COLUMNS}, raw_data`;
 // Rango compartido con economía: calculatePlantEconomics además lee
 // row.raw_data?.coverage, por lo que raw_data debe conservarse aquí.
-const ENERGY_RANGE_COLUMNS = `${ENERGY_SERIES_COLUMNS}, raw_data`;
+// data_observation también requiere provider y updated_at (solo lectura,
+// sin cambiar comportamiento de los demás consumidores del rango).
+const ENERGY_RANGE_COLUMNS = `${ENERGY_SERIES_COLUMNS}, provider, updated_at, raw_data`;
 
 function counterProvenance(value) {
   return value?.source === 'growatt_meter' && typeof value.first_daily_counter === 'boolean'
