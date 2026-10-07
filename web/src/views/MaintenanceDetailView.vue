@@ -42,10 +42,15 @@ const loading = ref(true);
 const error = ref('');
 const notFound = ref(false);
 const myRole = ref(null);
+const myModules = ref([]);
 
 const controller = new AbortController();
 
-const canManage = computed(() => myRole.value === 'rdx_admin' || myRole.value === 'client_admin');
+const canManage = computed(() => myRole.value === 'rdx_admin'
+  || (myRole.value === 'client_admin'
+    && (!Array.isArray(myModules.value) || myModules.value.includes('maintenance'))));
+const isTerminal = computed(() => visit.value?.status === 'completed' || visit.value?.status === 'cancelled');
+const canEdit = computed(() => canManage.value && !isTerminal.value);
 const activities = computed(() => visit.value?.activities ?? []);
 
 const devicesById = ref({});
@@ -331,9 +336,11 @@ function buildActivityPayload() {
     deviceId = activityForm.value.device_id;
   }
   const payload = { activity_type: activityForm.value.activity_type, title, device_id: deviceId };
+  const isEdit = Boolean(editingActivity.value);
   for (const field of ['work_performed', 'findings', 'actions_taken', 'observations']) {
     const value = activityForm.value[field].trim();
     if (value) payload[field] = value;
+    else if (isEdit) payload[field] = null;
   }
   return { payload };
 }
@@ -453,6 +460,9 @@ async function load() {
   try {
     const me = await getMyProfile();
     myRole.value = me?.profile?.role ?? null;
+    myModules.value = Array.isArray(me?.profile?.module_permissions)
+      ? me.profile.module_permissions
+      : [];
     const data = await getMaintenanceVisit(route.params.id, { signal: controller.signal });
     if (!data || typeof data !== 'object') throw new Error('Respuesta inválida');
     visit.value = data;
@@ -498,11 +508,13 @@ onUnmounted(() => controller.abort());
             <span class="priority-badge">{{ priorityLabel(visit.priority) }}</span>
           </div>
         </div>
-        <div v-if="canManage" class="header-actions">
+        <div v-if="canEdit" class="header-actions">
           <button class="secondary-button" type="button" @click="openEditVisit">Editar visita</button>
           <button class="primary-button" type="button" @click="openCreateActivity">Agregar actividad</button>
         </div>
       </header>
+
+      <p v-if="isTerminal" class="muted">Visita finalizada — registro de solo lectura.</p>
 
       <div v-if="statusActions.length" class="card status-actions-card">
         <div class="status-actions-row">
@@ -570,7 +582,7 @@ onUnmounted(() => controller.abort());
               <span class="activity-device">{{ deviceLabel(activity.device_id) }}</span>
             </div>
             <strong class="activity-title">{{ activity.title }}</strong>
-            <div v-if="canManage" class="activity-actions">
+            <div v-if="canEdit" class="activity-actions">
               <button class="link-button" type="button" @click="openEditActivity(activity)">Editar</button>
               <button class="link-button danger" type="button" @click="askDeleteActivity(activity)">Eliminar</button>
             </div>

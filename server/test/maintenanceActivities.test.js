@@ -9,9 +9,15 @@ const deviceA = '55555555-5555-4555-8555-555555555555';
 const deviceB = '66666666-6666-4666-8666-666666666666';
 const unknownDevice = '77777777-7777-4777-8777-777777777777';
 
+const visitDone = '99999999-9999-4999-8999-999999999999';
+const visitVoid = 'aaaaaaaa-1111-4111-8111-111111111111';
+const doneActivityId = 'bbbbbbbb-2222-4222-8222-222222222222';
+
 const visits = {
   [visitA]: { id: visitA, plant_id: plantA, title: 'Visita A' },
   [visitB]: { id: visitB, plant_id: plantB, title: 'Visita B' },
+  [visitDone]: { id: visitDone, plant_id: plantA, title: 'Terminada', status: 'completed' },
+  [visitVoid]: { id: visitVoid, plant_id: plantA, title: 'Cancelada', status: 'cancelled' },
 };
 const devices = {
   [deviceA]: { id: deviceA, plant_id: plantA },
@@ -243,3 +249,46 @@ test('14. GET detalle devuelve activities ordenadas por created_at ASC', async (
   assert.equal(res.body.activities.length, 2);
   assert.deepEqual(res.body.activities.map(a => a.title), ['Primera', 'Segunda']);
 });
+
+test('16. PATCH limpia textos opcionales con null y conserva ausentes', async () => {
+  seed();
+  activities[0].work_performed = 'Previo';
+  activities[0].findings = 'Hallazgo';
+  const res = response();
+  await patchActivity(request({
+    activityId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+    body: { work_performed: null, observations: null },
+  }), res);
+  assert.equal(res.statusCode, 200);
+  assert.equal(updateCall.values.work_performed, null);
+  assert.equal(updateCall.values.observations, null);
+  assert.equal('findings' in updateCall.values, false);
+  assert.equal(res.body.findings, 'Hallazgo');
+});
+
+for (const [status, visitId] of [['completed', visitDone], ['cancelled', visitVoid]]) {
+  test(`15. visita ${status}: crear/editar/eliminar actividad → 409`, async () => {
+    seed();
+    activities.push({
+      id: doneActivityId, maintenance_visit_id: visitId,
+      device_id: null, title: 'Histórica', created_at: '2026-09-25T12:00:00.000Z',
+    });
+    insertCall = null; updateCall = null; deleteCall = null;
+    const created = response();
+    await postActivity(request({
+      visitId, body: { activity_type: 'inspection', title: 'Nueva' },
+    }), created);
+    assert.equal(created.statusCode, 409);
+    assert.equal(insertCall, null);
+    const edited = response();
+    await patchActivity(request({
+      visitId, activityId: doneActivityId, body: { title: 'Cambio' },
+    }), edited);
+    assert.equal(edited.statusCode, 409);
+    assert.equal(updateCall, null);
+    const removed = response();
+    await deleteActivity(request({ visitId, activityId: doneActivityId }), removed);
+    assert.equal(removed.statusCode, 409);
+    assert.equal(deleteCall, null);
+  });
+}

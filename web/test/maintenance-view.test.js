@@ -11,10 +11,10 @@ const code = compileScript(descriptor, { id: 'maintenance-test' }).content
 const DAY = 24 * 60 * 60 * 1000;
 const iso = offset => new Date(Date.now() + offset).toISOString();
 
-function setup({ role = 'client_admin', visits = [], plants = [], create = null } = {}) {
+function setup({ role = 'client_admin', permissions = ['maintenance'], visits = [], plants = [], create = null } = {}) {
   const deps = {
     ref, computed, onMounted() {}, onUnmounted() {},
-    getMyProfile: async () => ({ profile: { role } }),
+    getMyProfile: async () => ({ profile: { role, module_permissions: permissions } }),
     apiFetch: async () => plants,
     listMaintenanceVisits: async () => visits,
     createMaintenanceVisit: create ?? (async payload => ({ id: 'new', status: 'scheduled', ...payload })),
@@ -99,6 +99,21 @@ test('traducciones de estado y prioridad', async () => {
   assert.equal(view.priorityLabel('normal'), 'Normal');
   assert.equal(view.priorityLabel('high'), 'Alta');
   assert.equal(view.priorityLabel('urgent'), 'Urgente');
+});
+
+test('gating Nueva visita: rol + permiso maintenance (rdx bypass, client_admin exige módulo)', async () => {
+  const reader = setup({ role: 'client_user', permissions: ['maintenance'] });
+  await reader.load();
+  assert.equal(reader.canCreate.value, false);
+  const noAccess = setup({ role: 'client_admin', permissions: [] });
+  await noAccess.load();
+  assert.equal(noAccess.canCreate.value, false);
+  const manager = setup({ role: 'client_admin', permissions: ['maintenance'] });
+  await manager.load();
+  assert.equal(manager.canCreate.value, true);
+  const admin = setup({ role: 'rdx_admin', permissions: [] });
+  await admin.load();
+  assert.equal(admin.canCreate.value, true);
 });
 
 test('botón abre formulario con defaults normal/BOB; client_user no ve botón', async () => {

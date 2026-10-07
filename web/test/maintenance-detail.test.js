@@ -8,11 +8,11 @@ const { descriptor } = parse(readFileSync(new URL('../src/views/MaintenanceDetai
 const code = compileScript(descriptor, { id: 'maintenance-detail-test' }).content
   .replace(/^import[^;]*;$/gm, '').replace('export default', 'return');
 
-function setup({ role = 'client_admin', visit = null, visitError = null, plants = [], devices = [], activityApi = {}, updateVisit = null, updateStatus = null } = {}) {
+function setup({ role = 'client_admin', permissions = ['maintenance'], visit = null, visitError = null, plants = [], devices = [], activityApi = {}, updateVisit = null, updateStatus = null } = {}) {
   const deps = {
     ref, computed, onMounted() {}, onUnmounted() {},
     useRoute: () => ({ params: { id: 'v1' } }),
-    getMyProfile: async () => ({ profile: { role } }),
+    getMyProfile: async () => ({ profile: { role, module_permissions: permissions } }),
     apiFetch: async path => (String(path).startsWith('/devices') ? devices : plants),
     getMaintenanceVisit: async () => {
       if (visitError) throw visitError;
@@ -94,6 +94,26 @@ test('botones visibles para admins, ocultos para client_user', async () => {
   const userView = setup({ role: 'client_user', visit: baseVisit() });
   await userView.load();
   assert.equal(userView.canManage.value, false);
+});
+
+test('gating escritura: client_admin exige maintenance; rdx_admin bypass; client_user nunca', async () => {
+  const noAccess = setup({ role: 'client_admin', permissions: [], visit: baseVisit({ status: 'scheduled' }) });
+  await noAccess.load();
+  assert.equal(noAccess.canManage.value, false);
+  assert.equal(noAccess.canEdit.value, false);
+  assert.deepEqual(noAccess.statusActions.value, []);
+  const manager = setup({ role: 'client_admin', permissions: ['maintenance'], visit: baseVisit({ status: 'scheduled' }) });
+  await manager.load();
+  assert.equal(manager.canManage.value, true);
+  assert.equal(manager.canEdit.value, true);
+  assert.deepEqual(manager.statusActions.value, ['in_progress', 'cancelled']);
+  const admin = setup({ role: 'rdx_admin', permissions: [], visit: baseVisit({ status: 'scheduled' }) });
+  await admin.load();
+  assert.equal(admin.canManage.value, true);
+  const reader = setup({ role: 'client_user', permissions: ['maintenance'], visit: baseVisit({ status: 'scheduled' }) });
+  await reader.load();
+  assert.equal(reader.canManage.value, false);
+  assert.equal(reader.canEdit.value, false);
 });
 
 test('error genérico y 404', async () => {
@@ -188,6 +208,31 @@ test('crear con dispositivo y editar cambiando a Planta completa', async () => {
   await view.saveActivityForm();
   assert.equal(view.activities.value[0].device_id, null);
   assert.equal(view.activities.value.length, 2);
+});
+
+test('editar actividad: limpiar textos opcionales envía null explícito', async () => {
+  let sent = null;
+  const view = setup({
+    visit: baseVisit({ activities: [{
+      id: 'a1', activity_type: 'inspection', title: 'T', device_id: null,
+      work_performed: 'W', findings: 'F', actions_taken: 'A', observations: 'O',
+    }] }),
+    activityApi: { update: async (visitId, id, payload) => {
+      sent = payload;
+      return { id, ...payload };
+    } },
+  });
+  await view.load();
+  view.openEditActivity(view.activities.value[0]);
+  assert.equal(view.activityForm.value.work_performed, 'W');
+  view.activityForm.value.work_performed = '   ';
+  view.activityForm.value.findings = '';
+  view.activityForm.value.observations = '  ';
+  await view.saveActivityForm();
+  assert.equal(sent.work_performed, null);
+  assert.equal(sent.findings, null);
+  assert.equal(sent.actions_taken, 'A');
+  assert.equal(sent.observations, null);
 });
 
 test('eliminar con confirmación actualiza local; cancelar no llama API', async () => {
@@ -486,4 +531,33 @@ test('14. error API no altera estado local y mantiene confirmación', async () =
   assert.equal(view.visit.value.status, 'scheduled');
   assert.equal(view.pendingTransition.value, 'in_progress');
   assert.ok(view.transitionError.value);
+});
+
+for (const terminalStatus of ['completed', 'cancelled']) {
+  test(`15. visita ${terminalStatus}: terminal, solo lectura, contenido visible`, async () => {
+    const view = setup({
+      visit: baseVisit({
+        status: terminalStatus,
+        activities: [{ id: 'a1', title: 'Histórica', activity_type: 'inspection', device_id: null }],
+      }),
+    });
+    await view.load();
+    assert.equal(view.isTerminal.value, true);
+    assert.equal(view.canEdit.value, false);
+    assert.deepEqual(view.statusActions.value, []);
+    assert.equal(view.visit.value.title, 'Revisión anual');
+    assert.equal(view.activities.value.length, 1);
+  });
+}
+
+test('16. scheduled/in_progress: writer puede editar, lector no', async () => {
+  for (const activeStatus of ['scheduled', 'in_progress']) {
+    const writer = setup({ role: 'client_admin', visit: baseVisit({ status: activeStatus }) });
+    await writer.load();
+    assert.equal(writer.isTerminal.value, false);
+    assert.equal(writer.canEdit.value, true);
+    const reader = setup({ role: 'client_user', visit: baseVisit({ status: activeStatus }) });
+    await reader.load();
+    assert.equal(reader.canEdit.value, false);
+  }
 });

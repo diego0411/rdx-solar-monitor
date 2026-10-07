@@ -17,20 +17,13 @@ const priorityLabels = {
   urgent: 'Urgente',
 };
 
-const activityTypeLabels = {
-  inspection: 'Inspección',
-  preventive: 'Preventivo',
-  corrective: 'Correctivo',
-  cleaning: 'Limpieza',
-  other: 'Otro',
-};
-
 const visits = ref([]);
 const plants = ref([]);
 const plantNames = ref({});
 const loading = ref(true);
 const error = ref('');
 const myRole = ref(null);
+const myModules = ref([]);
 
 const plantFilter = ref('all');
 const statusFilter = ref('all');
@@ -145,7 +138,9 @@ async function saveForm() {
   }
 }
 
-const canCreate = computed(() => myRole.value === 'rdx_admin' || myRole.value === 'client_admin');
+const canCreate = computed(() => myRole.value === 'rdx_admin'
+  || (myRole.value === 'client_admin'
+    && (!Array.isArray(myModules.value) || myModules.value.includes('maintenance'))));
 
 const now = () => Date.now();
 
@@ -219,6 +214,9 @@ async function load() {
   try {
     const me = await getMyProfile();
     myRole.value = me?.profile?.role ?? null;
+    myModules.value = Array.isArray(me?.profile?.module_permissions)
+      ? me.profile.module_permissions
+      : [];
     const [visitData, plantData] = await Promise.all([
       listMaintenanceVisits({}, { signal: controller.signal }),
       apiFetch('/plants', { signal: controller.signal }).catch(() => []),
@@ -300,12 +298,6 @@ onUnmounted(() => controller.abort());
             <option value="in_progress">En progreso</option>
             <option value="completed">Completado</option>
             <option value="cancelled">Cancelado</option>
-          </select>
-        </label>
-        <label class="filter-field">
-          <span>Tipo de actividad <small class="soon-note">(próximamente)</small></span>
-          <select disabled title="El filtrado por actividad estará disponible próximamente">
-            <option>Todos</option>
           </select>
         </label>
         <label class="filter-field">
@@ -525,7 +517,7 @@ onUnmounted(() => controller.abort());
 
 .filters-grid {
   display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 14px;
 }
 
@@ -547,15 +539,6 @@ onUnmounted(() => controller.abort());
   background: var(--rdx-surface);
   color: var(--rdx-text-strong);
   font-size: 13px;
-}
-
-.filter-field select:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
-}
-
-.soon-note {
-  font-weight: 400;
 }
 
 .visits-card {

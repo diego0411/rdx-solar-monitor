@@ -102,6 +102,23 @@ test('2. filtros básicos plantId/status/fechas llegan al repositorio', async ()
   assert.equal(listArgs.dateTo, '2026-12-31T00:00:00.000Z');
 });
 
+test('2b. scope null (global) llega como null al repositorio, sin filtro', async () => {
+  seed();
+  const res = response();
+  await listMaintenance(request({ role: 'rdx_admin' }), res);
+  assert.equal(res.statusCode, 200);
+  assert.equal(listArgs.plantIds, null);
+});
+
+test('2c. scope Set vacío se preserva (ninguna planta)', async () => {
+  seed();
+  const res = response();
+  await listMaintenance(request({ role: 'client_user', plantIds: [] }), res);
+  assert.equal(res.statusCode, 200);
+  assert.equal(listArgs.plantIds instanceof Set, true);
+  assert.equal(listArgs.plantIds.size, 0);
+});
+
 test('3. GET detalle devuelve la visita en scope', async () => {
   seed();
   const res = response();
@@ -178,6 +195,70 @@ test('9. POST con status completed se rechaza', async () => {
   assert.equal(res.statusCode, 400);
   assert.equal(insertCall, null);
 });
+
+test('9b. POST sin status crea scheduled', async () => {
+  seed();
+  const res = response();
+  await postMaintenance(request({
+    role: 'rdx_admin',
+    body: { plant_id: plantId, title: 'Sin status' },
+  }), res);
+  assert.equal(res.statusCode, 201);
+  assert.equal(insertCall.status, 'scheduled');
+});
+
+test('9c. POST status=scheduled crea scheduled', async () => {
+  seed();
+  const res = response();
+  await postMaintenance(request({
+    role: 'rdx_admin',
+    body: { plant_id: plantId, title: 'Explícito', status: 'scheduled' },
+  }), res);
+  assert.equal(res.statusCode, 201);
+  assert.equal(insertCall.status, 'scheduled');
+});
+
+test('9d. POST status in_progress/cancelled se rechaza', async () => {
+  for (const status of ['in_progress', 'cancelled']) {
+    seed();
+    const res = response();
+    await postMaintenance(request({
+      role: 'rdx_admin',
+      body: { plant_id: plantId, title: 'Salto', status },
+    }), res);
+    assert.equal(res.statusCode, 400);
+    assert.equal(insertCall, null);
+  }
+});
+
+test('9e. POST con completed_at se ignora y crea scheduled', async () => {
+  seed();
+  const res = response();
+  await postMaintenance(request({
+    role: 'rdx_admin',
+    body: { plant_id: plantId, title: 'Con fecha', completed_at: '2026-01-02T00:00:00.000Z' },
+  }), res);
+  assert.equal(res.statusCode, 201);
+  assert.equal(insertCall.status, 'scheduled');
+  assert.equal('completed_at' in insertCall, false);
+});
+
+for (const status of ['completed', 'cancelled']) {
+  test(`9f. PATCH en visita ${status} → 409 (inmutable)`, async () => {
+    seed();
+    updateCall = null;
+    const terminalId = '77777777-7777-4777-8777-777777777777';
+    visits.push({ id: terminalId, plant_id: plantId, title: 'Finalizada', status });
+    const res = response();
+    await patchMaintenance(request({
+      role: 'client_admin',
+      params: { id: terminalId },
+      body: { title: 'Cambio tardío' },
+    }), res);
+    assert.equal(res.statusCode, 409);
+    assert.equal(updateCall, null);
+  });
+}
 
 test('10. PATCH permitido actualiza campos editables', async () => {
   seed();

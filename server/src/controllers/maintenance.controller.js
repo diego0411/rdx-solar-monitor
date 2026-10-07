@@ -37,6 +37,7 @@ const activityCreateFields = [
 ];
 const activityLongTexts = ['work_performed', 'findings', 'actions_taken', 'observations'];
 const statusTargets = ['in_progress', 'completed', 'cancelled'];
+const terminalStatuses = ['completed', 'cancelled'];
 const statusTransitions = {
   scheduled: ['in_progress', 'cancelled'],
   in_progress: ['completed', 'cancelled'],
@@ -114,6 +115,15 @@ function requireWriter(req, res) {
     return false;
   }
   return true;
+}
+
+// Las visitas terminales son inmutables: solo lectura y transiciones ya imposibles.
+function rejectTerminalVisit(visit, res) {
+  if (terminalStatuses.includes(visit?.status)) {
+    res.status(409).json({ error: 'La visita está finalizada y no puede modificarse' });
+    return true;
+  }
+  return false;
 }
 
 function cleanActivityValues(body, { forPatch = false } = {}) {
@@ -210,7 +220,8 @@ export async function listMaintenance(req, res) {
     return res.status(400).json({ error: 'dateTo inválido' });
   }
   try {
-    let plantIds = req.scope?.plantIds ?? new Set();
+    // null = acceso global (sin filtro); Set vacío = sin plantas; Set con IDs = restringido.
+    let plantIds = req.scope?.plantIds ?? null;
     if (plantId !== undefined) {
       const normalized = plantId.toLowerCase();
       if (!plantInScope(req.scope, normalized)) return res.json([]);
@@ -245,8 +256,9 @@ export async function postMaintenance(req, res) {
   if (!values || !values.plant_id || !values.title) {
     return res.status(400).json({ error: 'Visita de mantenimiento inválida' });
   }
-  if (values.status === 'completed') {
-    return res.status(400).json({ error: 'La finalización se gestiona con el flujo explícito' });
+  // Toda visita nace scheduled; el cambio de estado es solo vía PATCH /:id/status.
+  if (values.status !== undefined && values.status !== 'scheduled') {
+    return res.status(400).json({ error: 'La visita se crea como programada; el estado se gestiona con el flujo explícito' });
   }
   try {
     if (!plantInScope(req.scope, values.plant_id)
@@ -254,7 +266,7 @@ export async function postMaintenance(req, res) {
       return res.status(404).json({ error: 'Planta no encontrada' });
     }
     return res.status(201).json(await insertMaintenanceVisit({
-      ...values, created_by: req.profile.id,
+      ...values, status: 'scheduled', created_by: req.profile.id,
     }));
   } catch {
     return res.status(503).json({ error: 'No se pudo registrar la visita de mantenimiento' });
@@ -277,6 +289,7 @@ export async function patchMaintenance(req, res) {
     if (!visit || !plantInScope(req.scope, visit.plant_id)) {
       return res.status(404).json({ error: 'Visita no encontrada' });
     }
+    if (rejectTerminalVisit(visit, res)) return;
     return res.json(await updateMaintenanceVisit(id, values));
   } catch {
     return res.status(503).json({ error: 'No se pudo actualizar la visita de mantenimiento' });
@@ -287,6 +300,7 @@ export async function postActivity(req, res) {
   if (!requireWriter(req, res)) return;
   const visit = await resolveVisit(req, res);
   if (!visit) return;
+  if (rejectTerminalVisit(visit, res)) return;
   const values = cleanActivityValues(req.body);
   if (!values || !values.activity_type || !values.title) {
     return res.status(400).json({ error: 'Actividad de mantenimiento inválida' });
@@ -307,6 +321,7 @@ export async function patchActivity(req, res) {
   if (!requireWriter(req, res)) return;
   const visit = await resolveVisit(req, res);
   if (!visit) return;
+  if (rejectTerminalVisit(visit, res)) return;
   const activity = await resolveVisitActivity(req, res, visit);
   if (!activity) return;
   const values = cleanActivityValues(req.body, { forPatch: true });
@@ -329,6 +344,7 @@ export async function deleteActivity(req, res) {
   if (!requireWriter(req, res)) return;
   const visit = await resolveVisit(req, res);
   if (!visit) return;
+  if (rejectTerminalVisit(visit, res)) return;
   const activity = await resolveVisitActivity(req, res, visit);
   if (!activity) return;
   try {
