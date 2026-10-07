@@ -1,10 +1,13 @@
 <script setup>
 import { computed, onMounted, onUnmounted, ref } from 'vue';
 import { apiFetch } from '../services/api.js';
+import { listAlarms } from '../services/alarms.js';
 
 const summary = ref(null);
-const growattAlarms = ref(null);
-const hyxiAlarms = ref(null);
+// Contadores de alarmas ACTIVAS normalizadas (public.alarms, status='active').
+// null = aún no cargado o consulta fallida; nunca historial del fabricante.
+const growattActiveAlarms = ref(null);
+const hyxiActiveAlarms = ref(null);
 
 const loading = ref(true);
 const error = ref('');
@@ -79,46 +82,21 @@ function formatClock(timestamp) {
   );
 }
 
-const growattAlarmItems = computed(() => {
-  const data = growattAlarms.value;
+const growattAlarmCount = computed(() => (
+  typeof growattActiveAlarms.value === 'number'
+    ? growattActiveAlarms.value
+    : 0
+));
 
-  if (Array.isArray(data)) return data;
-  if (Array.isArray(data?.alarms)) return data.alarms;
-  if (Array.isArray(data?.items)) return data.items;
+const hyxiAlarmCount = computed(() => (
+  typeof hyxiActiveAlarms.value === 'number'
+    ? hyxiActiveAlarms.value
+    : 0
+));
 
-  return [];
-});
-
-const hyxiAlarmItems = computed(() => {
-  const data = hyxiAlarms.value;
-
-  if (Array.isArray(data)) return data;
-  if (Array.isArray(data?.alarms)) return data.alarms;
-  if (Array.isArray(data?.items)) return data.items;
-
-  return [];
-});
-
-const hyxiUnavailable = computed(() => {
-  if (!hyxiAlarms.value) {
-    return true;
-  }
-
-  return (
-    hyxiAlarms.value.partial === true
-    || (
-      Number(hyxiAlarms.value.failed_plants) > 0
-      && Number(hyxiAlarms.value.checked_plants) > 0
-      && Number(hyxiAlarms.value.failed_plants)
-        >= Number(hyxiAlarms.value.checked_plants)
-    )
-  );
-});
-
-const currentIncidents = computed(() => {
-  return growattAlarmItems.value.length
-    + hyxiAlarmItems.value.length;
-});
+const currentIncidents = computed(() => (
+  growattAlarmCount.value + hyxiAlarmCount.value
+));
 
 const topMaxValue = computed(() => {
   const values = (summary.value?.top_plants ?? [])
@@ -201,16 +179,19 @@ async function fetchSummary() {
   }
 }
 
-async function fetchAlarms(path, target, pending, failure) {
+// Lee únicamente el contador de activas normalizadas (pageSize=1: no se
+// descarga historial). Las resueltas nunca incrementan estos contadores.
+async function fetchActiveAlarmCount(provider, target, pending, failure) {
   if (pending.value) return;
   pending.value = true;
   failure.value = '';
   try {
-    const data = await apiFetch(path, { signal: controller.signal });
-    if (!Array.isArray(data) && !Array.isArray(data?.alarms) && !Array.isArray(data?.items)) {
+    const data = await listAlarms({ provider, status: 'active', pageSize: 1 });
+    const total = Number(data?.pagination?.total);
+    if (!Number.isSafeInteger(total) || total < 0) {
       throw new Error('Respuesta inválida');
     }
-    if (!controller.signal.aborted) target.value = data;
+    if (!controller.signal.aborted) target.value = total;
   } catch {
     if (!controller.signal.aborted) failure.value = 'No se pudieron actualizar las alarmas.';
   } finally {
@@ -220,8 +201,8 @@ async function fetchAlarms(path, target, pending, failure) {
 
 function fetchDashboard() {
   void fetchSummary();
-  void fetchAlarms('/integrations/growatt/alarms/current', growattAlarms, growattLoading, growattError);
-  void fetchAlarms('/integrations/hyxi/alarms/recent', hyxiAlarms, hyxiLoading, hyxiError);
+  void fetchActiveAlarmCount('growatt', growattActiveAlarms, growattLoading, growattError);
+  void fetchActiveAlarmCount('hyxi', hyxiActiveAlarms, hyxiLoading, hyxiError);
 }
 
 onMounted(() => {
@@ -754,20 +735,20 @@ onUnmounted(() => {
                   </h3>
 
                   <p>
-                    Diagnóstico actual
+                    Alarmas activas
                   </p>
                 </div>
               </div>
 
               <strong>
-                {{ growattAlarms === null ? '—' : growattAlarmItems.length }}
+                {{ growattActiveAlarms === null ? '—' : growattActiveAlarms }}
               </strong>
             </header>
 
-            <p v-if="growattLoading" class="incident-state unavailable" role="status">{{ growattAlarms === null ? 'Cargando alarmas Growatt…' : 'Actualizando alarmas Growatt…' }}</p>
-            <p v-if="growattError" class="incident-state unavailable" role="alert">{{ growattError }} {{ growattAlarms !== null ? 'Se conservan los últimos datos.' : '' }}</p>
+            <p v-if="growattLoading" class="incident-state unavailable" role="status">{{ growattActiveAlarms === null ? 'Cargando alarmas Growatt…' : 'Actualizando alarmas Growatt…' }}</p>
+            <p v-if="growattError" class="incident-state unavailable" role="alert">{{ growattError }} {{ growattActiveAlarms !== null ? 'Se conservan los últimos datos.' : '' }}</p>
             <div
-              v-if="!growattLoading && growattAlarms === null"
+              v-if="!growattLoading && growattActiveAlarms === null"
               class="incident-state unavailable"
             >
               <span class="incident-icon">
@@ -780,15 +761,15 @@ onUnmounted(() => {
                 </strong>
 
                 <p>
-                  No fue posible consultar el diagnóstico
-                  actual de Growatt.
+                  No fue posible consultar las alarmas
+                  activas de Growatt.
                 </p>
               </div>
             </div>
 
             <div
               v-else-if="
-                growattAlarms !== null && growattAlarmItems.length === 0
+                growattActiveAlarms !== null && growattAlarmCount === 0
               "
               class="incident-state ok"
             >
@@ -802,14 +783,14 @@ onUnmounted(() => {
                 </strong>
 
                 <p>
-                  No se detectaron fallas o advertencias
-                  actuales en los dispositivos Growatt.
+                  No se detectaron alarmas activas
+                  en los dispositivos Growatt.
                 </p>
               </div>
             </div>
 
             <div
-              v-else-if="growattAlarms !== null"
+              v-else-if="growattActiveAlarms !== null"
               class="incident-state warning"
             >
               <span class="incident-icon">
@@ -818,7 +799,7 @@ onUnmounted(() => {
 
               <div>
                 <strong>
-                  {{ growattAlarmItems.length }}
+                  {{ growattAlarmCount }}
                   incidencia(s) actual(es)
                 </strong>
 
@@ -847,15 +828,15 @@ onUnmounted(() => {
                   </h3>
 
                   <p>
-                    Eventos de alarma
+                    Alarmas activas
                   </p>
                 </div>
               </div>
 
               <strong
-                v-if="!hyxiUnavailable"
+                v-if="hyxiActiveAlarms !== null"
               >
-                {{ hyxiAlarmItems.length }}
+                {{ hyxiActiveAlarms }}
               </strong>
 
               <strong
@@ -866,10 +847,10 @@ onUnmounted(() => {
               </strong>
             </header>
 
-            <p v-if="hyxiLoading" class="incident-state unavailable" role="status">{{ hyxiAlarms === null ? 'Cargando alarmas HYXi…' : 'Actualizando alarmas HYXi…' }}</p>
-            <p v-if="hyxiError" class="incident-state unavailable" role="alert">{{ hyxiError }} {{ hyxiAlarms !== null ? 'Se conservan los últimos datos.' : '' }}</p>
+            <p v-if="hyxiLoading" class="incident-state unavailable" role="status">{{ hyxiActiveAlarms === null ? 'Cargando alarmas HYXi…' : 'Actualizando alarmas HYXi…' }}</p>
+            <p v-if="hyxiError" class="incident-state unavailable" role="alert">{{ hyxiError }} {{ hyxiActiveAlarms !== null ? 'Se conservan los últimos datos.' : '' }}</p>
             <div
-              v-if="!hyxiLoading && hyxiUnavailable"
+              v-if="!hyxiLoading && hyxiActiveAlarms === null"
               class="incident-state unavailable"
             >
               <span class="incident-icon">
@@ -882,16 +863,15 @@ onUnmounted(() => {
                 </strong>
 
                 <p>
-                  Los datos de las plantas HYXi continúan
-                  disponibles, pero actualmente no es
-                  posible consultar sus eventos de alarma.
+                  No fue posible consultar las alarmas
+                  activas de HYXi.
                 </p>
               </div>
             </div>
 
             <div
               v-else-if="
-                !hyxiUnavailable && hyxiAlarmItems.length === 0
+                hyxiActiveAlarms !== null && hyxiAlarmCount === 0
               "
               class="incident-state ok"
             >
@@ -901,18 +881,18 @@ onUnmounted(() => {
 
               <div>
                 <strong>
-                  Sin alarmas reportadas
+                  Sin alarmas activas
                 </strong>
 
                 <p>
-                  La consulta de eventos HYXi se completó
-                  correctamente.
+                  No hay alarmas activas
+                  en las plantas HYXi.
                 </p>
               </div>
             </div>
 
             <div
-              v-else-if="!hyxiUnavailable"
+              v-else-if="hyxiActiveAlarms !== null"
               class="incident-state warning"
             >
               <span class="incident-icon">
@@ -921,7 +901,7 @@ onUnmounted(() => {
 
               <div>
                 <strong>
-                  {{ hyxiAlarmItems.length }}
+                  {{ hyxiAlarmCount }}
                   alarma(s)
                 </strong>
 
@@ -943,7 +923,7 @@ onUnmounted(() => {
             {{
               growattLoading || hyxiLoading
                 ? 'Actualizando alarmas…'
-                : growattError || hyxiError || growattAlarms === null || hyxiUnavailable
+                : growattError || hyxiError || growattActiveAlarms === null || hyxiActiveAlarms === null
                   ? 'Consulta parcial / no disponible'
                   : currentIncidents
             }}
