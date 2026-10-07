@@ -9,6 +9,7 @@ import {
   patchPlantEnergyTariff,
   postPlantEnergyTariff,
 } from '../controllers/plantEconomics.controller.js';
+import { postEnergyBackfill } from '../controllers/energyBackfill.controller.js';
 import {
   getEnergyDistributors,
   getTariffCategoriesByDistributor,
@@ -34,6 +35,7 @@ router.get('/:plantId/energy-tariffs', getPlantEnergyTariffs);
 router.post('/:plantId/energy-tariffs', requireRoles('rdx_admin', 'client_admin'), postPlantEnergyTariff);
 router.patch('/:plantId/energy-tariffs/:tariffId', requireRoles('rdx_admin', 'client_admin'), patchPlantEnergyTariff);
 router.get('/:plantId/economics', getPlantEconomicSummaryController);
+router.post('/:plantId/energy-backfill', requireRoles('rdx_admin', 'client_admin'), postEnergyBackfill);
 router.get('/energy-summary', getPlantEnergySummaries);
 router.get('/:plantId/energy-history', getStoredEnergyHistory);
 router.get('/:plantId/power-history', getStoredPowerHistory);
