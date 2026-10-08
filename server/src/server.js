@@ -115,7 +115,9 @@ async function syncHistoricalRollups() {
 }
 
 const runHistoricalRollupsSync = createScheduledSync({
-  name: 'history-rollups', sync: syncHistoricalRollups, timeoutMs: HYXI_TASK_TIMEOUT_MS,
+  // Sin timeout de fallo: los rollups legítimamente superan 60 s. El umbral
+  // solo advierte una vez; el control se libera al fin real, sin solapes.
+  name: 'history-rollups', sync: syncHistoricalRollups, warnAfterMs: HYXI_TASK_TIMEOUT_MS,
 });
 
 app.listen(env.PORT, () => {
