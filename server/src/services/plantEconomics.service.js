@@ -1,4 +1,4 @@
-import { listEnergyIntervalsRange } from '../repositories/energyIntervals.repository.js';
+import { listEnergyIntervalsEconomicsRange } from '../repositories/energyIntervals.repository.js';
 import { listPlantEnergyTariffsForRange } from '../repositories/plantEnergyTariffs.repository.js';
 import { localDateKey } from '../utils/timezone.js';
 import { periodRange } from './historyPeriods.js';
@@ -87,7 +87,9 @@ function observeStoredData(inputRows, { start, end, periodInProgress }) {
 export function calculatePlantEconomics(rows, tariffs, { period, start, end, now = Date.now() }) {
   const intervalResults = rows.map(row => {
     const values = Object.fromEntries(energyFields.map(field => [field, numeric(row[field])]));
-    const localDate = localDateKey(row.interval_start, row.timezone);
+    // local_date precalculada por el repositorio evita repetir el Intl por
+    // intervalo; fallback para los demás llamantes con filas crudas.
+    const localDate = row.local_date ?? localDateKey(row.interval_start, row.timezone);
     const tariff = localDate ? applicableTariff(tariffs, localDate) : null;
     const purchaseRate = numeric(tariff?.purchase_energy_rate);
     const exportRate = numeric(tariff?.export_energy_rate);
@@ -449,7 +451,7 @@ export function calculatePlantEconomics(rows, tariffs, { period, start, end, now
 export async function getPlantEconomicSummary(plantId, period, selectedDate) {
   const range = periodRange(period, selectedDate);
   const [rows, tariffs] = await Promise.all([
-    listEnergyIntervalsRange(plantId, 1, range.start, range.end),
+    listEnergyIntervalsEconomicsRange(plantId, range.start, range.end),
     listPlantEnergyTariffsForRange(plantId, range.start, range.end),
   ]);
   return calculatePlantEconomics(rows, tariffs, { period, start: range.start, end: range.end });

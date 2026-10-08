@@ -103,3 +103,27 @@ export async function listEnergyIntervalsRange(plantId, timeType, startDate, end
     if (data.length < 1000) return rows;
   }
 }
+
+// Variante exclusiva para Economics (type=1): idénticos filtros, ventana,
+// paginación y proyección tradicional (ENERGY_RANGE_COLUMNS) que la
+// consulta compartida, pero adjunta la fecha local ya calculada en el
+// filtrado para evitar un segundo Intl por intervalo en el servicio.
+export async function listEnergyIntervalsEconomicsRange(plantId, startDate, endDate) {
+  const lower = new Date(Date.parse(`${startDate}T00:00:00.000Z`) - 86400000).toISOString();
+  const upper = new Date(Date.parse(`${endDate}T00:00:00.000Z`) + 86400000).toISOString();
+  const rows = [];
+  for (let offset = 0; ; offset += 1000) {
+    const { data, error } = await supabase.from('energy_intervals').select(ENERGY_RANGE_COLUMNS)
+      .eq('plant_id', plantId).eq('interval_type', 1)
+      .gte('interval_start', lower).lt('interval_start', upper)
+      .order('interval_start', { ascending: true }).range(offset, offset + 999);
+    if (error) throw new Error('No se pudo consultar el histórico energético');
+    for (const row of data) {
+      const date = localDateKey(row.interval_start, row.timezone);
+      // Reutilización para Economics: la fecha ya calculada viaja con la
+      // fila y evita un segundo Intl por intervalo en el servicio.
+      if (date !== null && date >= startDate && date < endDate) rows.push({ ...row, local_date: date });
+    }
+    if (data.length < 1000) return rows;
+  }
+}
