@@ -16,6 +16,7 @@ import alarmsRoutes from './routes/alarms.routes.js';
 import { requireAuth } from './middleware/auth.middleware.js';
 import { loadProfile } from './middleware/authorization.middleware.js';
 import { apiLimiter, sensitiveLimiter } from './middleware/rateLimit.middleware.js';
+import { httpMetrics } from './middleware/httpMetrics.middleware.js';
 import { corsOptions } from './config/cors.js';
 
 const app = express();
@@ -23,6 +24,10 @@ const app = express();
 // Render corre detrás de un único proxy: necesario para que
 // req.ip (y el rate limiting) vea la IP real del cliente.
 app.set('trust proxy', 1);
+
+// Instrumentación opt-in (HTTP_METRICS_ENABLED=true): solo observa,
+// nunca altera respuestas. Primera para cubrir todo el ciclo.
+app.use(httpMetrics);
 
 app.use(cors(corsOptions));
 app.use(express.json());
