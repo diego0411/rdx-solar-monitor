@@ -11,7 +11,7 @@ import { syncHyxiRealtime } from './services/hyxiRealtime.service.js';
 import { syncHyxiEnergySummary } from './services/hyxiEnergySummary.service.js';
 import { createHyxiAlarmSync } from './services/hyxiAlarmSync.service.js';
 import { createScheduledSync } from './services/scheduledSync.js';
-import { localDateForTimezone, syncHyxiPowerHistoryWindow } from './services/hyxiPowerHistory.service.js';
+import { syncHyxiHistoryCycle } from './services/hyxiHistoryCycle.service.js';
 import { syncHyxiEnergyHistory } from './services/hyxiEnergyHistory.service.js';
 import { startAutomaticSchedulers } from './services/schedulerControl.js';
 import { listActiveGrowattPlants, listActiveHyxiPlants } from './repositories/plants.repository.js';
@@ -84,27 +84,6 @@ const runHyxiAlarmsSync = createScheduledSync({
 
 function currentBoliviaDate() {
   return new Date(Date.now() - 4 * 60 * 60 * 1000).toISOString().slice(0, 10);
-}
-
-async function syncHyxiHistoryCycle() {
-  const plants = await listActiveHyxiPlants();
-  for (const plant of plants) {
-    const powerResult = await syncHyxiPowerHistoryWindow(plant);
-    for (const failure of powerResult.errors) {
-      console.error(`HYXi automatic power-history ${failure.period} failed for ${plant.external_plant_id}:`, failure.error);
-    }
-    for (const result of [powerResult.current, powerResult.closure]) {
-      if (result?.failed > 0) console.error('HYXi automatic power-history sync failed:', result);
-    }
-
-    try {
-      const startTime = localDateForTimezone(new Date(), plant.timezone);
-      const result = await syncHyxiEnergyHistory(plant.external_plant_id, 1, startTime);
-      if (result.failed > 0) console.error('HYXi automatic energy-history sync failed:', result);
-    } catch (error) {
-      console.error(`HYXi automatic energy-history sync failed for ${plant.external_plant_id}:`, error);
-    }
-  }
 }
 
 const runHyxiHistorySync = createScheduledSync({

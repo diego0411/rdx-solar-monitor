@@ -1,5 +1,6 @@
 import { HyxiProvider } from '../providers/hyxi/HyxiProvider.js';
 import { normalizeHyxiPowerHistory } from '../providers/hyxi/normalizeHyxiPowerHistory.js';
+import { withHistoryShape } from '../providers/hyxi/hyxiHistoryShape.js';
 import { resolveHyxiPlant } from '../repositories/energyIntervals.repository.js';
 import { upsertPlantPowerIntervals } from '../repositories/plantPowerIntervals.repository.js';
 
@@ -37,7 +38,14 @@ export async function syncHyxiPowerHistory(externalPlantId, startTime) {
   const plantId = await resolveHyxiPlant(externalPlantId);
   const response = await provider.getPlantPowerHistory(externalPlantId, startTime);
   const updatedAt = new Date().toISOString();
-  const rows = buildHyxiPowerHistoryRows(response, plantId, updatedAt);
+  let rows;
+  try {
+    rows = buildHyxiPowerHistoryRows(response, plantId, updatedAt);
+  } catch (error) {
+    // Diagnóstico: la clasificación/mensaje no cambian; solo se adjunta
+    // la forma estructural de la respuesta para distinguir "sin datos".
+    throw withHistoryShape(error, response);
+  }
   const result = { fetched: rows.length, upserted: 0, failed: 0 };
   try {
     await upsertPlantPowerIntervals(rows);

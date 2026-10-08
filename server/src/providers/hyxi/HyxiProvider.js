@@ -2,6 +2,7 @@ import { getHyxiToken } from './hyxiAuth.js';
 import { hyxiClient } from './hyxiClient.js';
 import { HYXI_ENDPOINTS } from './hyxiConstants.js';
 import { normalizeHyxiEnergyHistory } from './normalizeHyxiEnergyHistory.js';
+import { withHistoryShape } from './hyxiHistoryShape.js';
 
 export class HyxiProvider {
   constructor() {
@@ -31,7 +32,7 @@ export class HyxiProvider {
       plantId, startTime,
     });
     if (payload?.success !== true || payload.code !== '0') {
-      throw new Error('Invalid HYXi plant power history response');
+      throw withHistoryShape(new Error('Invalid HYXi plant power history response'), payload);
     }
     return payload;
   }
@@ -41,9 +42,13 @@ export class HyxiProvider {
       plantId, timeType, startTime,
     });
     if (payload?.success !== true || payload.code !== '0') {
-      throw new Error('Invalid HYXi plant energy history response');
+      throw withHistoryShape(new Error('Invalid HYXi plant energy history response'), payload);
     }
-    return normalizeHyxiEnergyHistory(payload);
+    try {
+      return normalizeHyxiEnergyHistory(payload);
+    } catch (error) {
+      throw withHistoryShape(error, payload);
+    }
   }
 
   async getPlantEnergySummary(plantId) {
