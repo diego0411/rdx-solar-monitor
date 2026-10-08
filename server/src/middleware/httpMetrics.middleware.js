@@ -12,13 +12,23 @@
  *
  * Activación: HTTP_METRICS_ENABLED=true (desactivada por defecto).
  * Overhead cuando está desactivada: una comparación de string.
+ *
+ * Sub-mediciones: requireAuth guarda res.locals.auth_ms y loadProfile
+ * res.locals.profile_ms (reloj monotónico, también en error). Este
+ * middleware las incorpora al log cuando están disponibles.
  */
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const NUMERIC_PATTERN = /^\d+$/;
+const SUB_MEASUREMENTS = ['auth_ms', 'profile_ms'];
 
 export function metricsEnabled() {
   return process.env.HTTP_METRICS_ENABLED === 'true';
+}
+
+// Milisegundos con 3 decimales desde un process.hrtime.bigint().
+export function elapsedMs(start) {
+  return Math.round(Number(process.hrtime.bigint() - start) / 1000) / 1000;
 }
 
 // Patrón de ruta sin identificadores concretos. Con coincidencia de ruta
@@ -50,13 +60,18 @@ export function httpMetrics(req, res, next) {
   if (!metricsEnabled()) return next();
   const start = process.hrtime.bigint();
   res.on('finish', () => {
-    const durationMs = Number(process.hrtime.bigint() - start) / 1e6;
     const entry = {
       method: req.method,
       route: normalizeHttpRoute(req),
       status: res.statusCode,
-      duration_ms: Math.round(durationMs * 1000) / 1000,
+      duration_ms: elapsedMs(start),
     };
+    for (const key of SUB_MEASUREMENTS) {
+      const value = res.locals?.[key];
+      if (typeof value === 'number' && Number.isFinite(value) && value >= 0) {
+        entry[key] = value;
+      }
+    }
     const bytes = responseBytes(res);
     if (bytes !== undefined) entry.response_bytes = bytes;
     console.info('http_metric', entry);

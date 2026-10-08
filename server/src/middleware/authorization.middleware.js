@@ -1,5 +1,6 @@
 import { supabase } from '../config/supabase.js';
 import { MODULE_PERMISSIONS } from '../config/modulePermissions.js';
+import { elapsedMs, metricsEnabled } from './httpMetrics.middleware.js';
 
 export { MODULE_PERMISSIONS };
 
@@ -16,6 +17,8 @@ export { MODULE_PERMISSIONS };
  * desconocido resultan en 403.
  */
 export async function loadProfile(req, res, next) {
+  // Sub-medición opt-in: se registra también en error, sin exponer el perfil.
+  const started = metricsEnabled() ? process.hrtime.bigint() : null;
   try {
     const { data, error } = await supabase.from('user_profiles')
       .select('id, client_id, role, display_name, active, module_permissions')
@@ -50,6 +53,8 @@ export async function loadProfile(req, res, next) {
     return next();
   } catch {
     return res.status(503).json({ error: 'No se pudo resolver el perfil' });
+  } finally {
+    if (started !== null) res.locals.profile_ms = elapsedMs(started);
   }
 }
 

@@ -1,8 +1,25 @@
 import assert from 'node:assert/strict';
-import test from 'node:test';
+import test, { mock } from 'node:test';
 import express from 'express';
 
 import { httpMetrics, metricsEnabled, normalizeHttpRoute } from '../src/middleware/httpMetrics.middleware.js';
+
+let getUserImpl = async () => ({ data: { user: null }, error: new Error('invalid token') });
+let profileImpl = async () => ({ data: null, error: null });
+
+mock.module('../src/config/supabase.js', {
+  namedExports: {
+    supabase: {
+      auth: { getUser: async (...args) => getUserImpl(...args) },
+      from: () => ({
+        select: () => ({ eq: () => ({ maybeSingle: async () => profileImpl() }) }),
+      }),
+    },
+  },
+});
+
+const { requireAuth } = await import('../src/middleware/auth.middleware.js');
+const { loadProfile } = await import('../src/middleware/authorization.middleware.js');
 
 function captureLogs(t) {
   const entries = [];
@@ -130,4 +147,156 @@ test('normalizeHttpRoute prefiere el patrón Express y redacta el fallback', () 
     normalizeHttpRoute({ baseUrl: '', route: undefined, path: '/api/health' }),
     '/api/health',
   );
+});
+
+function fakeContext(headers = {}) {
+  const req = { get: name => headers[name.toLowerCase()] ?? undefined };
+  const res = {
+    locals: {},
+    statusCode: 200,
+    body: undefined,
+    status(code) { this.statusCode = code; return this; },
+    json(payload) { this.body = payload; return this; },
+  };
+  let nextCalled = false;
+  const next = () => { nextCalled = true; };
+  return { req, res, next, nextCalled: () => nextCalled };
+}
+
+const adminProfile = {
+  id: 'admin-1', client_id: null, role: 'rdx_admin',
+  display_name: 'Admin', active: true, module_permissions: [],
+};
+
+function enableMetrics(t) {
+  process.env.HTTP_METRICS_ENABLED = 'true';
+  t.after(() => { delete process.env.HTTP_METRICS_ENABLED; });
+  getUserImpl = async () => ({ data: { user: null }, error: new Error('invalid token') });
+  profileImpl = async () => ({ data: null, error: null });
+}
+
+test('requireAuth exitoso mide auth_ms sin alterar el flujo', async t => {
+  enableMetrics(t);
+  getUserImpl = async token => {
+    assert.equal(token, 'tok-abc');
+    return { data: { user: { id: 'admin-1' } }, error: null };
+  };
+  const { req, res, next, nextCalled } = fakeContext({ authorization: 'Bearer tok-abc' });
+  await requireAuth(req, res, next);
+  assert.equal(nextCalled(), true);
+  assert.deepEqual(req.user, { id: 'admin-1' });
+  assert.equal(typeof res.locals.auth_ms, 'number');
+  assert.ok(res.locals.auth_ms >= 0);
+});
+
+test('requireAuth 401 también mide auth_ms y deja la respuesta intacta', async t => {
+  enableMetrics(t);
+  const { req, res, next, nextCalled } = fakeContext({ authorization: 'Bearer invalido' });
+  await requireAuth(req, res, next);
+  assert.equal(nextCalled(), false);
+  assert.equal(res.statusCode, 401);
+  assert.deepEqual(res.body, { error: 'No autorizado' });
+  assert.equal(typeof res.locals.auth_ms, 'number');
+});
+
+test('loadProfile exitoso mide profile_ms sin alterar el flujo', async t => {
+  enableMetrics(t);
+  profileImpl = async () => ({ data: adminProfile, error: null });
+  const { req, res, next, nextCalled } = fakeContext();
+  req.user = { id: 'admin-1' };
+  await loadProfile(req, res, next);
+  assert.equal(nextCalled(), true);
+  assert.equal(req.profile.role, 'rdx_admin');
+  assert.equal(typeof res.locals.profile_ms, 'number');
+  assert.ok(res.locals.profile_ms >= 0);
+});
+
+test('loadProfile 403 también mide profile_ms y deja la respuesta intacta', async t => {
+  enableMetrics(t);
+  profileImpl = async () => ({ data: { ...adminProfile, active: false }, error: null });
+  const { req, res, next, nextCalled } = fakeContext();
+  req.user = { id: 'admin-1' };
+  await loadProfile(req, res, next);
+  assert.equal(nextCalled(), false);
+  assert.equal(res.statusCode, 403);
+  assert.deepEqual(res.body, { error: 'Perfil inactivo' });
+  assert.equal(typeof res.locals.profile_ms, 'number');
+});
+
+test('métricas desactivadas: sin marcas en locals y flujo intacto', async t => {
+  delete process.env.HTTP_METRICS_ENABLED;
+  getUserImpl = async () => ({ data: { user: { id: 'admin-1' } }, error: null });
+  profileImpl = async () => ({ data: adminProfile, error: null });
+  const first = fakeContext({ authorization: 'Bearer tok' });
+  await requireAuth(first.req, first.res, first.next);
+  assert.equal(first.nextCalled(), true);
+  assert.deepEqual(Object.keys(first.res.locals), []);
+  const second = fakeContext();
+  second.req.user = { id: 'admin-1' };
+  await loadProfile(second.req, second.res, second.next);
+  assert.equal(second.nextCalled(), true);
+  assert.deepEqual(Object.keys(second.res.locals), []);
+});
+
+test('integración: http_metric incluye auth_ms y profile_ms sin sensibles', async t => {
+  enableMetrics(t);
+  getUserImpl = async () => ({ data: { user: { id: 'admin-1' } }, error: null });
+  profileImpl = async () => ({ data: adminProfile, error: null });
+  const entries = captureLogs(t);
+  const app = express();
+  app.use(express.json());
+  app.use(httpMetrics);
+  app.use(requireAuth);
+  app.use(loadProfile);
+  app.get('/api/users', (req, res) => res.json([{ id: 'admin-1' }]));
+  const server = await new Promise(resolve => {
+    const started = app.listen(0, '127.0.0.1', () => resolve(started));
+  });
+  t.after(() => server.close());
+  const base = `http://127.0.0.1:${server.address().port}`;
+
+  const res = await fetch(`${base}/api/users`, {
+    headers: { authorization: 'Bearer tok-secreto', 'x-mail': 'admin@example.com' },
+  });
+  assert.equal(res.status, 200);
+  assert.deepEqual(await res.json(), [{ id: 'admin-1' }]);
+
+  const entry = metric(entries);
+  assert.equal(entry.route, '/api/users');
+  assert.equal(entry.status, 200);
+  assert.equal(typeof entry.auth_ms, 'number');
+  assert.equal(typeof entry.profile_ms, 'number');
+  assert.ok(entry.auth_ms >= 0 && entry.profile_ms >= 0);
+  assert.ok(entry.duration_ms >= entry.auth_ms);
+  const serialized = JSON.stringify(entries);
+  for (const secret of ['tok-secreto', 'admin@example.com', 'Admin']) {
+    assert.ok(!serialized.includes(secret), `fuga detectada: ${secret}`);
+  }
+});
+
+test('integración 401: conserva auth_ms sin profile_ms y respuesta intacta', async t => {
+  enableMetrics(t);
+  const entries = captureLogs(t);
+  const app = express();
+  app.use(express.json());
+  app.use(httpMetrics);
+  app.use(requireAuth);
+  app.use(loadProfile);
+  app.get('/api/users', (req, res) => res.json([]));
+  const server = await new Promise(resolve => {
+    const started = app.listen(0, '127.0.0.1', () => resolve(started));
+  });
+  t.after(() => server.close());
+  const base = `http://127.0.0.1:${server.address().port}`;
+
+  const res = await fetch(`${base}/api/users`, {
+    headers: { authorization: 'Bearer invalido' },
+  });
+  assert.equal(res.status, 401);
+  assert.deepEqual(await res.json(), { error: 'No autorizado' });
+
+  const entry = metric(entries);
+  assert.equal(entry.status, 401);
+  assert.equal(typeof entry.auth_ms, 'number');
+  assert.ok(!('profile_ms' in entry));
 });
