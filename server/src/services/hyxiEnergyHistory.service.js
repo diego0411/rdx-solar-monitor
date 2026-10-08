@@ -168,7 +168,7 @@ export async function syncHyxiEnergyHistory(externalPlantId, timeType, startTime
   }));
   const result = { fetched: rows.length, upserted: 0, failed: 0 };
   try {
-    let toPersist = rows;
+    let toPersist = [];
     let mergeStats = null;
     if (rows.length) {
       // Protección: solo se fusiona contra filas del mismo interval_type en
@@ -178,11 +178,27 @@ export async function syncHyxiEnergyHistory(externalPlantId, timeType, startTime
         ? await listEnergyIntervalsRange(plantId, timeType, range.start, range.end)
         : [];
       const merged = mergeHyxiEnergyRows(existing, rows);
-      toPersist = merged.rows;
       mergeStats = merged.stats;
+      // Las filas sin cambios son la referencia intacta a `existing`
+      // (ver mergeHyxiEnergyRows: rama !contributed): vienen de
+      // listEnergyIntervalsRange y NO traen plant_id ni interval_type
+      // (columnas NOT NULL del upsert). Se excluyen: no requieren
+      // escritura y romperían el upsert por conflicto.
+      const existingByInstant = new Map();
+      for (const row of existing) {
+        const instant = Date.parse(row.interval_start);
+        if (Number.isFinite(instant) && !existingByInstant.has(instant)) {
+          existingByInstant.set(instant, row);
+        }
+      }
+      toPersist = merged.rows.filter(
+        row => row !== existingByInstant.get(Date.parse(row.interval_start)),
+      );
     }
-    await upsertEnergyIntervals(toPersist);
-    result.upserted = toPersist.length;
+    if (toPersist.length) {
+      await upsertEnergyIntervals(toPersist);
+      result.upserted = toPersist.length;
+    }
     if (mergeStats) result.merge = mergeStats;
   } catch {
     result.failed = rows.length;
