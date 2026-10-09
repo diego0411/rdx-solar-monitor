@@ -215,57 +215,23 @@ const legendItems = computed(() => [
   ...(filteredAllPlants.value.some(plant => ['unknown', 'inactive'].includes(plant.status)) ? [['unknown', 'Desconocido']] : []),
 ]);
 
-// UX-01C: tiles por tema. Claro: OSM. Oscuro: Esri gris oscuro (base +
-// referencia con etiquetas), servicio gratuito sin API key tras el cierre
-// de CARTO anónimo. Atribuciones preservadas en ambos temas.
-const MAP_TILES = {
-  light: {
-    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
-    layers: [
-      {
-        url: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-        options: { maxZoom: 19 },
-      },
-    ],
-  },
-  dark: {
-    attribution: 'Tiles &copy; Esri &mdash; Esri, HERE, Garmin, (c) <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
-    layers: [
-      {
-        url: 'https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}',
-        options: { maxZoom: 19 },
-      },
-      {
-        url: 'https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Reference/MapServer/tile/{z}/{y}/{x}',
-        options: { maxZoom: 19 },
-      },
-    ],
-  },
-};
+// Mapa geográfico siempre claro (OSM) en ambos temas: los proveedores de
+// teselas oscuras exigen API key (CARTO) o carecen de cobertura (Esri).
+// La interfaz exterior (leyenda, panel, popups) sí sigue al tema.
+const OSM_TILE_URL = 'https://tile.openstreetmap.org/{z}/{x}/{y}.png';
+const OSM_ATTRIBUTION = '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors';
+const OSM_MAX_ZOOM = 19;
 
-function mapTheme() {
-  try {
-    return document.documentElement?.dataset?.theme === 'dark' ? 'dark' : 'light';
-  } catch {
-    return 'light';
-  }
-}
-
-let tileLayers = [];
+let tileLayer = null;
 
 function applyTileLayer() {
-  if (!map) return;
-  const entry = MAP_TILES[mapTheme()];
-  for (const layer of tileLayers) map.removeLayer(layer);
-  tileLayers = entry.layers.map(({ url, options }) =>
-    L.tileLayer(url, { ...options, attribution: entry.attribution }).addTo(map),
-  );
+  if (!map || tileLayer) return;
+  tileLayer = L.tileLayer(OSM_TILE_URL, { maxZoom: OSM_MAX_ZOOM, attribution: OSM_ATTRIBUTION }).addTo(map);
 }
 
-// Al cambiar el tema: tiles apropiados + markers re-resueltos por token.
-// Sin refetch ni re-encuadre.
+// Al cambiar el tema solo se re-resuelven los markers por token; las
+// teselas y el encuadre no cambian. Sin refetch.
 function refreshMapTheme() {
-  applyTileLayer();
   renderMarkers({ fit: false });
 }
 
@@ -384,7 +350,7 @@ onUnmounted(() => {
   map?.remove();
   map = null;
   markerLayer = null;
-  tileLayers = [];
+  tileLayer = null;
 });
 </script>
 

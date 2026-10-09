@@ -31,14 +31,14 @@ test('2: series y significado intactos; colores por token en cada render', () =>
   assert.match(history, /\['generation_kwh', 'Generación'\]/);
 });
 
-test('3: mapa usa tiles duales con atribuciones y conserva markers/popups', () => {
-  assert.match(map, /tile\.openstreetmap\.org/);
+test('3: mapa usa OSM en ambos temas, sin proveedores oscuros', () => {
+  assert.match(map, /OSM_TILE_URL = 'https:\/\/tile\.openstreetmap\.org\/\{z\}\/\{x\}\/\{y\}\.png'/);
   assert.ok(!map.includes('cartocdn'), 'sin CARTO (requiere API key)');
-  assert.match(map, /World_Dark_Gray_Base\/MapServer\/tile\/\{z\}\/\{y\}\/\{x\}/);
-  assert.match(map, /World_Dark_Gray_Reference\/MapServer\/tile\/\{z\}\/\{y\}\/\{x\}/);
-  assert.match(map, /Tiles &copy; Esri &mdash; Esri, HERE, Garmin/);
-  assert.match(map, /for \(const layer of tileLayers\) map\.removeLayer\(layer\)/);
-  assert.match(map, /tileLayers = \[\];/);
+  assert.ok(!map.includes('arcgisonline'), 'sin Esri (sin cobertura)');
+  assert.ok(!map.includes('MAP_TILES'), 'sin selección por tema');
+  assert.match(map, /if \(!map \|\| tileLayer\) return;/);
+  assert.match(map, /renderMarkers\(\{ fit: false \}\)/);
+  assert.match(map, /tileLayer = null;/);
   assert.match(map, /renderMarkers\(\{ fit: false \}\)/);
   assert.match(map, /addEventListener\('rdx:theme', refreshMapTheme\)/);
   assert.match(map, /removeEventListener\('rdx:theme', refreshMapTheme\)/);
