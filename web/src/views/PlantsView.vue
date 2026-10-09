@@ -578,7 +578,7 @@ onUnmounted(() => controller.abort());
 .foot-icon { grid-row: 1 / 3; align-self: center; color: var(--rdx-primary); font-size: 21px; }
 .foot-metric > span:not(.foot-icon) { color: var(--rdx-text-muted); font-size: 10px; line-height: 1.3; }
 .foot-metric strong { color: var(--rdx-text-strong); font-size: 11px; font-weight: 650; line-height: 1.35; overflow-wrap: anywhere; }
-.foot-metric small { grid-column: 2; color: var(--rdx-text-faint); font-size: 9px; }
+.foot-metric small { grid-column: 2; color: var(--rdx-text-muted); font-size: 9px; }
 .telemetry-fresh { color: var(--rdx-success) !important; }
 .telemetry-stale { color: var(--rdx-warning) !important; }
 .telemetry-no_data { color: var(--rdx-text-muted) !important; }

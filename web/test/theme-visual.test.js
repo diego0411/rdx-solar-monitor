@@ -116,6 +116,23 @@ test('11: h1 y márgenes de encabezados en rango coherente', () => {
   assert.match(map, /\.map-header \{ display: flex; align-items: flex-end; justify-content: space-between; gap: 18px; margin: 0 4px 20px; \}/);
 });
 
+test('12: metadatos mínimos 10px y muted en textos pequeños', () => {
+  const devices = readFileSync(new URL('../src/views/DevicesView.vue', import.meta.url), 'utf8');
+  assert.ok(!devices.includes('font-size:8px'), 'Devices sin 8px');
+  assert.ok(!devices.includes('font-size:9px'), 'Devices sin 9px');
+  assert.ok(!devices.includes('var(--rdx-text-faint)'), 'Devices sin faint');
+  assert.ok(!devices.includes('var(--rdx-devices-subtle-text)'), 'Devices sin subtle en texto');
+  assert.match(devices, /\.device small,.date\{display:block;color:var\(--rdx-text-muted\);font-size:10px;line-height:1.4\}/);
+  const plants = readFileSync(new URL('../src/views/PlantsView.vue', import.meta.url), 'utf8');
+  assert.ok(!plants.includes('var(--rdx-text-faint)'), 'Plants sin faint');
+  const inventory = readFileSync(new URL('../src/views/InventoryView.vue', import.meta.url), 'utf8');
+  assert.ok(!inventory.includes('var(--rdx-text-faint)'), 'Inventory sin faint');
+  const inventoryDetail = readFileSync(new URL('../src/views/InventoryDetailView.vue', import.meta.url), 'utf8');
+  assert.ok(!inventoryDetail.includes('var(--rdx-text-faint)'), 'InventoryDetail sin faint');
+  const alarms = readFileSync(new URL('../src/views/AlarmsView.vue', import.meta.url), 'utf8');
+  assert.ok(!alarms.includes('var(--rdx-text-faint'), 'Alarms sin faint');
+});
+
 test('5: textos sobre fondos de marca con contraste en ambos temas', () => {
   assert.match(css, /--rdx-on-primary: #ffffff;/);
   assert.match(css, /--rdx-on-accent: #ffffff;/);

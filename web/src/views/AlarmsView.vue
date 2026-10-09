@@ -746,7 +746,7 @@ onUnmounted(() => controller.abort());
   display: block;
   margin-top: 2px;
   font-size: 11px;
-  color: var(--rdx-text-faint, var(--rdx-text-muted));
+  color: var(--rdx-text-muted);
 }
 
 .date-cell {

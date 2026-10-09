@@ -442,7 +442,7 @@ button:disabled { opacity: .6; cursor: wait; }
 .summary-card { display: grid; min-width: 0; padding: 15px; }
 .summary-card span { color: var(--rdx-text-muted); font-size: 11px; font-weight: 700; }
 .summary-card strong { margin: 5px 0; color: var(--rdx-text-strong); font-size: 24px; overflow-wrap: anywhere; }
-.summary-card small { color: var(--rdx-text-faint); font-size: 10px; }
+.summary-card small { color: var(--rdx-text-muted); font-size: 10px; }
 .summary-card.featured { background: var(--rdx-primary-soft); }
 .summary-card.secondary { opacity: .85; }
 .data-card { margin-bottom: 17px; padding: 0; overflow: hidden; }

@@ -720,7 +720,7 @@ button:disabled { opacity: .6; cursor: wait; }
 .kpi { display: grid; min-width: 0; padding: 9px 12px; }
 .kpi span { font-size: 11px; font-weight: 700; color: var(--rdx-text-muted); }
 .kpi strong { margin: 2px 0; color: var(--rdx-text-strong); font-size: 20px; line-height: 1.1; }
-.kpi small { color: var(--rdx-text-faint); font-size: 10px; }
+.kpi small { color: var(--rdx-text-muted); font-size: 10px; }
 .kpi.featured { border-color: color-mix(in srgb, var(--rdx-primary) 30%, var(--rdx-border)); background: var(--rdx-primary-soft); }
 .kpi-note { margin: 6px 0 10px; color: var(--rdx-text-muted); font-size: 11px; }
 .filters { display: grid; grid-template-columns: 1.5fr repeat(3, 1fr) auto; align-items: end; gap: 12px; padding: 15px; margin-bottom: 0; }
@@ -746,7 +746,7 @@ td { padding: 14px 13px; border-top: 1px solid var(--rdx-border); color: var(--r
 .product-name { min-width: 150px; }
 .product-name strong, .product-name small { display: block; }
 .product-name strong, .stock-cell { color: var(--rdx-text-strong); }
-.product-name small { margin-top: 3px; color: var(--rdx-text-faint); }
+.product-name small { margin-top: 3px; color: var(--rdx-text-muted); }
 .badge { display: inline-flex; padding: 5px 9px; border-radius: 999px; background: var(--rdx-neutral-soft); color: var(--rdx-text-muted); font-size: 10px; font-weight: 750; white-space: nowrap; }
 .badge.control { background: var(--rdx-primary-soft); color: var(--rdx-primary); }
 .badge.active { background: var(--rdx-success-soft); color: var(--rdx-success); }
