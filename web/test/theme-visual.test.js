@@ -104,6 +104,18 @@ test('10: sheet de Devices bajo drawer y acciones con wrap en móvil', () => {
   assert.match(inventory, /\.header-actions \{ flex-wrap: wrap; \}/);
 });
 
+test('11: h1 y márgenes de encabezados en rango coherente', () => {
+  const devices = readFileSync(new URL('../src/views/DevicesView.vue', import.meta.url), 'utf8');
+  assert.match(devices, /@media\(max-width:720px\)\{\.devices-header h1\{font-size:28px\}\}/);
+  assert.match(devices, /\.devices-header\{justify-content:space-between;gap:24px;margin-bottom:22px\}/);
+  for (const [file, cls] of [['AlarmsView', 'alarms-header'], ['MaintenanceView', 'maintenance-header'], ['OperationsView', 'operations-header']]) {
+    const source = readFileSync(new URL(`../src/views/${file}.vue`, import.meta.url), 'utf8').replace(/\r\n/g, '\n');
+    assert.match(source, new RegExp(`\\.${cls} \\{\\n  display: flex;\\n  justify-content: space-between;\\n  align-items: flex-start;\\n  gap: 24px;\\n  margin-bottom: 22px;\\n\\}`));
+  }
+  const map = readFileSync(new URL('../src/views/PlantMapView.vue', import.meta.url), 'utf8');
+  assert.match(map, /\.map-header \{ display: flex; align-items: flex-end; justify-content: space-between; gap: 18px; margin: 0 4px 20px; \}/);
+});
+
 test('5: textos sobre fondos de marca con contraste en ambos temas', () => {
   assert.match(css, /--rdx-on-primary: #ffffff;/);
   assert.match(css, /--rdx-on-accent: #ffffff;/);

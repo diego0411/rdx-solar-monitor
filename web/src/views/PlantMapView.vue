@@ -413,7 +413,7 @@ onUnmounted(() => {
 
 <style scoped>
 .map-view { width: 100%; min-width: 0; }
-.map-header { display: flex; align-items: flex-end; justify-content: space-between; gap: 18px; margin: 0 4px 18px; }
+.map-header { display: flex; align-items: flex-end; justify-content: space-between; gap: 18px; margin: 0 4px 20px; }
 .map-header h1 { margin: 0; color: var(--rdx-text-strong); font-size: 31px; letter-spacing: -.025em; }
 .map-header > div > p { margin: 3px 0 0; color: var(--rdx-text-muted); font-size: 14px; }
 .last-update { flex: 0 0 auto; padding-bottom: 3px; font-size: 12px !important; }

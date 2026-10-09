@@ -486,7 +486,7 @@ onUnmounted(() => controller.abort());
   justify-content: space-between;
   align-items: flex-start;
   gap: 24px;
-  margin-bottom: 24px;
+  margin-bottom: 22px;
 }
 
 .page-description {
