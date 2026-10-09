@@ -10,7 +10,10 @@ const code = source
   .replace(/^import .*;$/gm, '')
   .replace(/^export const PLANTS_CATALOG_TTL_MS/m, 'const PLANTS_CATALOG_TTL_MS')
   .replace(/^export async function getPlantsCatalog/m, 'async function getPlantsCatalog')
-  .replace(/^export function invalidatePlantsCatalog/m, 'function invalidatePlantsCatalog');
+  .replace(/^export function invalidatePlantsCatalog/m, 'function invalidatePlantsCatalog')
+  .replace(/^export const DEVICES_CATALOG_TTL_MS/m, 'const DEVICES_CATALOG_TTL_MS')
+  .replace(/^export async function getDevicesCatalog/m, 'async function getDevicesCatalog')
+  .replace(/^export function invalidateDevicesCatalog/m, 'function invalidateDevicesCatalog');
 
 const TTL = 10 * 60 * 1000;
 
@@ -27,13 +30,15 @@ function setup({ userId = 'u1', rows = [{ id: 'p1', name: 'Planta 1' }], fail = 
   };
   const getSession = async () => (currentUser ? { user: { id: currentUser } } : null);
   const FakeDate = { now: () => currentNow };
-  const { getPlantsCatalog, invalidatePlantsCatalog } = new Function(
-    'apiFetch', 'getSession', 'Date', `${code}; return { getPlantsCatalog, invalidatePlantsCatalog };`,
+  const { getPlantsCatalog, invalidatePlantsCatalog, getDevicesCatalog, invalidateDevicesCatalog } = new Function(
+    'apiFetch', 'getSession', 'Date', `${code}; return { getPlantsCatalog, invalidatePlantsCatalog, getDevicesCatalog, invalidateDevicesCatalog };`,
   )(apiFetch, getSession, FakeDate);
   return {
     calls,
     getPlantsCatalog,
     invalidatePlantsCatalog,
+    getDevicesCatalog,
+    invalidateDevicesCatalog,
     setUser: id => { currentUser = id; },
     setRows: next => { currentRows = next; },
     setFail: error => { failure = error; },
@@ -160,6 +165,69 @@ test('11: cambio de usuario durante vuelo descarta la respuesta anterior', async
   assert.deepEqual(await fresh, [{ id: 'p1', name: 'Planta 1' }]);
   assert.deepEqual(await h.getPlantsCatalog({}), [{ id: 'p1', name: 'Planta 1' }]);
   assert.equal(h.calls.length, 2);
+});
+
+// D1. catálogo de dispositivos: proyección {id,plant_id,name,serial_number}
+test('D1: devices proyecta identidad sin telemetría ni extras', async () => {
+  const h = setup({ rows: [
+    { id: 'd1', plant_id: 'p1', name: 'Inv 1', serial_number: 'SN1', status: 'online', metadata: {}, raw_data: {} },
+    { id: 'd2', plant_id: null, name: null, serial_number: 'SN2' },
+    { id: 'd3', plant_id: 'p1', name: null, serial_number: null },
+  ] });
+  const data = await h.getDevicesCatalog({});
+  assert.deepEqual(data, [
+    { id: 'd1', plant_id: 'p1', name: 'Inv 1', serial_number: 'SN1' },
+    { id: 'd2', plant_id: null, name: 'SN2', serial_number: 'SN2' },
+    { id: 'd3', plant_id: 'p1', name: 'd3', serial_number: null },
+  ]);
+  assert.deepEqual(h.calls, ['/devices/catalog']);
+});
+
+// D2. TTL propio de 5 minutos y single-flight
+test('D2: devices TTL 5 min y una sola descarga concurrente', async () => {
+  const h = setup({ rows: [{ id: 'd1', plant_id: 'p1', name: 'A', serial_number: 'S' }] });
+  await Promise.all([h.getDevicesCatalog({}), h.getDevicesCatalog({})]);
+  assert.deepEqual(h.calls, ['/devices/catalog']);
+  h.advance(5 * 60 * 1000 - 1);
+  await h.getDevicesCatalog({});
+  assert.equal(h.calls.length, 1);
+  h.advance(2);
+  await h.getDevicesCatalog({});
+  assert.deepEqual(h.calls, ['/devices/catalog', '/devices/catalog']);
+});
+
+// D3. respuesta tardía tras invalidación no repuebla
+test('D3: invalidate devices en vuelo descarta la respuesta antigua', async () => {
+  let releaseOld;
+  const gate = new Promise(resolve => { releaseOld = resolve; });
+  const h = setup({ rows: gate.then(() => [{ id: 'old' }]) });
+  const stale = h.getDevicesCatalog({});
+  await new Promise(resolve => setImmediate(resolve));
+  h.invalidateDevicesCatalog();
+  h.setRows([{ id: 'd1', plant_id: 'p1', name: 'A', serial_number: 'S' }]);
+  const fresh = h.getDevicesCatalog({});
+  releaseOld();
+  assert.deepEqual(await stale, [{ id: 'old', plant_id: null, name: 'old', serial_number: null }]);
+  assert.deepEqual(await fresh, [{ id: 'd1', plant_id: 'p1', name: 'A', serial_number: 'S' }]);
+  assert.deepEqual(await h.getDevicesCatalog({}), [{ id: 'd1', plant_id: 'p1', name: 'A', serial_number: 'S' }]);
+  assert.equal(h.calls.length, 2);
+});
+
+// D4. cachés independientes: plantas y dispositivos no se interfieren
+test('D4: invalidar plantas no toca dispositivos; usuario nuevo refetch ambos', async () => {
+  const h = setup({ rows: [{ id: 'x', name: 'X' }] });
+  await h.getPlantsCatalog({});
+  await h.getDevicesCatalog({});
+  assert.deepEqual(h.calls, ['/plants', '/devices/catalog']);
+  h.invalidatePlantsCatalog();
+  await h.getDevicesCatalog({});
+  assert.deepEqual(h.calls, ['/plants', '/devices/catalog']);
+  await h.getPlantsCatalog({});
+  assert.deepEqual(h.calls, ['/plants', '/devices/catalog', '/plants']);
+  h.setUser('u2');
+  await h.getPlantsCatalog({});
+  await h.getDevicesCatalog({});
+  assert.deepEqual(h.calls, ['/plants', '/devices/catalog', '/plants', '/plants', '/devices/catalog']);
 });
 
 // 9. copias independientes: mutar el resultado no contamina el caché

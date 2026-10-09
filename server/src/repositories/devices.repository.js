@@ -184,3 +184,42 @@ export async function listStoredDevicesOverview(plantIds = null) {
     if (data.length < pageSize) return devices;
   }
 }
+
+// Catálogo ligero para selectores (Mantenimiento/Inventario): solo identidad
+// y pertenencia a planta, sin telemetría (device_latest_data), sin joins y
+// sin metadata. Mismo universo, orden, alcance y paginación que
+// listStoredDevices. La función compartida conserva su forma para
+// GET /devices, discovery y alarm-sync.
+const DEVICES_CATALOG_COLUMNS = 'id, plant_id, name, serial_number';
+
+export async function listDevicesCatalog(plantIds = null) {
+  if (plantIds !== null && plantIds.size === 0) return [];
+
+  const devices = [];
+  const pageSize = 1000;
+
+  for (let offset = 0; ; offset += pageSize) {
+    let query = supabase
+      .from('devices')
+      .select(DEVICES_CATALOG_COLUMNS)
+      .order('name', { ascending: true })
+      .order('id', { ascending: true });
+
+    if (plantIds !== null) {
+      query = query.in('plant_id', [...plantIds]);
+    }
+
+    const { data, error } = await query.range(
+      offset,
+      offset + pageSize - 1
+    );
+
+    if (error) {
+      throw new Error('No se pudo consultar el catálogo de dispositivos');
+    }
+
+    devices.push(...data);
+
+    if (data.length < pageSize) return devices;
+  }
+}

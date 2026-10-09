@@ -92,3 +92,73 @@ export async function getPlantsCatalog({ signal } = {}) {
 export function invalidatePlantsCatalog() {
   cache = { userId: cache.userId, at: 0, data: null, promise: null };
 }
+
+// Catálogo ligero de dispositivos para selectores (Mantenimiento,
+// Inventario): solo {id, plant_id, name, serial_number}, sin telemetría.
+// Misma mecánica que el catálogo de plantas (sin generalizarlo): memoria,
+// single-flight, identidad, slot generacional, abort aislado, errores sin
+// caché y copias por llamante. TTL 5 min: los dispositivos se crean y
+// re-vinculan en background con frecuencia (sincronizadores/discovery).
+// GET /devices operativo queda intacto para DevicesView.
+
+export const DEVICES_CATALOG_TTL_MS = 5 * 60 * 1000;
+
+let devicesCache = { userId: undefined, at: 0, data: null, promise: null };
+
+function projectDevices(rows) {
+  const list = (Array.isArray(rows) ? rows : []).map(row => ({
+    id: row?.id ?? null,
+    plant_id: row?.plant_id ?? null,
+    name: row?.name ?? row?.serial_number ?? row?.id ?? null,
+    serial_number: row?.serial_number ?? null,
+  }));
+  for (const entry of list) Object.freeze(entry);
+  return Object.freeze(list);
+}
+
+async function fetchFreshDevices() {
+  const rows = await apiFetch('/devices/catalog');
+  return projectDevices(rows);
+}
+
+export async function getDevicesCatalog({ signal } = {}) {
+  const userId = await currentUserId();
+  if (devicesCache.userId !== userId) {
+    devicesCache = { userId, at: 0, data: null, promise: null };
+  }
+  const fresh = devicesCache.data !== null && (Date.now() - devicesCache.at) < DEVICES_CATALOG_TTL_MS;
+  if (!fresh && devicesCache.promise === null) {
+    const slot = devicesCache;
+    slot.promise = fetchFreshDevices().then(
+      data => {
+        if (devicesCache === slot) {
+          slot.data = data;
+          slot.at = Date.now();
+          slot.promise = null;
+        }
+        return data;
+      },
+      error => {
+        if (devicesCache === slot) slot.promise = null;
+        throw error;
+      },
+    );
+  }
+  const source = fresh ? Promise.resolve(devicesCache.data) : devicesCache.promise;
+  if (!signal) {
+    const data = await source;
+    return snapshot(data);
+  }
+  if (signal.aborted) return Promise.reject(abortError());
+  const data = await Promise.race([
+    source,
+    new Promise((_, reject) => {
+      signal.addEventListener('abort', () => reject(abortError()), { once: true });
+    }),
+  ]);
+  return snapshot(data);
+}
+
+export function invalidateDevicesCatalog() {
+  devicesCache = { userId: devicesCache.userId, at: 0, data: null, promise: null };
+}

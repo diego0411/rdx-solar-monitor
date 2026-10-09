@@ -2,7 +2,7 @@
 import { computed, onUnmounted, ref, watch } from 'vue';
 import { useRoute } from 'vue-router';
 import { apiFetch, getMyProfile } from '../services/api.js';
-import { getPlantsCatalog } from '../services/catalog.js';
+import { getDevicesCatalog, getPlantsCatalog } from '../services/catalog.js';
 import { listClients } from '../services/clients.js';
 import {
   createQuantityInventoryMovement,
@@ -146,7 +146,7 @@ async function load() {
       supporting.push(listClients({
         signal: requestController.signal,
       }).catch(() => []));
-      supporting.push(apiFetch('/devices', { signal: requestController.signal }).catch(() => []));
+      supporting.push(getDevicesCatalog({ signal: requestController.signal }).catch(() => []));
     }
     const results = await Promise.all([loadInventoryData(requestController.signal), ...supporting]);
     if (requestController.signal.aborted) return;

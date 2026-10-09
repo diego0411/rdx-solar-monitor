@@ -49,6 +49,7 @@ function setup({
       if (path === '/devices') return devices;
       return plants;
     },
+    getDevicesCatalog: async () => devices.map(device => ({ id: device.id, plant_id: device.plant_id, name: device.name ?? device.serial_number ?? device.id, serial_number: device.serial_number ?? null })),
     getPlantsCatalog: async () => plants.map(plant => ({ id: plant.id, name: plant.name ?? plant.id })),
     listClients: async options => { clientRequests.push(options); return clients; },
     getInventoryProduct: async id => {

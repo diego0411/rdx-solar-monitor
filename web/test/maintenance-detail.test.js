@@ -14,6 +14,7 @@ function setup({ role = 'client_admin', permissions = ['maintenance'], visit = n
     useRoute: () => ({ params: { id: 'v1' } }),
     getMyProfile: async () => ({ profile: { role, module_permissions: permissions } }),
     apiFetch: async path => (String(path).startsWith('/devices') ? devices : plants),
+    getDevicesCatalog: async () => devices.map(device => ({ id: device.id, plant_id: device.plant_id, name: device.name ?? device.serial_number ?? device.id, serial_number: device.serial_number ?? null })),
     getPlantsCatalog: async () => plants.map(plant => ({ id: plant.id, name: plant.name ?? plant.id })),
     getMaintenanceVisit: async () => {
       if (visitError) throw visitError;

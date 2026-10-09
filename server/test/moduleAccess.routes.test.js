@@ -63,7 +63,7 @@ mock.module('../src/controllers/inventory.controller.js', {
 });
 mock.module('../src/controllers/dashboard.controller.js', { namedExports: { getSummary: ok } });
 mock.module('../src/controllers/devices.controller.js', {
-  namedExports: { getDevices: ok, getDevicesLatestData: ok, getDeviceDetail: ok },
+  namedExports: { getDevices: ok, getDevicesLatestData: ok, getDeviceDetail: ok, getDevicesCatalog: ok },
 });
 mock.module('../src/controllers/plants.controller.js', {
   namedExports: { getPlants: ok, getPlantEnergySummaries: ok, getOverview: ok, getPlantDetailOverview: ok },
@@ -107,6 +107,7 @@ test('rdx_admin y client_admin bypassan módulos; client_user requiere grant', a
   assert.equal((await get(t, 'reader', '/api/inventory/products')).status, 403);
   assert.equal((await get(t, 'reader', '/api/dashboard/summary')).status, 200);
   assert.equal((await get(t, 'reader', '/api/devices')).status, 200);
+  assert.equal((await get(t, 'reader', '/api/devices/catalog')).status, 200);
   assert.equal((await get(t, 'reader', '/api/plants')).status, 200);
   assert.equal((await get(t, 'bare', '/api/dashboard/summary')).status, 403);
 });

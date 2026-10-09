@@ -1,7 +1,15 @@
-import { listStoredDevices } from '../repositories/devices.repository.js';
+import { listStoredDevices, listDevicesCatalog } from '../repositories/devices.repository.js';
 import { listDeviceLatestData } from '../repositories/deviceLatestData.repository.js';
 import { findDeviceDetail } from '../repositories/deviceDetail.repository.js';
 import { telemetryFreshness } from '../services/telemetryFreshness.js';
+
+export async function getDevicesCatalog(req, res) {
+  try {
+    return res.json(await listDevicesCatalog(req.scope?.plantIds ?? null));
+  } catch {
+    return res.status(503).json({ error: 'No se pudo consultar el catálogo de dispositivos' });
+  }
+}
 
 export async function getDeviceDetail(req, res) {
   if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(req.params.id)) {

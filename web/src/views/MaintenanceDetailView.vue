@@ -1,8 +1,8 @@
 <script setup>
 import { computed, onMounted, onUnmounted, ref } from 'vue';
 import { useRoute } from 'vue-router';
-import { apiFetch, getMyProfile } from '../services/api.js';
-import { getPlantsCatalog } from '../services/catalog.js';
+import { getMyProfile } from '../services/api.js';
+import { getDevicesCatalog, getPlantsCatalog } from '../services/catalog.js';
 import {
   createMaintenanceActivity,
   deleteMaintenanceActivity,
@@ -279,7 +279,7 @@ async function ensureDevices() {
   if (devicesLoaded.value || devicesLoading.value) return;
   devicesLoading.value = true;
   try {
-    const data = await apiFetch('/devices', { signal: controller.signal });
+    const data = await getDevicesCatalog({ signal: controller.signal });
     devicesById.value = Object.fromEntries(
       (Array.isArray(data) ? data : []).map(device => [device.id, device]),
     );

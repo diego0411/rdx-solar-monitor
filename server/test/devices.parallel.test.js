@@ -5,6 +5,7 @@ let calls, deviceResolve, latestResolve, latestReject;
 mock.module('../src/config/supabase.js', { exports: { supabase: {} } });
 mock.module('../src/repositories/devices.repository.js', { exports: {
   listStoredDevices(scope) { calls.push(['devices', scope]); return new Promise(resolve => { deviceResolve = resolve; }); },
+  listDevicesCatalog: async () => [],
 } });
 mock.module('../src/repositories/deviceLatestData.repository.js', { exports: {
   listDeviceLatestData(scope) { calls.push(['latest', scope]); return new Promise((resolve, reject) => { latestResolve = resolve; latestReject = reject; }); },
