@@ -46,6 +46,7 @@
      a los colores fijos que reemplazan; el tema oscuro (UX-01B) solo
      redefinirá estos valores bajo [data-theme='dark']. */
   --rdx-on-primary: #ffffff;
+  --rdx-on-danger: #ffffff;
   --rdx-status-amber: #f2a20b;
   --rdx-status-red: #df3f3f;
   --rdx-provider-hyxi: #148ac1;
@@ -139,6 +140,7 @@
   --rdx-focus-soft: rgb(124 196 160 / 25%);
   --rdx-map-marker-ring: #16211c;
   --rdx-on-primary: #ffffff;
+  --rdx-on-danger: #10231a;
   --rdx-on-accent: #10231a;
   --rdx-devices-table-head-bg: #1a2620;
   --rdx-devices-row-border: #2a3b32;

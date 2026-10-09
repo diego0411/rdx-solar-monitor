@@ -813,7 +813,7 @@ h1 {
   border: 0;
   border-radius: 8px;
   background: var(--rdx-primary);
-  color: white;
+  color: var(--rdx-on-primary);
   font: inherit;
   font-weight: 600;
   cursor: pointer;
@@ -1087,6 +1087,7 @@ h1 {
 
 .danger-button {
   background: var(--rdx-danger);
+  color: var(--rdx-on-danger);
 }
 
 .activity-details {

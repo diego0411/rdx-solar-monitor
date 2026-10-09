@@ -525,7 +525,7 @@ onUnmounted(() => controller.abort());
 .plants-header h1 { font-size: 31px; }
 .plants-header > div > p { margin: 3px 0 0; font-size: 15px; }
 .header-actions { display: grid; gap: 6px; justify-items: end; }
-.admin-button { min-height: 40px; padding: 7px 16px; border: 1px solid var(--rdx-primary); border-radius: var(--rdx-radius-sm); background: var(--rdx-primary); color: white; font: inherit; font-size: 13px; font-weight: 700; cursor: pointer; white-space: nowrap; }
+.admin-button { min-height: 40px; padding: 7px 16px; border: 1px solid var(--rdx-primary); border-radius: var(--rdx-radius-sm); background: var(--rdx-primary); color: var(--rdx-on-primary); font: inherit; font-size: 13px; font-weight: 700; cursor: pointer; white-space: nowrap; }
 .admin-button:disabled { opacity: .6; cursor: wait; }
 .sync-message { margin: 0; font-size: 11px; font-weight: 600; }
 .sync-ok { color: var(--rdx-success); }

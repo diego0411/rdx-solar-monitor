@@ -65,6 +65,18 @@ test('6: fix B1, controles y popups Leaflet legibles solo en oscuro', () => {
   assert.ok(!light.includes('.leaflet-'), 'claro sin overrides Leaflet');
 });
 
+test('7: botones CTA usan tokens on-* con contraste AA en ambos temas', () => {
+  assert.match(css, /--rdx-on-danger: #ffffff;/);
+  const dark = css.slice(css.indexOf("[data-theme='dark']"));
+  assert.match(dark, /--rdx-on-danger: #10231a;/);
+  const maintenance = readFileSync(new URL('../src/views/MaintenanceDetailView.vue', import.meta.url), 'utf8');
+  assert.match(maintenance, /\.danger-button \{\n  background: var\(--rdx-danger\);\n  color: var\(--rdx-on-danger\);\n\}/);
+  assert.match(maintenance, /\.primary-button \{\n  padding: 10px 16px;\n  border: 0;\n  border-radius: 8px;\n  background: var\(--rdx-primary\);\n  color: var\(--rdx-on-primary\);/);
+  assert.ok(!maintenance.includes('color: white'), 'MaintenanceDetail sin blanco fijo');
+  const plants = readFileSync(new URL('../src/views/PlantsView.vue', import.meta.url), 'utf8');
+  assert.ok(!plants.includes('color: white'), 'Plants sin blanco fijo');
+});
+
 test('5: textos sobre fondos de marca con contraste en ambos temas', () => {
   assert.match(css, /--rdx-on-primary: #ffffff;/);
   assert.match(css, /--rdx-on-accent: #ffffff;/);
