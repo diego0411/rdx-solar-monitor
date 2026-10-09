@@ -769,7 +769,8 @@ td { padding: 14px 13px; border-top: 1px solid var(--rdx-border); color: var(--r
 .form-error { margin: 0; color: var(--rdx-danger); font-size: 12px; }
 .modal-actions { display: flex; justify-content: flex-end; gap: 9px; }
 @media (max-width: 1100px) { .kpi-grid { grid-template-columns: repeat(3, 1fr); } .filters { grid-template-columns: repeat(2, 1fr); } .filter-actions { align-self: end; } }
-@media (max-width: 700px) { .inventory-header { flex-direction: column; } .inventory-sticky { position: static; } .kpi-grid { grid-template-columns: repeat(2, 1fr); } .filters, .form-grid { grid-template-columns: 1fr; } .filter-actions { justify-content: flex-end; } .pagination { flex-direction: column; } }
+@media (max-width: 700px) {   .inventory-header { flex-direction: column; }
+  .header-actions { flex-wrap: wrap; } .inventory-sticky { position: static; } .kpi-grid { grid-template-columns: repeat(2, 1fr); } .filters, .form-grid { grid-template-columns: 1fr; } .filter-actions { justify-content: flex-end; } .pagination { flex-direction: column; } }
 .tabs { display: flex; gap: 8px; margin: 0 0 16px; }
 .tabs button { min-height: 38px; padding: 8px 18px; border: 1px solid var(--rdx-border); border-radius: 999px; background: var(--rdx-surface); color: var(--rdx-text-muted); font: inherit; font-size: 13px; font-weight: 700; cursor: pointer; }
 .tabs button.active { border-color: var(--rdx-primary); background: var(--rdx-primary-soft); color: var(--rdx-primary); }

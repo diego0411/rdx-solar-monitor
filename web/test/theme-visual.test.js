@@ -90,7 +90,18 @@ test('9: panel de detalle en Devices queda debajo de la topbar', () => {
   const devices = readFileSync(new URL('../src/views/DevicesView.vue', import.meta.url), 'utf8');
   assert.match(devices, /\.detail\{position:sticky;top:calc\(var\(--rdx-topbar-height, 46px\) \+ 24px\)\}/);
   assert.ok(!devices.includes('.detail{position:sticky;top:18px}'), 'sin offset bajo la topbar');
-  assert.match(devices, /\.detail\{position:fixed;z-index:1200;left:14px;right:14px;bottom:14px;/);
+  assert.match(devices, /\.detail\{position:fixed;z-index:40;left:14px;right:14px;bottom:14px;/);
+});
+
+test('10: sheet de Devices bajo drawer y acciones con wrap en móvil', () => {
+  const devices = readFileSync(new URL('../src/views/DevicesView.vue', import.meta.url), 'utf8');
+  assert.match(devices, /\.detail\{position:fixed;z-index:40;left:14px;right:14px;bottom:14px;/);
+  assert.ok(!devices.includes('z-index:1200'), 'sheet sin capa sobre el drawer');
+  const layout = readFileSync(new URL('../src/layouts/AppLayout.vue', import.meta.url), 'utf8');
+  assert.match(layout, /z-index: 60;/);
+  assert.match(layout, /z-index: 55;/);
+  const inventory = readFileSync(new URL('../src/views/InventoryView.vue', import.meta.url), 'utf8');
+  assert.match(inventory, /\.header-actions \{ flex-wrap: wrap; \}/);
 });
 
 test('5: textos sobre fondos de marca con contraste en ambos temas', () => {
