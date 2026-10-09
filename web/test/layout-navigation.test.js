@@ -186,6 +186,20 @@ test('Solicitudes de materiales conserva key operations y permisos', () => {
   assert.doesNotMatch(source, /canSee\('material-requests'\)/);
 });
 
+test('selector de tema único en sidebar, fuera del topbar', () => {
+  const topbar = source.slice(source.indexOf('<header class="app-topbar"'), source.indexOf('</header>'));
+  assert.doesNotMatch(topbar, /theme-switch/);
+  const occurrences = source.match(/class="theme-switch"/g) ?? [];
+  assert.equal(occurrences.length, 1);
+  const sidebar = source.slice(source.indexOf('<div class="sidebar-account">'));
+  const switchIndex = source.indexOf('class="theme-switch"');
+  assert.ok(switchIndex > source.indexOf('<div class="sidebar-account">'));
+  assert.ok(switchIndex < source.indexOf('class="logout-button"'));
+  assert.ok(switchIndex > sidebar.indexOf('account-client') + source.indexOf('<div class="sidebar-account">'));
+  assert.match(source, /role="group" aria-label="Tema visual"/);
+  assert.match(source, /:aria-pressed="String\(themePreference === option\.value\)"/);
+});
+
 test('Inventory sticky queda debajo de la topbar con variable compartida', () => {
   const inventory = readFileSync(new URL('../src/views/InventoryView.vue', import.meta.url), 'utf8');
   const styles = readFileSync(new URL('../src/style.css', import.meta.url), 'utf8');

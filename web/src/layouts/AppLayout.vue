@@ -232,6 +232,16 @@ async function logout() {
           </div>
         </div>
         <p class="account-client">Nexora</p>
+        <div class="theme-switch" role="group" aria-label="Tema visual">
+          <button
+            v-for="option in themeOptions"
+            :key="option.value"
+            type="button"
+            :aria-pressed="String(themePreference === option.value)"
+            :title="`Tema ${option.label.toLowerCase()}`"
+            @click="setThemePreference(option.value)"
+          >{{ option.label }}</button>
+        </div>
         <button class="logout-button" :disabled="signingOut" @click="logout">
           <svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M10 5H5v14h5m4-3 4-4-4-4m4 4H9" /></svg>
           <span>{{ signingOut ? 'Cerrando sesión…' : 'Cerrar sesión' }}</span>
@@ -251,19 +261,7 @@ async function logout() {
             <span class="crumb-page">{{ breadcrumb.label }}</span>
           </nav>
         </div>
-        <div class="topbar-right">
-          <div class="theme-switch" role="group" aria-label="Tema visual">
-            <button
-              v-for="option in themeOptions"
-              :key="option.value"
-              type="button"
-              :aria-pressed="String(themePreference === option.value)"
-              :title="`Tema ${option.label.toLowerCase()}`"
-              @click="setThemePreference(option.value)"
-            >{{ option.label }}</button>
-          </div>
-          <span class="topbar-client">Nexora</span>
-        </div>
+        <span class="topbar-client">Nexora</span>
       </header>
       <main id="main-content" class="main-content" tabindex="-1">
         <slot />
@@ -338,50 +336,45 @@ async function logout() {
   text-overflow: ellipsis;
 }
 
-.topbar-right {
+.sidebar-account .theme-switch {
   display: flex;
-  align-items: center;
-  gap: 12px;
-  min-width: 0;
-}
-
-.theme-switch {
-  display: flex;
-  align-items: center;
+  flex-direction: column;
+  align-items: stretch;
   gap: 2px;
-  padding: 2px;
-  border: 1px solid var(--rdx-border);
-  border-radius: 999px;
-  background: var(--rdx-background);
+  margin-bottom: 12px;
+  padding: 3px;
+  border: 1px solid var(--rdx-sidebar-border);
+  border-radius: 10px;
+  background: rgb(255 255 255 / 5%);
 }
 
-.theme-switch button {
-  min-height: 28px;
-  padding: 3px 12px;
+.sidebar-account .theme-switch button {
+  min-height: 32px;
+  padding: 5px 12px;
   border: 0;
-  border-radius: 999px;
+  border-radius: 7px;
   background: transparent;
-  color: var(--rdx-text-muted);
+  color: var(--rdx-sidebar-muted);
   font: inherit;
   font-size: 12px;
   font-weight: 600;
+  text-align: left;
   cursor: pointer;
 }
 
-.theme-switch button:hover {
-  color: var(--rdx-text-strong);
+.sidebar-account .theme-switch button:hover {
+  color: var(--rdx-sidebar-text);
 }
 
-.theme-switch button[aria-pressed='true'] {
-  background: var(--rdx-surface);
-  color: var(--rdx-text-strong);
-  box-shadow: var(--rdx-shadow-sm);
+.sidebar-account .theme-switch button[aria-pressed='true'] {
+  background: var(--rdx-sidebar-active);
+  color: var(--rdx-sidebar-text);
+  box-shadow: none;
 }
 
 @media (max-width: 720px) {
-  .theme-switch button {
-    padding: 3px 8px;
-    font-size: 11px;
+  .sidebar-account .theme-switch {
+    grid-column: 1 / -1;
   }
 }
 
