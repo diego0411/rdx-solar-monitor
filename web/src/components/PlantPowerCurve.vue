@@ -1,14 +1,14 @@
 <script setup>
-import { ref, watch, onMounted, onBeforeUnmount } from 'vue';
+import { computed, ref, watch, onMounted, onBeforeUnmount } from 'vue';
 import * as echarts from 'echarts/core';
 import { LineChart } from 'echarts/charts';
-import { GridComponent, TooltipComponent, LegendComponent } from 'echarts/components';
+import { DataZoomComponent, GridComponent, TooltipComponent, LegendComponent } from 'echarts/components';
 import { CanvasRenderer } from 'echarts/renderers';
 import { apiFetch } from '../services/api.js';
-import { rdxColor, CHART_SERIES_COLORS } from '../utils/rdxTokens.js';
+import { rdxColor } from '../utils/rdxTokens.js';
 import { resolveChartTimeZone } from '../utils/chartTimezone.js';
 
-echarts.use([LineChart, GridComponent, TooltipComponent, LegendComponent, CanvasRenderer]);
+echarts.use([LineChart, DataZoomComponent, GridComponent, TooltipComponent, LegendComponent, CanvasRenderer]);
 const props = defineProps({ plantId: { type: String, required: true }, timezone: String });
 const selectedDate = defineModel('selectedDate', { type: String, required: true });
 const period = defineModel('period', { default: 'day' });
@@ -26,6 +26,20 @@ const seriesFields = [
   ['grid_import_power_w', 'Importación de red'],
   ['grid_export_power_w', 'Exportación de red'],
 ];
+// Jerarquía visual: generación (área principal), consumo (secundaria),
+// importación/exportación (finas discontinua/punteada). Mismos puntos.
+const seriesStyles = {
+  generation_power_w: { width: 2.5, area: true },
+  consumption_power_w: { width: 2 },
+  grid_import_power_w: { width: 1.5, type: 'dashed' },
+  grid_export_power_w: { width: 1.5, type: 'dotted' },
+};
+const periodLabel = computed(() => periods.find(item => item.key === period.value)?.label ?? '');
+// ECharts cancela wheel antes de comprobar zoomOnMouseWheel: reservar Ctrl
+// para zoom y dejar la rueda normal al scroll nativo, sin preventDefault.
+function preservePageScroll(event) {
+  if (!event.ctrlKey) event.stopPropagation();
+}
 function dispose() {
   observer?.disconnect();
   chart?.dispose();
@@ -80,10 +94,11 @@ function render() {
     ? dateTimeFormatter.format(new Date(value))
     : bucketFormatter.format(new Date(value));
   chart.setOption({
-    color: [rdxColor('--rdx-primary'), ...CHART_SERIES_COLORS],
+    color: [rdxColor('--rdx-chart-green'), rdxColor('--rdx-chart-amber'), rdxColor('--rdx-chart-blue'), rdxColor('--rdx-chart-purple')],
     tooltip: {
       trigger: 'axis',
       renderMode: 'richText',
+      confine: true,
       backgroundColor: rdxColor('--rdx-surface'),
       borderColor: rdxColor('--rdx-border'),
       textStyle: { color: rdxColor('--rdx-text'), fontSize: 12 },
@@ -94,14 +109,39 @@ function render() {
         return [header, ...values].filter(Boolean).join('\n');
       },
     },
-    legend: { type: 'scroll', bottom: 0, icon: 'circle', textStyle: { color: rdxColor('--rdx-text-muted'), fontSize: 12 }, itemGap: 24 },
+    legend: { type: 'plain', bottom: 0, left: 'center', data: seriesFields.map(([, name]) => name), textStyle: { color: rdxColor('--rdx-text'), fontSize: 12 }, itemWidth: 18, itemHeight: 8, itemGap: 20 },
     grid: { left: 60, right: 16, top: 26, bottom: 64 },
-    xAxis: { type: 'category', data: points.value.map(point => point.interval_start), axisLabel: { color: rdxColor('--rdx-text-muted'), hideOverlap: true, formatter: axisTime }, axisLine: { lineStyle: { color: rdxColor('--rdx-border') } }, axisTick: { show: false } },
-    yAxis: { type: 'value', name: 'Potencia (kW)', axisLabel: { color: rdxColor('--rdx-text-muted'), formatter: value => axisKilowattsNumber.format(Number(value) / 1000) }, splitLine: { lineStyle: { color: rdxColor('--rdx-border'), type: 'dashed' } } },
-    series: seriesFields.map(([key, name]) => ({
-      name, type: 'line', showSymbol: false, connectNulls: false, smooth: .18, lineStyle: { width: 2 },
-      data: points.value.map(point => point[key] ?? null),
-    })),
+    dataZoom: [{
+      type: 'inside', xAxisIndex: [0], filterMode: 'none',
+      preventDefaultMouseMove: false,
+      zoomOnMouseWheel: 'ctrl', moveOnMouseWheel: false, moveOnMouseMove: false,
+    }],
+    xAxis: { type: 'category', data: points.value.map(point => point.interval_start), axisLabel: { color: rdxColor('--rdx-text-muted'), fontSize: 12, hideOverlap: true, formatter: axisTime }, axisLine: { show: false }, axisTick: { show: false } },
+    yAxis: { type: 'value', name: 'Potencia (kW)', nameTextStyle: { color: rdxColor('--rdx-text-muted'), fontSize: 12 }, axisLabel: { color: rdxColor('--rdx-text-muted'), fontSize: 12, formatter: value => axisKilowattsNumber.format(Number(value) / 1000) }, axisLine: { show: false }, splitLine: { lineStyle: { color: rdxColor('--rdx-border'), opacity: .6, type: 'dashed' } } },
+    series: seriesFields.map(([key, name]) => {
+      const style = seriesStyles[key] ?? { width: 2 };
+      return {
+        name, type: 'line', showSymbol: false, connectNulls: false, smooth: .18,
+        lineStyle: { width: style.width, ...(style.type ? { type: style.type } : {}) },
+        ...(style.area ? { areaStyle: { opacity: .12 } } : {}),
+        data: points.value.map(point => point[key] ?? null),
+      };
+    }),
+    // ECharts vuelve a evaluar media al hacer resize, sin reiniciar el zoom.
+    media: [
+      { query: { maxWidth: 600 }, option: {
+        legend: { itemGap: 12, data: [seriesFields[0][1], seriesFields[1][1], '', seriesFields[2][1], seriesFields[3][1]] },
+        grid: { bottom: 88 },
+        xAxis: { axisLabel: { fontSize: 11 } },
+        yAxis: { axisLabel: { fontSize: 11 }, nameTextStyle: { fontSize: 11 } },
+      } },
+      { option: {
+        legend: { itemGap: 20, data: seriesFields.map(([, name]) => name) },
+        grid: { bottom: 64 },
+        xAxis: { axisLabel: { fontSize: 12 } },
+        yAxis: { axisLabel: { fontSize: 12 }, nameTextStyle: { fontSize: 12 } },
+      } },
+    ],
   }, { notMerge: true });
 }
 watch(() => [props.plantId, selectedDate.value, period.value], async ([id, day, selectedPeriod], previous, onCleanup) => {
@@ -170,7 +210,7 @@ onBeforeUnmount(dispose);
     <p v-else-if="error" role="alert">{{ error }}</p>
     <p v-else-if="!selectedDate">Selecciona una fecha.</p>
     <p v-else-if="!points.length" role="status">No hay datos de potencia para la fecha seleccionada.</p>
-    <div v-else ref="container" class="power-chart" role="img" aria-label="Curva diaria de generación, consumo, importación y exportación de red en W"></div>
+    <div v-else ref="container" class="power-chart" role="img" @wheel.capture="preservePageScroll" :aria-label="`Curva de potencia (${periodLabel}): generación, consumo, importación y exportación de red en W`"></div>
   </section>
 </template>
 

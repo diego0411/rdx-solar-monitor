@@ -47,6 +47,10 @@
      redefinirá estos valores bajo [data-theme='dark']. */
   --rdx-on-primary: #ffffff;
   --rdx-on-danger: #ffffff;
+  --rdx-chart-green: #174d3c;
+  --rdx-chart-amber: #d08a22;
+  --rdx-chart-blue: #447bb1;
+  --rdx-chart-purple: #9070ac;
   --rdx-status-amber: #f2a20b;
   --rdx-status-red: #df3f3f;
   --rdx-provider-hyxi: #148ac1;
@@ -141,6 +145,10 @@
   --rdx-map-marker-ring: #16211c;
   --rdx-on-primary: #ffffff;
   --rdx-on-danger: #10231a;
+  --rdx-chart-green: #6fce97;
+  --rdx-chart-amber: #e2ab4e;
+  --rdx-chart-blue: #7ba7d4;
+  --rdx-chart-purple: #b49ad4;
   --rdx-on-accent: #10231a;
   --rdx-devices-table-head-bg: #1a2620;
   --rdx-devices-row-border: #2a3b32;

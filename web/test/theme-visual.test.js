@@ -23,10 +23,11 @@ test('1: charts se suscriben a rdx:theme, re-renderizan y limpian', () => {
 
 test('2: series y significado intactos; colores por token en cada render', () => {
   for (const source of [curve, history]) {
-    assert.match(source, /color: \[rdxColor\('--rdx-primary'\), \.\.\.CHART_SERIES_COLORS\]/);
     assert.match(source, /textStyle: \{ color: rdxColor\('--rdx-text'\)/);
     assert.match(source, /axisLabel: \{ color: rdxColor\('--rdx-text-muted'\)/);
   }
+  assert.match(history, /color: \[rdxColor\('--rdx-primary'\), \.\.\.CHART_SERIES_COLORS\]/);
+  assert.match(curve, /color: \[rdxColor\('--rdx-chart-green'\), rdxColor\('--rdx-chart-amber'\), rdxColor\('--rdx-chart-blue'\), rdxColor\('--rdx-chart-purple'\)\]/);
   assert.match(curve, /\['generation_power_w', 'Generación'\]/);
   assert.match(history, /\['generation_kwh', 'Generación'\]/);
 });
