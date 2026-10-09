@@ -1382,4 +1382,9 @@ onUnmounted(() => {
   .telemetry-list { gap: 8px; }
   .telemetry-list .status-row { gap: 6px; }
 }
+/* En móvil la topbar visible ya lleva el selector; el del encabezado se
+oculta para mostrar una sola instancia. */
+@media (max-width: 720px) {
+  .header-meta .theme-switch { display: none; }
+}
 </style>

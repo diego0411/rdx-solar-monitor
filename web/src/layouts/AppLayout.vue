@@ -553,6 +553,12 @@ async function logout() {
     display: none;
   }
 
+  /* Breadcrumb simplificado: solo la vista actual para no recortar la topbar. */
+  .crumb-section,
+  .crumb-separator {
+    display: none;
+  }
+
   .app-shell .sidebar {
     position: fixed;
     top: 0;

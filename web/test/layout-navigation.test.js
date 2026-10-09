@@ -254,9 +254,12 @@ test('UX-02B: cableado drawer, topbar móvil en Dashboard y sin overflow', () =>
   assert.match(layoutStyles, /\.drawer-close \{\n  display: none;/);
   const globalCss = readFileSync(new URL('../src/style.css', import.meta.url), 'utf8');
   assert.match(globalCss, /\.app-shell \{ grid-template-columns: 1fr; align-items: stretch; overflow-x: clip; \}/);
-  const dashboard = readFileSync(new URL('../src/views/DashboardView.vue', import.meta.url), 'utf8');
+  const dashboard = readFileSync(new URL('../src/views/DashboardView.vue', import.meta.url), 'utf8').replace(/\r\n/g, '\n');
   assert.match(dashboard, /@media \(min-width: 721px\) \{/);
   assert.match(dashboard, /:global\(\.app-shell:has\(\.dashboard-view\) \.app-topbar\) \{ display: none; \}/);
+  assert.match(dashboard, /@media \(max-width: 720px\) \{/);
+  assert.match(dashboard, /\.header-meta \.theme-switch \{ display: none; \}/);
+  assert.match(layoutStyles, /\.crumb-section,\n {2}\.crumb-separator \{\n    display: none;/);
 });
 
 test('UX-02A: sidebar con nav desplazable y mapa bajo la topbar', () => {
