@@ -298,7 +298,7 @@ export async function getAlarmDetail(id, plantIds = null) {
 
 export async function getAlarmsSummary({ plantIds = null, resolvedSince = null } = {}) {
   if (plantIds !== null && plantIds !== undefined && plantIds.size === 0) {
-    return { active: 0, critical: 0, warning: 0, resolved_7d: 0 };
+    return { active: 0, critical: 0, warning: 0, resolved_7d: 0, by_provider: { hyxi: 0, growatt: 0 } };
   }
   const scoped = (query) => (
     plantIds !== null && plantIds !== undefined ? query.in('plant_id', [...plantIds]) : query
@@ -308,12 +308,20 @@ export async function getAlarmsSummary({ plantIds = null, resolvedSince = null }
     ['critical', scoped(supabase.from('alarms').select('id', { count: 'exact', head: true }).eq('status', 'active').eq('severity', 'critical'))],
     ['warning', scoped(supabase.from('alarms').select('id', { count: 'exact', head: true }).eq('status', 'active').eq('severity', 'warning'))],
     ['resolved_7d', scoped(supabase.from('alarms').select('id', { count: 'exact', head: true }).eq('status', 'resolved').gte('resolved_at', resolvedSince))],
+    // Desglose para el dashboard (una sola petición en vez de dos
+    // listAlarms?pageSize=1): solo activas, mismo alcance, sin filas.
+    ['by_provider.hyxi', scoped(supabase.from('alarms').select('id', { count: 'exact', head: true }).eq('status', 'active').eq('provider', 'hyxi'))],
+    ['by_provider.growatt', scoped(supabase.from('alarms').select('id', { count: 'exact', head: true }).eq('status', 'active').eq('provider', 'growatt'))],
   ];
-  const summary = {};
+  const summary = { by_provider: {} };
   for (const [key, query] of specs) {
     const { count, error } = await query;
     if (error) throw new Error('No se pudo consultar el resumen de alarmas');
-    summary[key] = count ?? 0;
+    if (key.startsWith('by_provider.')) {
+      summary.by_provider[key.slice('by_provider.'.length)] = count ?? 0;
+    } else {
+      summary[key] = count ?? 0;
+    }
   }
   return summary;
 }

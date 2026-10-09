@@ -150,6 +150,7 @@ export async function getSummary(req, res) {
       critical: summary.critical,
       warning: summary.warning,
       resolved_7d: summary.resolved_7d,
+      by_provider: summary.by_provider,
     });
   } catch {
     return res.status(503).json({ error: 'No se pudo consultar el resumen de alarmas' });

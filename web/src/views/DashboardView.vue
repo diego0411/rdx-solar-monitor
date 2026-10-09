@@ -1,7 +1,7 @@
 <script setup>
 import { computed, onMounted, onUnmounted, ref } from 'vue';
 import { apiFetch } from '../services/api.js';
-import { listAlarms } from '../services/alarms.js';
+import { getAlarmSummary } from '../services/alarms.js';
 
 const summary = ref(null);
 // Contadores de alarmas ACTIVAS normalizadas (public.alarms, status='active').
@@ -15,6 +15,7 @@ const error = ref('');
 const lastUpdatedAt = ref(null);
 const refreshError = ref('');
 const refreshInFlight = ref(false);
+const alarmsPending = ref(false);
 const growattLoading = ref(false), hyxiLoading = ref(false);
 const growattError = ref(''), hyxiError = ref('');
 
@@ -179,30 +180,42 @@ async function fetchSummary() {
   }
 }
 
-// Lee únicamente el contador de activas normalizadas (pageSize=1: no se
-// descarga historial). Las resueltas nunca incrementan estos contadores.
-async function fetchActiveAlarmCount(provider, target, pending, failure) {
-  if (pending.value) return;
-  pending.value = true;
-  failure.value = '';
+// Un solo /alarms/summary por actualización: desglose by_provider con los
+// mismos conteos de activas normalizadas (las resueltas nunca incrementan
+// estos contadores). Sin by_provider válido no se toca ningún contador:
+// un error jamás se representa como cero.
+async function fetchAlarmSummary() {
+  if (alarmsPending.value) return;
+  alarmsPending.value = true;
+  growattLoading.value = true;
+  hyxiLoading.value = true;
+  growattError.value = '';
+  hyxiError.value = '';
   try {
-    const data = await listAlarms({ provider, status: 'active', pageSize: 1 });
-    const total = Number(data?.pagination?.total);
-    if (!Number.isSafeInteger(total) || total < 0) {
+    const data = await getAlarmSummary({ signal: controller.signal });
+    const growatt = Number(data?.by_provider?.growatt);
+    const hyxi = Number(data?.by_provider?.hyxi);
+    if (!Number.isSafeInteger(growatt) || growatt < 0 || !Number.isSafeInteger(hyxi) || hyxi < 0) {
       throw new Error('Respuesta inválida');
     }
-    if (!controller.signal.aborted) target.value = total;
+    if (controller.signal.aborted) return;
+    growattActiveAlarms.value = growatt;
+    hyxiActiveAlarms.value = hyxi;
   } catch {
-    if (!controller.signal.aborted) failure.value = 'No se pudieron actualizar las alarmas.';
+    if (!controller.signal.aborted) {
+      growattError.value = 'No se pudieron actualizar las alarmas.';
+      hyxiError.value = 'No se pudieron actualizar las alarmas.';
+    }
   } finally {
-    pending.value = false;
+    alarmsPending.value = false;
+    growattLoading.value = false;
+    hyxiLoading.value = false;
   }
 }
 
 function fetchDashboard() {
   void fetchSummary();
-  void fetchActiveAlarmCount('growatt', growattActiveAlarms, growattLoading, growattError);
-  void fetchActiveAlarmCount('hyxi', hyxiActiveAlarms, hyxiLoading, hyxiError);
+  void fetchAlarmSummary();
 }
 
 onMounted(() => {

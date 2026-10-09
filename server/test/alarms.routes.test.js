@@ -103,6 +103,10 @@ mock.module('../src/repositories/alarms.repository.js', {
         critical: all.filter(row => row.status === 'active' && row.severity === 'critical').length,
         warning: all.filter(row => row.status === 'active' && row.severity === 'warning').length,
         resolved_7d: all.filter(row => row.status === 'resolved' && row.resolved_at >= resolvedSince).length,
+        by_provider: {
+          hyxi: all.filter(row => row.status === 'active' && row.provider === 'hyxi').length,
+          growatt: all.filter(row => row.status === 'active' && row.provider === 'growatt').length,
+        },
       };
     },
   },
@@ -230,11 +234,12 @@ test('18: detalle incluye raw_payload', async t => {
 test('25: summary responde KPIs, no 400/404 de id', async t => {
   const { status, body } = await get(t, 'admin', '/api/alarms/summary');
   assert.equal(status, 200);
-  assert.deepEqual(Object.keys(body).sort(), ['active', 'critical', 'resolved_7d', 'warning']);
+  assert.deepEqual(Object.keys(body).sort(), ['active', 'by_provider', 'critical', 'resolved_7d', 'warning']);
   assert.equal(body.active, 3);
   assert.equal(body.critical, 1);
   assert.equal(body.warning, 1);
   assert.equal(body.resolved_7d, 1);
+  assert.deepEqual(body.by_provider, { hyxi: 1, growatt: 2 });
 });
 
 // ---- Nivel controlador: scopes y sanitización ----
@@ -281,9 +286,9 @@ test('14/15/19: detalle, scope y sanitización', async () => {
 test('20-24: summary con y sin scope', async () => {
   const full = fakeRes();
   await controller.getSummary({ scope: { plantIds: null } }, full);
-  assert.deepEqual(full.body, { active: 3, critical: 1, warning: 1, resolved_7d: 1 });
+  assert.deepEqual(full.body, { active: 3, critical: 1, warning: 1, resolved_7d: 1, by_provider: { hyxi: 1, growatt: 2 } });
   const scopedRes = fakeRes();
   await controller.getSummary({ scope: { plantIds: new Set([PA]) } }, scopedRes);
-  assert.deepEqual(scopedRes.body, { active: 3, critical: 1, warning: 1, resolved_7d: 0 });
+  assert.deepEqual(scopedRes.body, { active: 3, critical: 1, warning: 1, resolved_7d: 0, by_provider: { hyxi: 1, growatt: 2 } });
   assert.deepEqual([...repoCalls.summary.at(-1).plantIds], [PA]);
 });

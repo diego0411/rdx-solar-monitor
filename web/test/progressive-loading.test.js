@@ -22,7 +22,7 @@ function setup(name, extras = {}) {
     ref: Vue.ref, computed: Vue.computed, watch: Vue.watch, nextTick: Vue.nextTick,
     onMounted: fn => mounted.push(fn), onUnmounted: fn => unmounted.push(fn),
     apiFetch(path, options) { const task = deferred(); calls.push({ path, options, ...task }); return task.promise; },
-    listAlarms(params) { const task = deferred(); alarmCalls.push({ params, ...task }); return task.promise; },
+    getAlarmSummary(options) { const task = deferred(); alarmCalls.push({ options, ...task }); return task.promise; },
     setInterval(fn, ms) { timers.push({ fn, ms }); return 1; }, clearInterval() {},
     ...extras,
   };
@@ -36,56 +36,71 @@ function setup(name, extras = {}) {
     stop() { unmounted.forEach(fn => fn()); scope.stop(); }, render: () => render(Vue.proxyRefs(view), []) };
 }
 
-function activePage(total) {
-  return { alarms: [], pagination: { page: 1, page_size: 1, total, total_pages: total === 0 ? 0 : total } };
+function alarmSummary(byProvider) {
+  const hyxi = byProvider.hyxi ?? 0;
+  const growatt = byProvider.growatt ?? 0;
+  return { active: hyxi + growatt, critical: 0, warning: 0, resolved_7d: 0, by_provider: { hyxi, growatt } };
 }
 
-test('Dashboard renders summary before alarms; HYXi failure cannot block summary', async t => {
+test('Dashboard renders summary before alarms; alarms failure cannot block summary', async t => {
   const h = setup('DashboardView'); t.after(h.stop);
   h.mount();
   assert.equal(h.calls.length, 1);
-  assert.equal(h.alarmCalls.length, 2);
-  assert.deepEqual(h.alarmCalls.map(call => call.params), [
-    { provider: 'growatt', status: 'active', pageSize: 1 },
-    { provider: 'hyxi', status: 'active', pageSize: 1 },
-  ]);
+  assert.equal(h.alarmCalls.length, 1);
   h.calls[0].resolve({ total_plants: 3, today_generation_kwh: 0 });
   await flush();
   assert.equal(h.view.loading.value, false);
   assert.equal(h.view.summary.value.today_generation_kwh, 0);
   assert.equal(h.view.growattLoading.value, true);
   assert.equal(h.view.hyxiLoading.value, true);
-  h.alarmCalls[1].reject(new Error('HYXi unavailable'));
+  h.alarmCalls[0].reject(new Error('alarms unavailable'));
   await flush();
+  assert.ok(h.view.growattError.value);
   assert.ok(h.view.hyxiError.value);
+  assert.equal(h.view.growattActiveAlarms.value, null);
+  assert.equal(h.view.hyxiActiveAlarms.value, null);
   assert.equal(h.view.error.value, '');
   assert.equal(h.view.summary.value.total_plants, 3);
-  h.alarmCalls[0].resolve(activePage(0));
+});
+
+test('Dashboard renders alarm counts from a single summary', async t => {
+  const h = setup('DashboardView'); t.after(h.stop);
+  h.mount();
+  h.calls[0].resolve({ total_plants: 3 });
+  h.alarmCalls[0].resolve(alarmSummary({ hyxi: 0, growatt: 2 }));
   await flush();
   assert.equal(h.view.growattLoading.value, false);
-  assert.equal(h.view.growattAlarmCount.value, 0);
+  assert.equal(h.view.hyxiLoading.value, false);
+  assert.equal(h.view.growattAlarmCount.value, 2);
+  assert.equal(h.view.hyxiAlarmCount.value, 0);
+  assert.equal(h.view.currentIncidents.value, 2);
 });
 
 test('60 second refresh keeps each source independent, prevents overlaps and preserves last good data', async t => {
   const h = setup('DashboardView'); t.after(h.stop); h.mount();
   assert.equal(h.timers[0].ms, 60000);
-  h.timers[0].fn();
   assert.equal(h.calls.length, 1);
-  assert.equal(h.alarmCalls.length, 2);
-  h.calls[0].resolve({ total_plants: 1 });
-  h.alarmCalls[0].resolve(activePage(1));
-  await flush();
+  assert.equal(h.alarmCalls.length, 1);
   h.timers[0].fn();
-  assert.equal(h.calls.length, 2); // summary refresca; HYXi sigue pendiente, no se pide dos veces.
-  assert.equal(h.alarmCalls.length, 3); // solo growatt refresca.
+  assert.equal(h.calls.length, 1); // summary sigue pendiente, no se pide dos veces.
+  assert.equal(h.alarmCalls.length, 1); // alarmas siguen pendientes, no se piden dos veces.
+  h.calls[0].resolve({ total_plants: 1 });
+  h.alarmCalls[0].resolve(alarmSummary({ hyxi: 0, growatt: 1 }));
+  await flush();
+  assert.equal(h.view.growattAlarmCount.value, 1);
+  h.timers[0].fn();
+  assert.equal(h.calls.length, 2); // summary refresca.
+  assert.equal(h.alarmCalls.length, 2); // alarmas refrescan en una sola petición.
   assert.equal(h.view.loading.value, false);
   h.calls[1].reject(new Error('summary failure'));
-  h.alarmCalls[2].reject(new Error('Growatt failure'));
+  h.alarmCalls[1].reject(new Error('alarms failure'));
   await flush();
   assert.equal(h.view.summary.value.total_plants, 1);
   assert.equal(h.view.growattAlarmCount.value, 1);
+  assert.equal(h.view.hyxiAlarmCount.value, 0);
   assert.ok(h.view.refreshError.value);
   assert.ok(h.view.growattError.value);
+  assert.ok(h.view.hyxiError.value);
   h.stop();
   assert.ok(h.calls.every(call => call.options.signal.aborted));
 });

@@ -11,17 +11,19 @@ const code = compileScript(descriptor, { id: 'dashboard-test' }).content
 
 const flush = () => new Promise(resolve => setImmediate(resolve));
 
-function setup({ totals = { hyxi: 0, growatt: 0 }, fail = null } = {}) {
-  const sent = [];
+function setup({ totals = { hyxi: 0, growatt: 0 }, fail = false } = {}) {
+  const sent = { summary: 0, alarms: 0 };
   const deps = {
     ref, computed, onMounted() {}, onUnmounted() {},
     apiFetch: async () => ({ providers: [], top_plants: [] }),
-    listAlarms: async params => {
-      sent.push(params);
-      if (fail === params.provider) throw new Error('down');
+    getAlarmSummary: async () => {
+      sent.summary += 1;
+      sent.alarms += 1;
+      if (fail) throw new Error('down');
       return {
-        alarms: [],
-        pagination: { page: 1, page_size: 1, total: totals[params.provider] ?? 0, total_pages: 1 },
+        active: (totals.hyxi ?? 0) + (totals.growatt ?? 0),
+        critical: 0, warning: 0, resolved_7d: 0,
+        by_provider: { hyxi: totals.hyxi ?? 0, growatt: totals.growatt ?? 0 },
       };
     },
   };
@@ -36,16 +38,14 @@ async function loaded(options) {
   return { view, sent };
 }
 
-// 1. contrato: solo API normalizada, sin legacy
-test('1: dashboard usa /api/alarms activas; sin endpoints legacy', async () => {
+// 1. contrato: una sola petición de alarmas vía /alarms/summary; sin legacy
+test('1: dashboard usa un solo /alarms/summary; sin endpoints legacy', async () => {
   assert.equal(viewSource.includes('alarms/recent'), false);
   assert.equal(viewSource.includes('alarms/current'), false);
   assert.equal(viewSource.includes('integrations/'), false);
+  assert.equal(viewSource.includes('listAlarms'), false);
   const { sent } = await loaded();
-  assert.deepEqual(sent, [
-    { provider: 'growatt', status: 'active', pageSize: 1 },
-    { provider: 'hyxi', status: 'active', pageSize: 1 },
-  ]);
+  assert.equal(sent.summary, 1);
 });
 
 // 2. caso producción: 20 eventos legacy resueltos equivalen a 0 activas
@@ -74,5 +74,23 @@ test('4: Growatt active=1 muestra 1', async () => {
 test('5: HYXi=2 + Growatt=1 suma 3; resueltas no cuentan', async () => {
   const { view, sent } = await loaded({ totals: { hyxi: 2, growatt: 1 } });
   assert.equal(view.currentIncidents.value, 3);
-  for (const params of sent) assert.equal(params.status, 'active');
+  assert.equal(sent.summary, 1);
+});
+
+// 6. error no se representa como cero: conteos quedan null y hay error
+test('6: fallo de summary conserva null y marca error por fabricante', async () => {
+  const { view } = await loaded({ fail: true });
+  assert.equal(view.hyxiActiveAlarms.value, null);
+  assert.equal(view.growattActiveAlarms.value, null);
+  assert.ok(view.hyxiError.value.length > 0);
+  assert.ok(view.growattError.value.length > 0);
+});
+
+// 7. single-flight: dos actualizaciones seguidas emiten una sola petición
+test('7: fetchDashboard concurrente emite una sola petición de alarmas', async () => {
+  const { view, sent } = setup();
+  view.fetchDashboard();
+  view.fetchDashboard();
+  await flush(); await flush(); await flush();
+  assert.equal(sent.summary, 1);
 });
