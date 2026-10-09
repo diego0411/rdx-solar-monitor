@@ -31,6 +31,7 @@ function setup({ routeName = 'dashboard', storage = null, role = 'rdx_admin' } =
     getMyProfile: async () => ({ profile: { role, display_name: 'Ana', module_permissions: [] } }),
     invalidatePlantsCatalog: () => {},
     useTheme: () => ({ preference: ref('light'), setThemePreference: () => true }),
+    ThemeSwitch: 'ThemeSwitch',
   };
   const component = new Function(...Object.keys(deps), code)(...Object.values(deps));
   const view = component.setup({}, { expose() {} });
@@ -186,26 +187,30 @@ test('Solicitudes de materiales conserva key operations y permisos', () => {
   assert.doesNotMatch(source, /canSee\('material-requests'\)/);
 });
 
-test('selector de tema único en sidebar, fuera del topbar', () => {
+test('selector de tema único: topbar en vistas, encabezado en Dashboard', () => {
+  assert.doesNotMatch(source, /class="theme-switch"/);
+  const sidebar = source.slice(source.indexOf('<div class="sidebar-account">'), source.indexOf('</aside>'));
+  assert.doesNotMatch(sidebar, /ThemeSwitch/);
+  assert.match(sidebar, /class="logout-button"/);
   const topbar = source.slice(source.indexOf('<header class="app-topbar"'), source.indexOf('</header>'));
-  assert.doesNotMatch(topbar, /theme-switch/);
-  const occurrences = source.match(/class="theme-switch"/g) ?? [];
-  assert.equal(occurrences.length, 1);
-  const sidebar = source.slice(source.indexOf('<div class="sidebar-account">'));
-  const switchIndex = source.indexOf('class="theme-switch"');
-  assert.ok(switchIndex > source.indexOf('<div class="sidebar-account">'));
-  assert.ok(switchIndex < source.indexOf('class="logout-button"'));
-  assert.ok(switchIndex > sidebar.indexOf('account-client') + source.indexOf('<div class="sidebar-account">'));
-  assert.match(source, /role="group" aria-label="Tema visual"/);
-  assert.match(source, /:aria-pressed="String\(themePreference === option\.value\)"/);
-  assert.match(source, /:aria-label="`Tema \$\{option\.label\.toLowerCase\(\)\}`"/);
-  assert.match(source, /class="theme-icon"/);
-  assert.match(source, /class="theme-label"/);
+  assert.match(topbar, /<ThemeSwitch \/>/);
+  assert.match(topbar, /topbar-right/);
+  const dashboard = readFileSync(new URL('../src/views/DashboardView.vue', import.meta.url), 'utf8');
+  const meta = dashboard.slice(dashboard.indexOf('<div class="header-meta">'));
+  assert.match(meta, /<ThemeSwitch \/>/);
+  const component = readFileSync(new URL('../src/components/ThemeSwitch.vue', import.meta.url), 'utf8');
+  assert.match(component, /role="group" aria-label="Tema visual"/);
+  assert.match(component, /:aria-pressed="String\(themePreference === option\.value\)"/);
+  assert.match(component, /:aria-label="`Tema \$\{option\.label\.toLowerCase\(\)\}`"/);
+  assert.match(component, /class="theme-icon"/);
+  assert.match(component, /class="theme-label"/);
+  assert.match(component, /value: 'light'.*value: 'dark'.*value: 'auto'/s);
   const styles = descriptor.styles.map(block => block.content).join('\n').replace(/\r\n/g, '\n');
-  assert.match(styles, /\.sidebar-account \.theme-switch \{\n  display: flex;\n  flex-direction: row;/);
-  assert.match(styles, /\.theme-icon \{\n  width: 16px;/);
-  assert.match(styles, /\.sidebar\.collapsed \.theme-switch \{\n    flex-direction: column;/);
-  assert.match(styles, /\.sidebar\.collapsed \.theme-switch \.theme-label \{\n    display: none;/);
+  assert.match(styles, /\.topbar-right \{\n  display: flex;/);
+  const componentStyles = component.slice(component.indexOf('<style'));
+  assert.match(componentStyles, /\.theme-switch \{\n  display: flex;\n  flex-direction: row;/);
+  assert.match(componentStyles, /\.theme-icon \{\n  width: 16px;/);
+  assert.match(componentStyles, /button\[aria-pressed='true'\] \{\n  background: var\(--rdx-neutral-soft\);/);
 });
 
 test('UX-02A: sidebar con nav desplazable y mapa bajo la topbar', () => {

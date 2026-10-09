@@ -2,6 +2,7 @@
 import { computed, onMounted, onUnmounted, ref } from 'vue';
 import { apiFetch } from '../services/api.js';
 import { getAlarmSummary } from '../services/alarms.js';
+import ThemeSwitch from '../components/ThemeSwitch.vue';
 
 const summary = ref(null);
 // Contadores de alarmas ACTIVAS normalizadas (public.alarms, status='active').
@@ -265,6 +266,8 @@ onUnmounted(() => {
         >
           {{ refreshError }}
         </span>
+
+        <ThemeSwitch />
       </div>
     </header>
 
@@ -1187,6 +1190,7 @@ onUnmounted(() => {
 .dashboard-header h1 { margin: 0 0 4px; font-size: 32px; line-height: 1.2; }
 .header-description { margin: 0; font-size: 15px; line-height: 1.5; }
 .header-meta { display: grid; gap: 6px; text-align: right; color: var(--rdx-text-muted); font-size: 12px; }
+.header-meta .theme-switch { justify-self: end; }
 .update-error { color: var(--rdx-danger); max-width: 300px; }
 .dashboard { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.05fr); gap: 18px; }
 .dashboard > section { min-width: 0; }
@@ -1355,6 +1359,7 @@ onUnmounted(() => {
   .executive-kpis, .providers-grid { grid-template-columns: minmax(0, 1fr); }
   .dashboard-header { align-items: flex-start; flex-direction: column; gap: 12px; }
   .header-meta { text-align: left; }
+  .header-meta .theme-switch { justify-self: start; }
   .executive-kpi { padding: 18px; }
   .executive-panel, .ranking-section, .incidents-section, .providers-section { padding: 16px; }
   .park-overview { grid-template-columns: 116px minmax(0, 1fr); gap: 16px; }

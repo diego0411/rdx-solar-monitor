@@ -24,6 +24,7 @@ function setup(name, extras = {}) {
     apiFetch(path, options) { const task = deferred(); calls.push({ path, options, ...task }); return task.promise; },
     getAlarmSummary(options) { const task = deferred(); alarmCalls.push({ options, ...task }); return task.promise; },
     setInterval(fn, ms) { timers.push({ fn, ms }); return 1; }, clearInterval() {},
+    ThemeSwitch: 'ThemeSwitch',
     ...extras,
   };
   const component = new Function(...Object.keys(deps), script)(...Object.values(deps));

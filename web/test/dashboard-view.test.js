@@ -15,6 +15,7 @@ function setup({ totals = { hyxi: 0, growatt: 0 }, fail = false } = {}) {
   const sent = { summary: 0, alarms: 0 };
   const deps = {
     ref, computed, onMounted() {}, onUnmounted() {},
+    ThemeSwitch: 'ThemeSwitch',
     apiFetch: async () => ({ providers: [], top_plants: [] }),
     getAlarmSummary: async () => {
       sent.summary += 1;
