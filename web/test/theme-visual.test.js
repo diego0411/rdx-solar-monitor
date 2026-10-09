@@ -133,6 +133,19 @@ test('12: metadatos mínimos 10px y muted en textos pequeños', () => {
   assert.ok(!alarms.includes('var(--rdx-text-faint'), 'Alarms sin faint');
 });
 
+test('13: etiquetas técnicas pequeñas en 10-11px', () => {
+  const plants = readFileSync(new URL('../src/views/PlantsView.vue', import.meta.url), 'utf8');
+  assert.ok(!plants.includes('font-size: 9px'), 'Plants sin 9px');
+  assert.match(plants, /\.plant-metrics dt \{ color: var\(--rdx-text-muted\); font-size: 11px;/);
+  assert.match(plants, /\.foot-metric > span:not\(\.foot-icon\) \{ color: var\(--rdx-text-muted\); font-size: 11px;/);
+  const detail = readFileSync(new URL('../src/views/PlantDetailView.vue', import.meta.url), 'utf8');
+  assert.match(detail, /\.perf-head > span \{ color: var\(--rdx-text-muted\); font-size: 11px; \}/);
+  assert.match(detail, /\.device-meta dt \{ font-size: 11px; \}/);
+  const economics = readFileSync(new URL('../src/components/PlantEconomics.vue', import.meta.url), 'utf8');
+  assert.match(economics, /\.form-grid label \{ display: grid; gap: 5px; color: var\(--rdx-text-muted\); font-size: 11px;/);
+  assert.match(economics, /\.metric-coverage \{ display: block; margin-top: 2px; color: var\(--rdx-warning\); font-size: 11px;/);
+});
+
 test('5: textos sobre fondos de marca con contraste en ambos temas', () => {
   assert.match(css, /--rdx-on-primary: #ffffff;/);
   assert.match(css, /--rdx-on-accent: #ffffff;/);

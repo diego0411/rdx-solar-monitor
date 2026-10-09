@@ -362,7 +362,7 @@ dd { margin: 3px 0 0; overflow-wrap: anywhere; color: var(--rdx-text-strong); fo
 .tone-import { background: var(--rdx-primary); }
 .tone-export { background: var(--rdx-accent); }
 .perf-head { border-radius: var(--rdx-radius-sm); border-bottom: 0; background: var(--rdx-background); }
-.perf-head > span { color: var(--rdx-text-muted); font-size: 10px; }
+.perf-head > span { color: var(--rdx-text-muted); font-size: 11px; }
 .device-list { display: grid; gap: 0; margin: 0; padding: 0; border: 1px solid var(--rdx-neutral-soft); border-radius: var(--rdx-radius-sm); list-style: none; overflow: hidden; }
 .device-card { padding: 12px; border: 0; border-bottom: 1px solid var(--rdx-neutral-soft); border-radius: 0; box-shadow: none; }
 .device-list > li:last-child { border-bottom: 0; }
@@ -373,7 +373,7 @@ dd { margin: 3px 0 0; overflow-wrap: anywhere; color: var(--rdx-text-strong); fo
 .device-type { padding: 2px 8px; border-radius: 20px; background: var(--rdx-primary-soft); color: var(--rdx-accent); }
 .device-model { margin: 2px 0 0; color: var(--rdx-text-muted); font-size: 11px; }
 .device-meta { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; margin: 8px 0 0; padding-top: 8px; border-top: 1px solid var(--rdx-neutral-soft); }
-.device-meta dt { font-size: 10px; }
+.device-meta dt { font-size: 11px; }
 .device-meta dd { font-size: 11px; }
 .device-meta .badge { padding: 2px 7px; font-size: 10px; }
 .empty-note { padding: 18px; }

@@ -559,7 +559,7 @@ onUnmounted(() => controller.abort());
 .plant-card { padding: 14px 16px 12px; overflow: hidden; }
 .plant-head { display: grid; grid-template-columns: 52px minmax(0, 1fr) auto; align-items: center; gap: 12px; padding-bottom: 12px; border-bottom: 1px solid var(--rdx-neutral-soft); }
 .provider-mark { display: grid; place-items: center; width: 52px; height: 52px; border-radius: 50%; background: var(--rdx-background); color: var(--rdx-provider-hyxi); font-size: 11px; font-weight: 800; letter-spacing: -.04em; }
-.provider-growatt { color: var(--rdx-provider-growatt); font-size: 9px; }
+.provider-growatt { color: var(--rdx-provider-growatt); font-size: 10px; }
 .plant-title { min-width: 0; }
 .plant-title h2 { margin: 0; overflow-wrap: anywhere; font-size: 16px; line-height: 1.3; }
 .provider { display: block; margin-top: 3px; color: var(--rdx-text-muted); font-size: 11px; font-weight: 600; }
@@ -570,15 +570,15 @@ onUnmounted(() => controller.abort());
 .plant-metrics > div:first-child { padding-left: 4px; }
 .plant-metrics > div:last-child { padding-right: 0; border-right: 0; }
 .metric-icon { grid-row: 1 / 3; align-self: center; color: var(--rdx-metric-icon); font-size: 23px; line-height: 1; }
-.plant-metrics dt { color: var(--rdx-text-muted); font-size: 10px; line-height: 1.3; white-space: nowrap; }
+.plant-metrics dt { color: var(--rdx-text-muted); font-size: 11px; line-height: 1.3; white-space: nowrap; }
 .plant-metrics dd { margin: 3px 0 0; color: var(--rdx-text-strong); font-size: 13px; font-weight: 700; line-height: 1.25; overflow-wrap: anywhere; }
 .plant-foot { display: grid; grid-template-columns: .8fr 1fr 1.35fr auto; align-items: center; gap: 0; padding-top: 10px; }
 .foot-metric { display: grid; grid-template-columns: 24px minmax(0, 1fr); grid-template-rows: auto auto; min-width: 0; padding: 0 10px; border-right: 1px solid var(--rdx-neutral-soft); }
 .foot-metric:first-child { padding-left: 4px; }
 .foot-icon { grid-row: 1 / 3; align-self: center; color: var(--rdx-primary); font-size: 21px; }
-.foot-metric > span:not(.foot-icon) { color: var(--rdx-text-muted); font-size: 10px; line-height: 1.3; }
+.foot-metric > span:not(.foot-icon) { color: var(--rdx-text-muted); font-size: 11px; line-height: 1.3; }
 .foot-metric strong { color: var(--rdx-text-strong); font-size: 11px; font-weight: 650; line-height: 1.35; overflow-wrap: anywhere; }
-.foot-metric small { grid-column: 2; color: var(--rdx-text-muted); font-size: 9px; }
+.foot-metric small { grid-column: 2; color: var(--rdx-text-muted); font-size: 10px; line-height: 1.4; }
 .telemetry-fresh { color: var(--rdx-success) !important; }
 .telemetry-stale { color: var(--rdx-warning) !important; }
 .telemetry-no_data { color: var(--rdx-text-muted) !important; }

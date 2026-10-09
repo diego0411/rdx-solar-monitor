@@ -614,8 +614,8 @@ h3 { font-size: 13px; }
 .economics-list > div:last-child { border-bottom: 0; }
 .economics-list dt { color: var(--rdx-text-muted); font-size: 11px; }
 .economics-list dd { margin: 0; color: var(--rdx-text-strong); font-size: 12px; font-weight: 700; text-align: right; font-variant-numeric: tabular-nums; }
-.metric-coverage { display: block; margin-top: 2px; color: var(--rdx-warning); font-size: 10px; font-weight: 600; }
-.metric-suspect { display: block; margin-top: 2px; color: var(--rdx-warning); font-size: 10px; font-weight: 600; }
+.metric-coverage { display: block; margin-top: 2px; color: var(--rdx-warning); font-size: 11px; font-weight: 600; line-height: 1.4; }
+.metric-suspect { display: block; margin-top: 2px; color: var(--rdx-warning); font-size: 11px; font-weight: 600; line-height: 1.4; }
 .economics-list .benefit { margin-top: 4px; padding: 11px 9px; border: 0; border-radius: var(--rdx-radius-sm); background: var(--rdx-primary-soft); }
 .economics-list .benefit dt, .economics-list .benefit dd { color: var(--rdx-primary); font-weight: 700; }
 .economics-disclaimer { margin-top: 10px; }
@@ -634,7 +634,7 @@ h3 { font-size: 13px; }
 .tariff-form { margin-top: 14px; padding: 14px; border: 1px solid var(--rdx-border); border-radius: var(--rdx-radius-md); background: var(--rdx-background); }
 .close-button { font-size: 21px; line-height: 1; }
 .form-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin-top: 12px; }
-.form-grid label { display: grid; gap: 5px; color: var(--rdx-text-muted); font-size: 10px; font-weight: 600; }
+.form-grid label { display: grid; gap: 5px; color: var(--rdx-text-muted); font-size: 11px; font-weight: 600; }
 .form-grid > * { min-width: 0; }
 .rate-input { display: flex; align-items: center; gap: 8px; }
 .rate-input input { width: 100%; flex: 1; }
