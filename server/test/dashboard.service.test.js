@@ -4,6 +4,23 @@ import { mock } from 'node:test';
 
 const supportsModuleMocks = typeof mock.module === 'function';
 
+// Reloj congelado al mediodía UTC del día de ejecución: los fixtures
+// relativos (now - N min) conservan sus buckets de frescura y nunca
+// cruzan la medianoche UTC, que es lo que exige el fallback Growatt
+// (isSameCalendarDay en dashboard.service.js) para aceptar el
+// today_energy de Planta B. Sin esto, el caso "top 5" falla de forma
+// intermitente cuando la suite corre entre las 00:00 y las 02:00 UTC,
+// porque now - 120 min cae en el día calendario anterior.
+if (supportsModuleMocks && typeof mock.method === 'function') {
+  const frozenNow = Date.UTC(
+    new Date().getUTCFullYear(),
+    new Date().getUTCMonth(),
+    new Date().getUTCDate(),
+    12, 0, 0, 0,
+  );
+  mock.method(Date, 'now', () => frozenNow);
+}
+
 const now = Date.now();
 const min = 60 * 1000;
 

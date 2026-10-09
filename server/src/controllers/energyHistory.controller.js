@@ -76,6 +76,18 @@ export async function getStoredEnergyHistory(req, res) {
       });
     }
     const range = periodRange(period, req.query.startTime);
+    if (period === 'month' || period === 'year') {
+      // Las filas ya leídas (o releídas tras el sync) cubren el mismo
+      // conjunto type=2/3 del período que la consulta de rango: misma
+      // ventana ±1 día y mismo filtro por fecha local. aggregateHistory
+      // solo consume kWh y fechas, idénticos en ambas proyecciones, por
+      // lo que se reutilizan y se evita la relectura. Week conserva su
+      // lectura de rango (conjunto distinto: semana vs día).
+      return res.json(aggregateHistory(rows, {
+        period, selectedDate: req.query.startTime, kind: 'energy',
+        localDate: row => localDateKey(row.interval_start, row.timezone),
+      }));
+    }
     rows = await listEnergyIntervalsRange(req.params.plantId, timeType, range.start, range.end);
     return res.json(aggregateHistory(rows, {
       period, selectedDate: req.query.startTime, kind: 'energy',
