@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onMounted, ref, watch } from 'vue';
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { supabase } from '../services/supabase.js';
 import { getMyProfile } from '../services/api.js';
@@ -46,6 +46,78 @@ function toggleSidebar() {
   writeStorage(SIDEBAR_KEY, String(sidebarCollapsed.value));
 }
 
+// UX-02B: drawer móvil (<=720px). En escritorio el botón del encabezado
+// alterna el colapso; en móvil abre/cierra el drawer superpuesto.
+const MOBILE_QUERY = '(max-width: 720px)';
+const isMobile = ref(false);
+const mobileNavOpen = ref(false);
+const menuButtonRef = ref(null);
+const sidebarRef = ref(null);
+let mobileMediaQuery = null;
+let previousBodyOverflow = '';
+
+function setBodyLocked(locked) {
+  try {
+    if (typeof document === 'undefined' || !document?.body) return;
+    if (locked) {
+      previousBodyOverflow = document.body.style.overflow;
+      document.body.style.overflow = 'hidden';
+    } else {
+      document.body.style.overflow = previousBodyOverflow;
+    }
+  } catch {
+    // Sin DOM disponible: el drawer sigue funcionando sin bloqueo.
+  }
+}
+
+function setMobileNav(open) {
+  mobileNavOpen.value = open;
+  setBodyLocked(open);
+}
+
+function openMobileNav() {
+  setMobileNav(true);
+  nextTick(() => {
+    try {
+      sidebarRef.value?.focus?.();
+    } catch {
+      // Foco no disponible: el drawer ya es visible y operable.
+    }
+  });
+}
+
+function closeMobileNav(returnFocus = true) {
+  setMobileNav(false);
+  if (returnFocus) {
+    try {
+      menuButtonRef.value?.focus?.();
+    } catch {
+      // Sin botón disponible: nada que enfocar.
+    }
+  }
+}
+
+function onMenuButtonClick() {
+  if (isMobile.value) {
+    if (mobileNavOpen.value) closeMobileNav();
+    else openMobileNav();
+  } else {
+    toggleSidebar();
+  }
+}
+
+function onGlobalKeydown(event) {
+  if (event?.key === 'Escape' && mobileNavOpen.value) closeMobileNav();
+}
+
+function syncMobile(event) {
+  const matches = typeof event?.matches === 'boolean'
+    ? event.matches
+    : (mobileMediaQuery?.matches ?? false);
+  isMobile.value = matches;
+  if (!matches) setMobileNav(false);
+}
+
 const defaultSections = { monitoreo: true, operaciones: true, administracion: true };
 
 function loadSections() {
@@ -89,13 +161,15 @@ const routeSections = {
   clients: 'administracion',
 };
 
-// La sección de la ruta activa siempre queda abierta.
+// La sección de la ruta activa siempre queda abierta. Navegar también
+// cierra el drawer móvil sin mover el foco (ya hay contenido nuevo).
 watch(() => route.name, name => {
   const section = routeSections[name];
   if (section && !openSections.value[section]) {
     openSections.value = { ...openSections.value, [section]: true };
     persistSections();
   }
+  if (mobileNavOpen.value) closeMobileNav(false);
 }, { immediate: true });
 
 const routeCrumbs = {
@@ -130,6 +204,35 @@ onMounted(async () => {
     showClients.value = false;
   }
 });
+onMounted(() => {
+  try {
+    if (typeof window !== 'undefined' && typeof window.matchMedia === 'function') {
+      mobileMediaQuery = window.matchMedia(MOBILE_QUERY);
+      syncMobile(mobileMediaQuery);
+      if (typeof mobileMediaQuery.addEventListener === 'function') {
+        mobileMediaQuery.addEventListener('change', syncMobile);
+      }
+    }
+    if (typeof window !== 'undefined' && typeof window.addEventListener === 'function') {
+      window.addEventListener('keydown', onGlobalKeydown);
+    }
+  } catch {
+    // Sin APIs de ventana: se conserva el comportamiento de escritorio.
+  }
+});
+onUnmounted(() => {
+  try {
+    if (mobileMediaQuery && typeof mobileMediaQuery.removeEventListener === 'function') {
+      mobileMediaQuery.removeEventListener('change', syncMobile);
+    }
+    if (typeof window !== 'undefined' && typeof window.removeEventListener === 'function') {
+      window.removeEventListener('keydown', onGlobalKeydown);
+    }
+  } catch {
+    // Limpieza no disponible: nada que liberar.
+  }
+  setBodyLocked(false);
+});
 const signingOut = ref(false), logoutError = ref('');
 async function logout() {
   if (signingOut.value) return;
@@ -148,9 +251,12 @@ async function logout() {
 </script>
 
 <template>
-  <div class="app-shell" :class="{ 'sidebar-collapsed': sidebarCollapsed }">
+  <div class="app-shell" :class="{ 'sidebar-collapsed': sidebarCollapsed, 'nav-open': mobileNavOpen }">
     <a class="skip-link" href="#main-content">Saltar al contenido</a>
-    <aside class="sidebar" :class="{ collapsed: sidebarCollapsed }">
+    <aside ref="sidebarRef" class="sidebar" id="primary-sidebar" tabindex="-1" :class="{ collapsed: sidebarCollapsed }">
+      <button type="button" class="drawer-close" aria-label="Cerrar menú de navegación" aria-controls="primary-sidebar" @click="closeMobileNav()">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18" /></svg>
+      </button>
       <RouterLink class="brand" to="/" aria-label="RDX Solar Monitor, inicio">
         <span class="brand-mark">RDX</span>
         <span class="brand-name">Solar Monitor</span>
@@ -233,10 +339,11 @@ async function logout() {
         <p v-if="logoutError" class="logout-error" role="alert">{{ logoutError }}</p>
       </div>
     </aside>
+    <div v-if="mobileNavOpen" class="nav-backdrop" aria-hidden="true" @click="closeMobileNav(false)"></div>
     <div class="main-area">
       <header class="app-topbar">
         <div class="topbar-left">
-          <button class="icon-button" type="button" aria-label="Contraer o expandir el menú lateral" :aria-expanded="String(!sidebarCollapsed)" @click="toggleSidebar">
+          <button ref="menuButtonRef" class="icon-button" type="button" aria-label="Contraer o expandir el menú lateral" aria-controls="primary-sidebar" :aria-expanded="String(isMobile ? mobileNavOpen : !sidebarCollapsed)" @click="onMenuButtonClick">
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16" /></svg>
           </button>
           <nav v-if="breadcrumb.section" class="breadcrumb" aria-label="Ubicación actual">
@@ -297,6 +404,20 @@ async function logout() {
   stroke: currentColor;
   stroke-width: 2;
   stroke-linecap: round;
+}
+
+.icon-button:focus-visible,
+.drawer-close:focus-visible {
+  outline: 2px solid var(--rdx-focus);
+  outline-offset: 2px;
+}
+
+.drawer-close {
+  display: none;
+}
+
+.nav-backdrop {
+  display: none;
 }
 
 .breadcrumb {
@@ -428,8 +549,68 @@ async function logout() {
 }
 
 @media (max-width: 720px) {
-  .app-shell.sidebar-collapsed .sidebar {
+  .app-shell.sidebar-collapsed:not(.nav-open) .sidebar {
     display: none;
+  }
+
+  .app-shell .sidebar {
+    position: fixed;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    z-index: 60;
+    width: min(300px, 84vw);
+    height: 100vh;
+    height: 100dvh;
+    overflow-y: auto;
+    overflow-x: hidden;
+    border-right: 1px solid var(--rdx-sidebar-border);
+    border-bottom: 0;
+    visibility: hidden;
+    transform: translateX(-105%);
+    transition: transform var(--rdx-transition), visibility var(--rdx-transition);
+  }
+
+  .app-shell.nav-open .sidebar {
+    visibility: visible;
+    transform: none;
+  }
+
+  .app-shell.nav-open .nav-backdrop {
+    display: block;
+    position: fixed;
+    inset: 0;
+    z-index: 55;
+    background: rgb(0 0 0 / 45%);
+  }
+
+  .drawer-close {
+    display: grid;
+    place-items: center;
+    position: absolute;
+    top: 12px;
+    right: 12px;
+    width: 34px;
+    height: 34px;
+    padding: 0;
+    border: 1px solid transparent;
+    border-radius: 8px;
+    background: transparent;
+    color: var(--rdx-sidebar-text);
+    cursor: pointer;
+  }
+
+  .drawer-close:hover {
+    background: var(--rdx-sidebar-hover);
+  }
+
+  .drawer-close svg {
+    width: 20px;
+    height: 20px;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 2;
+    stroke-linecap: round;
   }
 
   .nav-group {

@@ -24,7 +24,7 @@ function setup({ routeName = 'dashboard', storage = null, role = 'rdx_admin' } =
   const route = reactive({ name: routeName });
   const replaced = [];
   const deps = {
-    ref, computed, watch, onMounted() {},
+    ref, computed, watch, nextTick, onMounted() {}, onUnmounted() {},
     useRouter: () => ({ replace: async path => { replaced.push(path); } }),
     useRoute: () => route,
     supabase: null,
@@ -63,7 +63,7 @@ test('sidebar puede contraerse y expandirse', () => {
     assert.equal(view.sidebarCollapsed.value, true);
     view.toggleSidebar();
     assert.equal(view.sidebarCollapsed.value, false);
-    assert.match(source, /:class="\{ 'sidebar-collapsed': sidebarCollapsed \}"/);
+    assert.match(source, /:class="\{ 'sidebar-collapsed': sidebarCollapsed, 'nav-open': mobileNavOpen \}"/);
     assert.match(source, /:class="\{ collapsed: sidebarCollapsed \}"/);
   } finally {
     restore();
@@ -211,6 +211,52 @@ test('selector de tema único: topbar en vistas, encabezado en Dashboard', () =>
   assert.match(componentStyles, /\.theme-switch \{\n  display: flex;\n  flex-direction: row;/);
   assert.match(componentStyles, /\.theme-icon \{\n  width: 16px;/);
   assert.match(componentStyles, /button\[aria-pressed='true'\] \{\n  background: var\(--rdx-neutral-soft\);/);
+});
+
+test('UX-02B: drawer móvil abre/cierra con Escape y al navegar', async () => {
+  const { view, route, restore } = setup();
+  try {
+    assert.equal(view.isMobile.value, false);
+    assert.equal(view.mobileNavOpen.value, false);
+    view.openMobileNav();
+    assert.equal(view.mobileNavOpen.value, true);
+    view.onGlobalKeydown({ key: 'Enter' });
+    assert.equal(view.mobileNavOpen.value, true);
+    view.onGlobalKeydown({ key: 'Escape' });
+    assert.equal(view.mobileNavOpen.value, false);
+    view.openMobileNav();
+    route.name = 'plants';
+    await nextTick();
+    assert.equal(view.mobileNavOpen.value, false);
+    view.onMenuButtonClick();
+    assert.equal(view.sidebarCollapsed.value, true);
+  } finally {
+    restore();
+  }
+});
+
+test('UX-02B: cableado drawer, topbar móvil en Dashboard y sin overflow', () => {
+  assert.match(source, /<aside ref="sidebarRef" class="sidebar" id="primary-sidebar" tabindex="-1"/);
+  assert.match(source, /aria-controls="primary-sidebar"/);
+  assert.match(source, /:aria-expanded="String\(isMobile \? mobileNavOpen : !sidebarCollapsed\)"/);
+  assert.match(source, /@click="onMenuButtonClick"/);
+  assert.match(source, /<div v-if="mobileNavOpen" class="nav-backdrop" aria-hidden="true"/);
+  assert.match(source, /class="drawer-close"[^>]*aria-label="Cerrar menú de navegación"/);
+  assert.match(source, /if \(event\?\.key === 'Escape' && mobileNavOpen\.value\) closeMobileNav\(\)/);
+  assert.match(source, /window\.matchMedia\(MOBILE_QUERY\)/);
+  assert.match(source, /document\.body\.style\.overflow = 'hidden'/);
+  assert.match(source, /if \(mobileNavOpen\.value\) closeMobileNav\(false\)/);
+  const layoutStyles = descriptor.styles.map(block => block.content).join('\n').replace(/\r\n/g, '\n');
+  assert.match(layoutStyles, /\.app-shell\.nav-open \.sidebar \{\n    visibility: visible;/);
+  assert.match(layoutStyles, /transform: translateX\(-105%\)/);
+  assert.match(layoutStyles, /z-index: 60;/);
+  assert.match(layoutStyles, /z-index: 55;/);
+  assert.match(layoutStyles, /\.drawer-close \{\n  display: none;/);
+  const globalCss = readFileSync(new URL('../src/style.css', import.meta.url), 'utf8');
+  assert.match(globalCss, /\.app-shell \{ grid-template-columns: 1fr; align-items: stretch; overflow-x: clip; \}/);
+  const dashboard = readFileSync(new URL('../src/views/DashboardView.vue', import.meta.url), 'utf8');
+  assert.match(dashboard, /@media \(min-width: 721px\) \{/);
+  assert.match(dashboard, /:global\(\.app-shell:has\(\.dashboard-view\) \.app-topbar\) \{ display: none; \}/);
 });
 
 test('UX-02A: sidebar con nav desplazable y mapa bajo la topbar', () => {

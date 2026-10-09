@@ -1184,7 +1184,9 @@ onUnmounted(() => {
 
 <style scoped>
 :global(.app-shell:has(.dashboard-view) .main-content) { max-width: 1920px; padding: 18px 22px; }
-:global(.app-shell:has(.dashboard-view) .app-topbar) { display: none; }
+@media (min-width: 721px) {
+  :global(.app-shell:has(.dashboard-view) .app-topbar) { display: none; }
+}
 .dashboard-view { width: 100%; min-width: 0; line-height: 1.5; }
 .dashboard-header { display: flex; justify-content: space-between; align-items: center; gap: 20px; margin-bottom: 22px; }
 .dashboard-header h1 { margin: 0 0 4px; font-size: 32px; line-height: 1.2; }
