@@ -77,6 +77,15 @@ test('7: botones CTA usan tokens on-* con contraste AA en ambos temas', () => {
   assert.ok(!plants.includes('color: white'), 'Plants sin blanco fijo');
 });
 
+test('8: foco visible en filtros de Dispositivos y filas seleccionables', () => {
+  const devices = readFileSync(new URL('../src/views/DevicesView.vue', import.meta.url), 'utf8');
+  assert.match(devices, /\.filters input:focus-visible,\.filters select:focus-visible\{outline:2px solid var\(--rdx-focus\);/);
+  assert.ok(!devices.includes('outline:2px solid var(--rdx-focus-soft)'), 'sin anillo tenue');
+  assert.ok(!devices.includes('tbody tr:focus,'), 'sin :focus que anule el anillo de teclado');
+  assert.ok(devices.includes('tbody tr:focus:not(:focus-visible)'), 'ratón sin anillo, teclado con anillo global');
+  assert.match(css, /tbody tr\[tabindex\]:focus-visible \{\n  outline: 2px solid var\(--rdx-focus\);\n  outline-offset: -2px;\n\}/);
+});
+
 test('5: textos sobre fondos de marca con contraste en ambos temas', () => {
   assert.match(css, /--rdx-on-primary: #ffffff;/);
   assert.match(css, /--rdx-on-accent: #ffffff;/);

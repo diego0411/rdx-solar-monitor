@@ -339,6 +339,12 @@ button:focus-visible {
   outline-offset: 3px;
 }
 
+/* Filas seleccionables por teclado (p. ej. tabla de dispositivos). */
+tbody tr[tabindex]:focus-visible {
+  outline: 2px solid var(--rdx-focus);
+  outline-offset: -2px;
+}
+
 /* Pagination */
 .pagination {
   display: flex;
