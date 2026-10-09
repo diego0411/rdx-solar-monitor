@@ -9,7 +9,7 @@ const stack = [];
 let keyAttached = false;
 let savedOverflow = null;
 
-const FOCUSABLE_SELECTOR = 'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
+const FOCUSABLE_SELECTOR = 'button:not([disabled]), [href], input:not([disabled]):not([type="hidden"]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
 
 function visibleDialogs() {
   try {
@@ -21,16 +21,18 @@ function visibleDialogs() {
   }
 }
 
-function firstFocusable(dialog) {
+function focusableControls(dialog) {
   try {
-    const controls = dialog.querySelectorAll(FOCUSABLE_SELECTOR) ?? [];
-    for (const el of controls) {
-      if (typeof el.getClientRects === 'function' && el.getClientRects().length > 0) return el;
-    }
+    if (!dialog || typeof dialog.querySelectorAll !== 'function') return [];
+    return [...dialog.querySelectorAll(FOCUSABLE_SELECTOR)]
+      .filter(el => typeof el.getClientRects === 'function' && el.getClientRects().length > 0);
   } catch {
-    // Sin controles accesibles: se enfoca el contenedor.
+    return [];
   }
-  return null;
+}
+
+function firstFocusable(dialog) {
+  return focusableControls(dialog)[0] ?? null;
 }
 
 function focusDialog(dialog) {
@@ -104,15 +106,55 @@ function drawerOpen() {
   }
 }
 
-function onKeydown(event) {
-  if (event?.key !== 'Escape' || stack.length === 0) return;
-  // El drawer móvil (z superior) gestiona su propio Escape.
-  if (drawerOpen()) return;
-  const top = stack[stack.length - 1];
+function safeFocus(el) {
   try {
-    top.close();
+    if (el && typeof el.focus === 'function') el.focus();
   } catch {
-    // El cierre pertenece a la vista; aquí solo se delega.
+    // Foco no disponible: se conserva el actual.
+  }
+}
+
+function onKeydown(event) {
+  if (!event || stack.length === 0) return;
+  // El drawer móvil (z superior) gestiona sus propias teclas.
+  if (drawerOpen()) return;
+  if (event.key === 'Escape') {
+    const top = stack[stack.length - 1];
+    try {
+      top.close();
+    } catch {
+      // El cierre pertenece a la vista; aquí solo se delega.
+    }
+    return;
+  }
+  if (event.key === 'Tab') trapTab(event);
+}
+
+// UX-03C2C: contención del foco en el diálogo superior. Tab envuelve del
+// último al primero; Shift+Tab, del primero al último. Foco externo se
+// redirige según dirección. Sin controles, se retiene el contenedor.
+function trapTab(event) {
+  const dialogs = visibleDialogs();
+  const top = dialogs[dialogs.length - 1];
+  if (!top) return;
+  const controls = focusableControls(top);
+  if (controls.length === 0) {
+    focusDialog(top);
+    if (typeof event.preventDefault === 'function') event.preventDefault();
+    return;
+  }
+  const first = controls[0];
+  const last = controls[controls.length - 1];
+  const active = readActiveElement();
+  let redirect = null;
+  if (active === first && event.shiftKey) redirect = last;
+  else if (active === last && !event.shiftKey) redirect = first;
+  else if (typeof top.contains === 'function' ? !top.contains(active) : active !== top) {
+    redirect = event.shiftKey ? last : first;
+  }
+  if (redirect) {
+    safeFocus(redirect);
+    if (typeof event.preventDefault === 'function') event.preventDefault();
   }
 }
 

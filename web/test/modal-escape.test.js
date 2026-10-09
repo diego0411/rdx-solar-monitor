@@ -169,10 +169,19 @@ function fakeDialog(controls = [], { visible = true } = {}) {
     hasAttribute(k) { return k in this.attrs; },
     setAttribute(k, v) { this.attrs[k] = v; },
     getClientRects: () => (visible ? [{}] : []),
-    querySelectorAll: () => controls,
+    // Emula el :not([disabled]) del selector real (el DOM lo filtra solo).
+    querySelectorAll: () => controls.filter(el => !el.disabled),
+    contains(el) { return el === dlg || controls.includes(el); },
     focus() { this.focused += 1; globalThis.document.activeElement = this; },
   };
   return dlg;
+}
+
+function tabEvent(shiftKey = false) {
+  return {
+    key: 'Tab', shiftKey, defaultPrevented: false,
+    preventDefault() { this.defaultPrevented = true; },
+  };
 }
 
 function dialogFakes({ pairs = [], main = null } = {}) {
@@ -323,5 +332,159 @@ test('cierre bloqueado por saving: sin robo de foco ni desregistro', async () =>
     assert.equal(trigger.focused, 1);
   } finally {
     h.restore();
+  }
+});
+
+// UX-03C2C: contención Tab/Shift+Tab en el diálogo superior.
+
+test('Tab en el último control envuelve al primero', async () => {
+  const first = fakeControl('first');
+  const last = fakeControl('last');
+  const dlg = fakeDialog([first, last]);
+  const open = ref(false);
+  const h = dialogFakes({ pairs: [{ flag: open, dialog: dlg }] });
+  try {
+    useModalEscape(() => open.value, () => { open.value = false; });
+    open.value = true;
+    await twoTicks();
+    globalThis.document.activeElement = last;
+    const ev = tabEvent(false);
+    h.keydown(ev);
+    assert.equal(ev.defaultPrevented, true);
+    assert.equal(first.focused, 2);
+  } finally {
+    h.restore();
+  }
+});
+
+test('Shift+Tab en el primer control envuelve al último', async () => {
+  const first = fakeControl('first');
+  const last = fakeControl('last');
+  const dlg = fakeDialog([first, last]);
+  const open = ref(false);
+  const h = dialogFakes({ pairs: [{ flag: open, dialog: dlg }] });
+  try {
+    useModalEscape(() => open.value, () => { open.value = false; });
+    open.value = true;
+    await twoTicks();
+    globalThis.document.activeElement = first;
+    const ev = tabEvent(true);
+    h.keydown(ev);
+    assert.equal(ev.defaultPrevented, true);
+    assert.equal(last.focused, 1);
+  } finally {
+    h.restore();
+  }
+});
+
+test('Tab intermedio no se intercepta', async () => {
+  const first = fakeControl('first');
+  const mid = fakeControl('mid');
+  const last = fakeControl('last');
+  const dlg = fakeDialog([first, mid, last]);
+  const open = ref(false);
+  const h = dialogFakes({ pairs: [{ flag: open, dialog: dlg }] });
+  try {
+    useModalEscape(() => open.value, () => { open.value = false; });
+    open.value = true;
+    await twoTicks();
+    globalThis.document.activeElement = mid;
+    const ev = tabEvent(false);
+    h.keydown(ev);
+    assert.equal(ev.defaultPrevented, false);
+    assert.equal(first.focused, 1);
+    assert.equal(last.focused, 0);
+  } finally {
+    h.restore();
+  }
+});
+
+test('foco externo se redirige según dirección', async () => {
+  const first = fakeControl('first');
+  const last = fakeControl('last');
+  const outside = fakeControl('outside');
+  const dlg = fakeDialog([first, last]);
+  const open = ref(false);
+  const h = dialogFakes({ pairs: [{ flag: open, dialog: dlg }] });
+  try {
+    useModalEscape(() => open.value, () => { open.value = false; });
+    open.value = true;
+    await twoTicks();
+    globalThis.document.activeElement = outside;
+    const fwd = tabEvent(false);
+    h.keydown(fwd);
+    assert.equal(fwd.defaultPrevented, true);
+    assert.equal(first.focused, 2);
+    globalThis.document.activeElement = outside;
+    const back = tabEvent(true);
+    h.keydown(back);
+    assert.equal(back.defaultPrevented, true);
+    assert.equal(last.focused, 1);
+  } finally {
+    h.restore();
+  }
+});
+
+test('controles ocultos, deshabilitados y hidden se excluyen del ciclo', async () => {
+  const first = fakeControl('first');
+  const hidden = fakeControl('hidden', { visible: false });
+  const disabled = fakeControl('disabled', { disabled: true });
+  const dlg = fakeDialog([first, hidden, disabled]);
+  const open = ref(false);
+  const h = dialogFakes({ pairs: [{ flag: open, dialog: dlg }] });
+  try {
+    useModalEscape(() => open.value, () => { open.value = false; });
+    open.value = true;
+    await twoTicks();
+    // Solo 'first' es enfocable: Tab y Shift+Tab envuelven sobre sí mismo.
+    globalThis.document.activeElement = first;
+    h.keydown(tabEvent(false));
+    h.keydown(tabEvent(true));
+    assert.equal(first.focused, 3);
+    assert.equal(hidden.focused, 0);
+    assert.equal(disabled.focused, 0);
+  } finally {
+    h.restore();
+  }
+});
+
+test('diálogo vacío retiene el foco en el contenedor', async () => {
+  const dlg = fakeDialog([]);
+  const open = ref(false);
+  const h = dialogFakes({ pairs: [{ flag: open, dialog: dlg }] });
+  try {
+    useModalEscape(() => open.value, () => { open.value = false; });
+    open.value = true;
+    await twoTicks();
+    assert.equal(dlg.focused, 1);
+    globalThis.document.activeElement = fakeControl('outside');
+    const ev = tabEvent(false);
+    h.keydown(ev);
+    assert.equal(ev.defaultPrevented, true);
+    assert.equal(dlg.focused, 2);
+  } finally {
+    h.restore();
+  }
+});
+
+test('sin modal, Tab no se intercepta; con drawer, tampoco', async () => {
+  const h = fakes();
+  try {
+    const ev = tabEvent(false);
+    h.keydown(ev);
+    assert.equal(ev.defaultPrevented, false);
+  } finally {
+    h.restore();
+  }
+  const d = fakes({ drawer: true });
+  try {
+    const open = ref(true);
+    useModalEscape(() => open.value, () => { open.value = false; });
+    await nextTick();
+    const ev = tabEvent(false);
+    d.keydown(ev);
+    assert.equal(ev.defaultPrevented, false);
+  } finally {
+    d.restore();
   }
 });
