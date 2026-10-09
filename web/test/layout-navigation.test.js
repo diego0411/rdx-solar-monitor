@@ -198,6 +198,25 @@ test('selector de tema único en sidebar, fuera del topbar', () => {
   assert.ok(switchIndex > sidebar.indexOf('account-client') + source.indexOf('<div class="sidebar-account">'));
   assert.match(source, /role="group" aria-label="Tema visual"/);
   assert.match(source, /:aria-pressed="String\(themePreference === option\.value\)"/);
+  assert.match(source, /:aria-label="`Tema \$\{option\.label\.toLowerCase\(\)\}`"/);
+  assert.match(source, /class="theme-icon"/);
+  assert.match(source, /class="theme-label"/);
+  const styles = descriptor.styles.map(block => block.content).join('\n').replace(/\r\n/g, '\n');
+  assert.match(styles, /\.sidebar-account \.theme-switch \{\n  display: flex;\n  flex-direction: row;/);
+  assert.match(styles, /\.theme-icon \{\n  width: 16px;/);
+  assert.match(styles, /\.sidebar\.collapsed \.theme-switch \{\n    flex-direction: column;/);
+  assert.match(styles, /\.sidebar\.collapsed \.theme-switch \.theme-label \{\n    display: none;/);
+});
+
+test('UX-02A: sidebar con nav desplazable y mapa bajo la topbar', () => {
+  const styles = readFileSync(new URL('../src/style.css', import.meta.url), 'utf8');
+  assert.match(styles, /\.sidebar nav \{[^}]*overflow-y: auto;[^}]*overflow-x: hidden;/);
+  assert.match(styles, /\.sidebar \{[^}]*overflow-x: hidden;/);
+  const map = readFileSync(new URL('../src/views/PlantMapView.vue', import.meta.url), 'utf8');
+  assert.match(map, /\.map-stage \{ position: relative; z-index: 0; min-width: 0; \}/);
+  assert.match(map, /\.map-header > div > p \{/);
+  const plants = readFileSync(new URL('../src/views/PlantsView.vue', import.meta.url), 'utf8');
+  assert.match(plants, /\.plants-header > div > p \{/);
 });
 
 test('Inventory sticky queda debajo de la topbar con variable compartida', () => {

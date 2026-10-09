@@ -523,7 +523,7 @@ onUnmounted(() => controller.abort());
 .plants-view { width: 100%; }
 .plants-header { display: flex; align-items: flex-start; justify-content: space-between; flex-wrap: wrap; gap: 12px; margin-bottom: 20px; }
 .plants-header h1 { font-size: 31px; }
-.plants-header p { margin: 3px 0 0; font-size: 15px; }
+.plants-header > div > p { margin: 3px 0 0; font-size: 15px; }
 .header-actions { display: grid; gap: 6px; justify-items: end; }
 .admin-button { min-height: 40px; padding: 7px 16px; border: 1px solid var(--rdx-primary); border-radius: var(--rdx-radius-sm); background: var(--rdx-primary); color: white; font: inherit; font-size: 13px; font-weight: 700; cursor: pointer; white-space: nowrap; }
 .admin-button:disabled { opacity: .6; cursor: wait; }

@@ -202,11 +202,11 @@ body { margin: 0; min-width: 320px; }
 a { color: var(--rdx-primary); text-decoration: none; }
 a:focus-visible { outline: 3px solid var(--rdx-focus); outline-offset: 4px; }
 .app-shell { min-height: 100vh; display: grid; grid-template-columns: 200px minmax(0, 1fr); align-items: start; background: var(--rdx-background); }
-.sidebar { background: var(--rdx-sidebar); border-right: 1px solid var(--rdx-sidebar-border); padding: 20px 10px 16px; display: flex; flex-direction: column; gap: 30px; position: sticky; top: 0; height: 100vh; height: 100dvh; overflow-y: auto; color: var(--rdx-sidebar-text); }
+.sidebar { background: var(--rdx-sidebar); border-right: 1px solid var(--rdx-sidebar-border); padding: 20px 10px 16px; display: flex; flex-direction: column; gap: 30px; position: sticky; top: 0; height: 100vh; height: 100dvh; overflow-y: auto; overflow-x: hidden; color: var(--rdx-sidebar-text); }
 .brand { display: flex; flex-direction: column; align-items: flex-start; padding-inline: var(--rdx-space-3); }
 .brand-mark { color: var(--rdx-sidebar-text); font-size: 30px; font-weight: 800; line-height: 1.05; letter-spacing: -1px; }
 .brand-name { color: var(--rdx-sidebar-text); font-size: 14px; line-height: 1.35; letter-spacing: 0; }
-.sidebar nav { display: grid; gap: var(--rdx-space-1); }
+.sidebar nav { display: grid; gap: var(--rdx-space-1); min-height: 0; overflow-y: auto; overflow-x: hidden; }
 .nav-heading { margin: 0 0 var(--rdx-space-2); padding-inline: 14px; color: var(--rdx-sidebar-muted); font-size: 11px; font-weight: 500; text-transform: uppercase; letter-spacing: .07em; }
 .nav-heading-admin { margin-top: var(--rdx-space-6); }
 .nav-link { position: relative; display: flex; align-items: center; gap: 12px; min-height: 42px; padding: 9px 14px; border-radius: 8px; color: var(--rdx-sidebar-muted); font-weight: 500; transition: background-color var(--rdx-transition), color var(--rdx-transition); }
