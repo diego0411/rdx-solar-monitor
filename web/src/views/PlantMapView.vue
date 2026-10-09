@@ -216,7 +216,7 @@ function renderMarkers({ fit = true } = {}) {
     const position = [plant.latitude, plant.longitude];
     const marker = L.circleMarker(position, {
       radius: 10,
-      color: '#ffffff',
+      color: rdxColor('--rdx-map-marker-ring', '#ffffff'),
       weight: 3,
       fillColor: markerColor(plant.status),
       fillOpacity: 1,
@@ -406,8 +406,8 @@ onUnmounted(() => {
 .map-stage { position: relative; min-width: 0; }
 .plant-map { width: 100%; height: clamp(500px, 67vh, 720px); border: 1px solid var(--rdx-border); border-radius: var(--rdx-radius-md); background: var(--rdx-background); overflow: hidden; }
 .map-empty { min-height: 500px; margin: 0; padding: 24px; border-radius: var(--rdx-radius-md); background: var(--rdx-background); color: var(--rdx-text-muted); }
-.no-results { position: absolute; top: 12px; left: 50%; z-index: 500; max-width: calc(100% - 32px); margin: 0; padding: 8px 12px; transform: translateX(-50%); border-radius: var(--rdx-radius-sm); background: rgb(255 255 255 / 92%); box-shadow: var(--rdx-shadow-sm); color: var(--rdx-text-muted); font-size: 12px; text-align: center; }
-.map-legend { position: absolute; left: 12px; bottom: 12px; z-index: 500; display: flex; flex-wrap: wrap; gap: 12px 18px; max-width: calc(100% - 24px); padding: 9px 13px; border: 1px solid var(--rdx-border); border-radius: var(--rdx-radius-sm); background: rgb(255 255 255 / 94%); box-shadow: var(--rdx-shadow-sm); }
+.no-results { position: absolute; top: 12px; left: 50%; z-index: 500; max-width: calc(100% - 32px); margin: 0; padding: 8px 12px; transform: translateX(-50%); border-radius: var(--rdx-radius-sm); background: var(--rdx-map-overlay-bg); box-shadow: var(--rdx-shadow-sm); color: var(--rdx-text-muted); font-size: 12px; text-align: center; }
+.map-legend { position: absolute; left: 12px; bottom: 12px; z-index: 500; display: flex; flex-wrap: wrap; gap: 12px 18px; max-width: calc(100% - 24px); padding: 9px 13px; border: 1px solid var(--rdx-border); border-radius: var(--rdx-radius-sm); background: var(--rdx-map-legend-bg); box-shadow: var(--rdx-shadow-sm); }
 .map-legend span { display: inline-flex; align-items: center; gap: 7px; color: var(--rdx-text); font-size: 11px; white-space: nowrap; }
 .map-legend i, .no-location-panel em i { width: 10px; height: 10px; flex: 0 0 10px; border-radius: 50%; }
 .no-location-panel { min-width: 0; border: 1px solid var(--rdx-border); border-radius: var(--rdx-radius-md); background: var(--rdx-surface); overflow: hidden; }
@@ -432,7 +432,7 @@ onUnmounted(() => {
 :deep(.map-popup-title) { display: block; margin: 0 0 8px; color: var(--rdx-text-strong); font-size: 15px; }
 :deep(.map-popup-line) { display: flex; justify-content: space-between; gap: 16px; margin-top: 7px; color: var(--rdx-text-muted); font-size: 11px; }
 :deep(.map-popup-line strong) { color: var(--rdx-text-strong); font-weight: 650; text-align: right; }
-:deep(.map-popup-link) { display: block; margin-top: 11px; padding: 8px 12px; border-radius: 6px; background: var(--rdx-primary); color: #fff; font-size: 11px; font-weight: 700; text-align: center; text-decoration: none; }
+:deep(.map-popup-link) { display: block; margin-top: 11px; padding: 8px 12px; border-radius: 6px; background: var(--rdx-primary); color: var(--rdx-on-primary); font-size: 11px; font-weight: 700; text-align: center; text-decoration: none; }
 @media (max-width: 1199px) {
   .summary-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .filters { grid-template-columns: minmax(220px, 1.4fr) repeat(2, minmax(150px, 1fr)); }

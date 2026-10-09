@@ -42,6 +42,43 @@
   --rdx-space-10: 40px;
   --rdx-transition: 180ms ease;
   --rdx-topbar-height: 46px;
+  /* UX-01A: tokens semánticos de preparación para temas. Valores idénticos
+     a los colores fijos que reemplazan; el tema oscuro (UX-01B) solo
+     redefinirá estos valores bajo [data-theme='dark']. */
+  --rdx-on-primary: #ffffff;
+  --rdx-status-amber: #f2a20b;
+  --rdx-status-red: #df3f3f;
+  --rdx-provider-hyxi: #148ac1;
+  --rdx-provider-growatt: #62a818;
+  --rdx-metric-icon: #098a51;
+  --rdx-device-icon-bg: #edf6f2;
+  --rdx-device-offline-bg: #fff0ee;
+  --rdx-device-offline: #c65348;
+  --rdx-device-alarm-bg: #fff6e4;
+  --rdx-device-alarm: #d98a0a;
+  --rdx-focus-soft: rgb(22 120 87 / 15%);
+  --rdx-map-marker-ring: #ffffff;
+  --rdx-on-accent: #ffffff;
+  --rdx-devices-table-head-bg: #f8faf9;
+  --rdx-devices-row-border: #edf1ef;
+  --rdx-devices-row-selected-bg: #f0f8f4;
+  --rdx-devices-panel-bg: #f5f9f7;
+  --rdx-devices-pill-bg: #eef4f1;
+  --rdx-devices-pill-text: #536a62;
+  --rdx-devices-subtle-text: #75827e;
+  --rdx-devices-dot: #8d9a95;
+  --rdx-devices-row-online: #157c58;
+  --rdx-devices-row-online-dot: #1b976c;
+  --rdx-devices-row-offline: #b84f45;
+  --rdx-devices-row-offline-dot: #df5b4f;
+  --rdx-devices-row-alarm: #b97508;
+  --rdx-devices-row-alarm-dot: #ee9d19;
+  --rdx-devices-error-text: #a7443b;
+  --rdx-devices-error-border: #f0c4bf;
+  --rdx-devices-error-bg: #fff5f3;
+  --rdx-map-overlay-bg: rgb(255 255 255 / 92%);
+  --rdx-map-legend-bg: rgb(255 255 255 / 94%);
+  color-scheme: light;
   font-family: Inter, "Segoe UI", system-ui, sans-serif;
   color: var(--rdx-text);
   background: var(--rdx-background);
@@ -50,6 +87,13 @@
   -webkit-font-smoothing: antialiased;
   line-height: 1.6;
   font-size: 14px;
+}
+
+/* UX-01A: estructura reservada para el tema oscuro (UX-01B).
+   Intencionadamente vacío: ningún selector debe fijar [data-theme='dark']
+   hasta que la paleta oscura esté validada. El portal sigue en claro. */
+[data-theme='dark'] {
+  color-scheme: dark;
 }
 
 * { box-sizing: border-box; }

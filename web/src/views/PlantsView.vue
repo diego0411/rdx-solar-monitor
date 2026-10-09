@@ -543,8 +543,8 @@ onUnmounted(() => controller.abort());
 .status-dot { display: inline-block; width: 10px; height: 10px; flex: 0 0 10px; border-radius: 50%; background: currentColor; }
 .summary-icon .status-dot { width: 18px; height: 18px; }
 .summary-icon .state-online { color: var(--rdx-success); }
-.summary-icon .state-offline { color: #f2a20b; background: currentColor; }
-.summary-icon .state-alarm { color: #df3f3f; background: currentColor; }
+.summary-icon .state-offline { color: var(--rdx-status-amber); background: currentColor; }
+.summary-icon .state-alarm { color: var(--rdx-status-red); background: currentColor; }
 .filters { display: grid; grid-template-columns: minmax(220px, 1.55fr) repeat(4, minmax(150px, 1fr)); gap: 12px; padding: 10px; margin-bottom: 17px; border-radius: var(--rdx-radius-md); }
 .filters label { position: relative; min-width: 0; }
 .filters input, .filters select { min-height: 40px; border-color: var(--rdx-border); font-size: 13px; }
@@ -558,8 +558,8 @@ onUnmounted(() => controller.abort());
 .plant-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; list-style: none; padding: 0; margin: 0; }
 .plant-card { padding: 14px 16px 12px; overflow: hidden; }
 .plant-head { display: grid; grid-template-columns: 52px minmax(0, 1fr) auto; align-items: center; gap: 12px; padding-bottom: 12px; border-bottom: 1px solid var(--rdx-neutral-soft); }
-.provider-mark { display: grid; place-items: center; width: 52px; height: 52px; border-radius: 50%; background: var(--rdx-background); color: #148ac1; font-size: 11px; font-weight: 800; letter-spacing: -.04em; }
-.provider-growatt { color: #62a818; font-size: 9px; }
+.provider-mark { display: grid; place-items: center; width: 52px; height: 52px; border-radius: 50%; background: var(--rdx-background); color: var(--rdx-provider-hyxi); font-size: 11px; font-weight: 800; letter-spacing: -.04em; }
+.provider-growatt { color: var(--rdx-provider-growatt); font-size: 9px; }
 .plant-title { min-width: 0; }
 .plant-title h2 { margin: 0; overflow-wrap: anywhere; font-size: 16px; line-height: 1.3; }
 .provider { display: block; margin-top: 3px; color: var(--rdx-text-muted); font-size: 11px; font-weight: 600; }
@@ -569,7 +569,7 @@ onUnmounted(() => controller.abort());
 .plant-metrics > div { display: grid; grid-template-columns: 25px minmax(0, 1fr); grid-template-rows: auto auto; min-width: 0; padding: 0 10px; border-right: 1px solid var(--rdx-neutral-soft); }
 .plant-metrics > div:first-child { padding-left: 4px; }
 .plant-metrics > div:last-child { padding-right: 0; border-right: 0; }
-.metric-icon { grid-row: 1 / 3; align-self: center; color: #098a51; font-size: 23px; line-height: 1; }
+.metric-icon { grid-row: 1 / 3; align-self: center; color: var(--rdx-metric-icon); font-size: 23px; line-height: 1; }
 .plant-metrics dt { color: var(--rdx-text-muted); font-size: 10px; line-height: 1.3; white-space: nowrap; }
 .plant-metrics dd { margin: 3px 0 0; color: var(--rdx-text-strong); font-size: 13px; font-weight: 700; line-height: 1.25; overflow-wrap: anywhere; }
 .plant-foot { display: grid; grid-template-columns: .8fr 1fr 1.35fr auto; align-items: center; gap: 0; padding-top: 10px; }
@@ -583,7 +583,7 @@ onUnmounted(() => controller.abort());
 .telemetry-stale { color: var(--rdx-warning) !important; }
 .telemetry-no_data { color: var(--rdx-text-muted) !important; }
 .detail-link { display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-width: 118px; min-height: 38px; margin-left: 12px; padding: 7px 13px; border-radius: var(--rdx-radius-sm); background: var(--rdx-primary-soft); color: var(--rdx-primary); font-size: 12px; font-weight: 700; white-space: nowrap; transition: background-color var(--rdx-transition), color var(--rdx-transition); }
-.detail-link:hover { background: var(--rdx-primary); color: #fff; }
+.detail-link:hover { background: var(--rdx-primary); color: var(--rdx-on-primary); }
 .pagination { margin-top: 20px; }
 @media (max-width: 1199px) {
   .summary-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
