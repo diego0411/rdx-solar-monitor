@@ -30,6 +30,7 @@ function setup({ alarms = [alarm()], summary = null, plants = [], detail = null,
   const deps = {
     ref, computed, onMounted() {}, onUnmounted() {},
     apiFetch: async () => plants,
+    getPlantsCatalog: async () => plants.map(plant => ({ id: plant.id, name: plant.name ?? plant.id })),
     listAlarms: async params => {
       sent.params.push(params);
       if (failList) throw new Error('down');

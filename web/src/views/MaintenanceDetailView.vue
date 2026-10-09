@@ -2,6 +2,7 @@
 import { computed, onMounted, onUnmounted, ref } from 'vue';
 import { useRoute } from 'vue-router';
 import { apiFetch, getMyProfile } from '../services/api.js';
+import { getPlantsCatalog } from '../services/catalog.js';
 import {
   createMaintenanceActivity,
   deleteMaintenanceActivity,
@@ -466,7 +467,7 @@ async function load() {
     const data = await getMaintenanceVisit(route.params.id, { signal: controller.signal });
     if (!data || typeof data !== 'object') throw new Error('Respuesta inválida');
     visit.value = data;
-    const plants = await apiFetch('/plants', { signal: controller.signal }).catch(() => []);
+    const plants = await getPlantsCatalog({ signal: controller.signal }).catch(() => []);
     const match = (Array.isArray(plants) ? plants : []).find(plant => plant.id === data.plant_id);
     plantName.value = match?.name ?? 'Sin datos';
   } catch (failure) {

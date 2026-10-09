@@ -1,6 +1,7 @@
 <script setup>
 import { computed, onMounted, onUnmounted, ref } from 'vue';
 import { apiFetch, getMyProfile } from '../services/api.js';
+import { getPlantsCatalog } from '../services/catalog.js';
 import { createMaintenanceVisit, listMaintenanceVisits } from '../services/maintenance.js';
 
 const statusLabels = {
@@ -219,7 +220,7 @@ async function load() {
       : [];
     const [visitData, plantData] = await Promise.all([
       listMaintenanceVisits({}, { signal: controller.signal }),
-      apiFetch('/plants', { signal: controller.signal }).catch(() => []),
+      getPlantsCatalog({ signal: controller.signal }).catch(() => []),
     ]);
     if (!Array.isArray(visitData)) throw new Error('Respuesta inválida');
     visits.value = visitData;

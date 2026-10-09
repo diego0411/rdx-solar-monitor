@@ -7,6 +7,7 @@ import {
   watch,
 } from 'vue';
 import { apiFetch, getMyProfile } from '../services/api.js';
+import { invalidatePlantsCatalog } from '../services/catalog.js';
 
 const PAGE_SIZE = 6;
 
@@ -253,6 +254,7 @@ async function syncHyxiDetails() {
     syncFailed.value = failed > 0;
     syncMessage.value =
       `Detalles HYXi sincronizados: ${updated} actualizadas, ${failed} con error.`;
+    invalidatePlantsCatalog();
     if (!controller.signal.aborted) await loadPlants();
   } catch {
     if (!controller.signal.aborted) {

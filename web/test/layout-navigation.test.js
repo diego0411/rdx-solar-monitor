@@ -29,6 +29,7 @@ function setup({ routeName = 'dashboard', storage = null, role = 'rdx_admin' } =
     useRoute: () => route,
     supabase: null,
     getMyProfile: async () => ({ profile: { role, display_name: 'Ana', module_permissions: [] } }),
+    invalidatePlantsCatalog: () => {},
   };
   const component = new Function(...Object.keys(deps), code)(...Object.values(deps));
   const view = component.setup({}, { expose() {} });

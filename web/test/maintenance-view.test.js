@@ -16,6 +16,7 @@ function setup({ role = 'client_admin', permissions = ['maintenance'], visits = 
     ref, computed, onMounted() {}, onUnmounted() {},
     getMyProfile: async () => ({ profile: { role, module_permissions: permissions } }),
     apiFetch: async () => plants,
+    getPlantsCatalog: async () => plants.map(plant => ({ id: plant.id, name: plant.name ?? plant.id })),
     listMaintenanceVisits: async () => visits,
     createMaintenanceVisit: create ?? (async payload => ({ id: 'new', status: 'scheduled', ...payload })),
   };
@@ -232,6 +233,7 @@ test('listado vacío y error de carga', async () => {
   const deps = { ref, computed, onMounted() {}, onUnmounted() {},
     getMyProfile: async () => ({ profile: { role: 'client_admin' } }),
     apiFetch: async () => [],
+    getPlantsCatalog: async () => [],
     listMaintenanceVisits: async () => { throw new Error('down'); } };
   const component = new Function(...Object.keys(deps), code)(...Object.values(deps));
   const brokenView = component.setup({}, { expose() {} });

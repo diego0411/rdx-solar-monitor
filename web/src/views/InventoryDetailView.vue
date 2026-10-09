@@ -2,6 +2,7 @@
 import { computed, onUnmounted, ref, watch } from 'vue';
 import { useRoute } from 'vue-router';
 import { apiFetch, getMyProfile } from '../services/api.js';
+import { getPlantsCatalog } from '../services/catalog.js';
 import { listClients } from '../services/clients.js';
 import {
   createQuantityInventoryMovement,
@@ -140,7 +141,7 @@ async function load() {
     const me = await getMyProfile();
     if (requestController.signal.aborted) return;
     role.value = me?.profile?.role ?? null;
-    const supporting = [apiFetch('/plants', { signal: requestController.signal }).catch(() => [])];
+    const supporting = [getPlantsCatalog({ signal: requestController.signal }).catch(() => [])];
     if (role.value === 'rdx_admin') {
       supporting.push(listClients({
         signal: requestController.signal,

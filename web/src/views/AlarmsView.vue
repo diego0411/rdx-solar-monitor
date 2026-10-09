@@ -1,7 +1,7 @@
 <script setup>
 import { computed, onMounted, onUnmounted, ref } from 'vue';
-import { apiFetch } from '../services/api.js';
 import { getAlarm, getAlarmSummary, listAlarms } from '../services/alarms.js';
+import { getPlantsCatalog } from '../services/catalog.js';
 
 const PAGE_SIZE = 10;
 
@@ -171,7 +171,7 @@ async function loadSummary() {
 
 async function loadPlants() {
   try {
-    const data = await apiFetch('/plants', { signal: controller.signal });
+    const data = await getPlantsCatalog({ signal: controller.signal });
     const plantList = Array.isArray(data) ? data : [];
     plants.value = plantList;
     plantNames.value = Object.fromEntries(

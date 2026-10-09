@@ -22,17 +22,18 @@ const render = new Function('Vue', compile(descriptor.template.content, { mode: 
 });
 
 function setup(role) {
-  const calls = [], mounted = [], unmounted = [];
+  const calls = [], mounted = [], unmounted = [], invalidated = [];
   const deps = {
     ref: Vue.ref, computed: Vue.computed, watch: Vue.watch,
     onMounted: fn => mounted.push(fn), onUnmounted: fn => unmounted.push(fn),
     apiFetch(path, options) { const task = deferred(); calls.push({ path, options, ...task }); return task.promise; },
     getMyProfile: async () => ({ profile: { role } }),
+    invalidatePlantsCatalog: () => { invalidated.push(true); },
   };
   const component = new Function(...Object.keys(deps), script)(...Object.values(deps));
   const scope = Vue.effectScope();
   const view = scope.run(() => component.setup({}, { expose() {} }));
-  return { view, calls, mount: () => mounted.forEach(fn => { void fn(); }),
+  return { view, calls, invalidated, mount: () => mounted.forEach(fn => { void fn(); }),
     stop() { unmounted.forEach(fn => fn()); scope.stop(); }, render: () => render(Vue.proxyRefs(view), []) };
 }
 
@@ -93,6 +94,7 @@ test('6. muestra updated/failed reales y refresca plantas tras éxito', async t 
   assert.match(h.view.syncMessage.value, /11 actualizadas, 2 con error/);
   assert.equal(h.view.syncFailed.value, true);
   assert.equal(h.calls.filter(call => call.path === '/plants/overview').length, 2);
+  assert.equal(h.invalidated.length, 1);
 });
 
 test('7. fallo de red muestra error sin endpoint real', async t => {

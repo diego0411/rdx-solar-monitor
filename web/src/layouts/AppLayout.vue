@@ -3,6 +3,7 @@ import { computed, onMounted, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { supabase } from '../services/supabase.js';
 import { getMyProfile } from '../services/api.js';
+import { invalidatePlantsCatalog } from '../services/catalog.js';
 const router = useRouter();
 const route = useRoute();
 const showUsers = ref(false);
@@ -134,6 +135,7 @@ async function logout() {
   signingOut.value = true;
   logoutError.value = '';
   try {
+    invalidatePlantsCatalog();
     const result = await supabase?.auth.signOut({ scope: 'local' });
     if (result?.error) throw result.error;
     await router.replace('/login');

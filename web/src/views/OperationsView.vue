@@ -3,6 +3,7 @@ import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue';
 import { useRouter } from 'vue-router';
 import SearchableSelect from '../components/SearchableSelect.vue';
 import { apiFetch, getMyProfile } from '../services/api.js';
+import { getPlantsCatalog } from '../services/catalog.js';
 import { createRequest, listClients, listProducts, listRequests } from '../services/operations.js';
 import { buildCreatePayload, canCreateRequest, destinationDisplay, destinationTypeLabels, destinationTypes, filterPickerProducts, pickerAvailabilityText, priorityLabel, productCategoryLabel, reasonAllowsPlant, reasonLabel, reasonLabels, requestPriorities, requestReasons, statusLabel } from '../utils/operations.js';
 import { exportOperationsToExcel, downloadExcel } from '../utils/excelExport.js';
@@ -344,7 +345,7 @@ async function load() {
     const [requestData, productData, plantData] = await Promise.all([
       listRequests({}, { signal: controller.signal }),
       listProducts({ signal: controller.signal }).catch(() => []),
-      apiFetch('/plants', { signal: controller.signal }).catch(() => []),
+      getPlantsCatalog({ signal: controller.signal }).catch(() => []),
     ]);
     if (!Array.isArray(requestData)) throw new Error('Respuesta inválida');
     requests.value = requestData;
