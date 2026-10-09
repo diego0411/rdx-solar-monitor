@@ -145,3 +145,42 @@ export async function listStoredDevices(plantIds = null) {
     if (data.length < pageSize) return devices;
   }
 }
+
+// Variante exclusiva para overview (lista y detalle): proyección explícita
+// con las columnas consumidas por plantsOverview.service.js (sin el join
+// plant:plants(name), que solo necesita GET /devices). La función
+// compartida listStoredDevices conserva su forma para sus otros
+// consumidores (GET /devices, discovery, alarm-sync).
+const DEVICES_OVERVIEW_COLUMNS = 'id, plant_id, provider, active, device_type, status, name, model, serial_number, software_version, hardware_version, rated_power_w, last_data_at, last_synced_at';
+
+export async function listStoredDevicesOverview(plantIds = null) {
+  if (plantIds !== null && plantIds.size === 0) return [];
+
+  const devices = [];
+  const pageSize = 1000;
+
+  for (let offset = 0; ; offset += pageSize) {
+    let query = supabase
+      .from('devices')
+      .select(DEVICES_OVERVIEW_COLUMNS)
+      .order('name', { ascending: true })
+      .order('id', { ascending: true });
+
+    if (plantIds !== null) {
+      query = query.in('plant_id', [...plantIds]);
+    }
+
+    const { data, error } = await query.range(
+      offset,
+      offset + pageSize - 1
+    );
+
+    if (error) {
+      throw new Error('No se pudieron consultar los dispositivos almacenados');
+    }
+
+    devices.push(...data);
+
+    if (data.length < pageSize) return devices;
+  }
+}

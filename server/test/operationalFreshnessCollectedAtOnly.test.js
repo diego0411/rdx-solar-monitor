@@ -143,16 +143,16 @@ mock.module('../src/repositories/dashboard.repository.js', {
   },
 });
 mock.module('../src/repositories/plants.repository.js', {
-  namedExports: { async listStoredPlants() { return plants; } },
+  namedExports: { async listStoredPlantsOverview() { return plants; } },
 });
 mock.module('../src/repositories/devices.repository.js', {
-  namedExports: { async listStoredDevices() { return fixtureDevices; } },
+  namedExports: { async listStoredDevicesOverview() { return fixtureDevices; } },
 });
 mock.module('../src/repositories/deviceLatestData.repository.js', {
-  namedExports: { async listDeviceLatestData() { return fixtureLatest; } },
+  namedExports: { async listDeviceLatestDataOverview() { return fixtureLatest; } },
 });
 mock.module('../src/repositories/plantEnergySummary.repository.js', {
-  namedExports: { async listPlantEnergySummaries() { return []; } },
+  namedExports: { async listPlantEnergySummariesOverview() { return []; } },
 });
 mock.module('../src/repositories/plantPowerIntervals.repository.js', {
   namedExports: { async latestPlantConsumption() { return null; } },

@@ -188,3 +188,29 @@ export async function listStoredPlants(plantIds = null) {
     if (data.length < pageSize) return plants;
   }
 }
+
+// Variante exclusiva para overview (lista y detalle): proyección explícita
+// con las columnas consumidas por plantsOverview.service.js. La función
+// compartida listStoredPlants conserva select('*') para sus otros
+// consumidores (p. ej. GET /plants sirve la fila completa).
+const PLANTS_OVERVIEW_COLUMNS = 'id, active, provider, external_plant_id, name, plant_type, timezone, address, capacity_kwp, latitude, longitude, last_synced_at, status, metadata';
+
+export async function listStoredPlantsOverview(plantIds = null) {
+  const plants = [];
+  const pageSize = 1000;
+  let query = supabase.from('plants').select(PLANTS_OVERVIEW_COLUMNS)
+    .order('name', { ascending: true }).order('id', { ascending: true });
+
+  if (plantIds !== null && plantIds !== undefined) {
+    query = plantIds.size === 0
+      ? query.eq('id', '00000000-0000-0000-0000-000000000000')
+      : query.in('id', [...plantIds]);
+  }
+
+  for (let offset = 0; ; offset += pageSize) {
+    const { data, error } = await query.range(offset, offset + pageSize - 1);
+    if (error) throw new Error('No se pudieron consultar las plantas almacenadas');
+    plants.push(...data);
+    if (data.length < pageSize) return plants;
+  }
+}

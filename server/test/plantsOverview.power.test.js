@@ -9,7 +9,7 @@ const collectedAt = new Date(now - 1 * 60 * 1000).toISOString();
 if (supportsModuleMocks) {
   mock.module('../src/repositories/plants.repository.js', {
     namedExports: {
-      listStoredPlants: async () => [
+      listStoredPlantsOverview: async () => [
         {
           id: 'p1',
           provider: 'growatt',
@@ -26,7 +26,7 @@ if (supportsModuleMocks) {
 
   mock.module('../src/repositories/devices.repository.js', {
     namedExports: {
-      listStoredDevices: async () => [
+      listStoredDevicesOverview: async () => [
         {
           id: 'd1',
           plant_id: 'p1',
@@ -41,7 +41,7 @@ if (supportsModuleMocks) {
 
   mock.module('../src/repositories/deviceLatestData.repository.js', {
     namedExports: {
-      listDeviceLatestData: async () => [
+      listDeviceLatestDataOverview: async () => [
         {
           device_id: 'd1',
           device_type: 'MIN',
@@ -56,7 +56,7 @@ if (supportsModuleMocks) {
 
   mock.module('../src/repositories/plantEnergySummary.repository.js', {
     namedExports: {
-      listPlantEnergySummaries: async () => [],
+      listPlantEnergySummariesOverview: async () => [],
     },
   });
 }

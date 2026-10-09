@@ -1,7 +1,7 @@
-import { listStoredPlants } from '../repositories/plants.repository.js';
-import { listStoredDevices } from '../repositories/devices.repository.js';
-import { listDeviceLatestData } from '../repositories/deviceLatestData.repository.js';
-import { listPlantEnergySummaries } from '../repositories/plantEnergySummary.repository.js';
+import { listStoredPlantsOverview } from '../repositories/plants.repository.js';
+import { listStoredDevicesOverview } from '../repositories/devices.repository.js';
+import { listDeviceLatestDataOverview } from '../repositories/deviceLatestData.repository.js';
+import { listPlantEnergySummariesOverview } from '../repositories/plantEnergySummary.repository.js';
 import { latestPlantConsumption } from '../repositories/plantPowerIntervals.repository.js';
 import { operationalPlantStatus, telemetryFreshness } from './telemetryFreshness.js';
 import { resolvePlantLoadPower } from './plantLoadPower.service.js';
@@ -138,7 +138,7 @@ export async function getPlantOverview(plantId) {
   // Scope BD a la planta solicitada (antes: flota completa + filtro Node).
   // El .find conserva la coincidencia exacta original; los filtros
   // posteriores quedan como red de seguridad sobre datos ya acotados.
-  const plant = (await listStoredPlants(new Set([normalizedId])))
+  const plant = (await listStoredPlantsOverview(new Set([normalizedId])))
     .find(
       row =>
         row.id === normalizedId,
@@ -155,9 +155,9 @@ export async function getPlantOverview(plantId) {
     allLatest,
     summaries,
   ] = await Promise.all([
-    listStoredDevices(plantScope),
-    listDeviceLatestData(plantScope),
-    listPlantEnergySummaries(plantScope),
+    listStoredDevicesOverview(plantScope),
+    listDeviceLatestDataOverview(plantScope),
+    listPlantEnergySummariesOverview(plantScope),
   ]);
 
   const devices = allDevices.filter(
@@ -479,10 +479,10 @@ export async function getPlantsOverview(plantIds = null) {
     latest,
     summaries,
   ] = await Promise.all([
-    listStoredPlants(plantIds),
-    listStoredDevices(plantIds),
-    listDeviceLatestData(plantIds),
-    listPlantEnergySummaries(plantIds),
+    listStoredPlantsOverview(plantIds),
+    listStoredDevicesOverview(plantIds),
+    listDeviceLatestDataOverview(plantIds),
+    listPlantEnergySummariesOverview(plantIds),
   ]);
 
   const devicesById = new Map(

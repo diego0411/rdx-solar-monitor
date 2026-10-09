@@ -19,7 +19,7 @@ const calls = {
 if (supportsModuleMocks) {
   mock.module('../src/repositories/plants.repository.js', {
     namedExports: {
-      listStoredPlants: async plantIds => {
+      listStoredPlantsOverview: async plantIds => {
         calls.plants.push(plantIds);
         return [
           {
@@ -49,7 +49,7 @@ if (supportsModuleMocks) {
 
   mock.module('../src/repositories/devices.repository.js', {
     namedExports: {
-      listStoredDevices: async plantIds => {
+      listStoredDevicesOverview: async plantIds => {
         calls.devices.push(plantIds);
         return [
           {
@@ -65,7 +65,7 @@ if (supportsModuleMocks) {
 
   mock.module('../src/repositories/deviceLatestData.repository.js', {
     namedExports: {
-      listDeviceLatestData: async plantIds => {
+      listDeviceLatestDataOverview: async plantIds => {
         calls.latest.push(plantIds);
         return [
           {
@@ -81,7 +81,7 @@ if (supportsModuleMocks) {
 
   mock.module('../src/repositories/plantEnergySummary.repository.js', {
     namedExports: {
-      listPlantEnergySummaries: async plantIds => {
+      listPlantEnergySummariesOverview: async plantIds => {
         calls.summaries.push(plantIds);
         return [
           { plant_id: PLANT_A, today_generation_kwh: 10 },
