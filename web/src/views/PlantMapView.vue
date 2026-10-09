@@ -5,6 +5,9 @@ import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import { apiFetch } from '../services/api.js';
 import { rdxColor } from '../utils/rdxTokens.js';
+import { useTheme } from '../composables/useTheme.js';
+
+const { effectiveTheme } = useTheme();
 
 const router = useRouter();
 const mapElement = ref(null);
@@ -34,27 +37,26 @@ const freshness = {
   no_data: 'Sin datos',
 };
 
-const badgeStyles = {
-  online: [rdxColor('--rdx-success-soft'), rdxColor('--rdx-success')],
-  offline: [rdxColor('--rdx-danger-soft'), rdxColor('--rdx-danger')],
-  alarm: [rdxColor('--rdx-warning-soft'), rdxColor('--rdx-warning')],
-  inactive: [rdxColor('--rdx-neutral-soft'), rdxColor('--rdx-text-muted')],
-  unknown: [rdxColor('--rdx-neutral-soft'), rdxColor('--rdx-text-muted')],
-};
+// UX-01C: se resuelven en cada uso (no en la carga) para seguir al tema.
+// markerColor lee effectiveTheme para que leyenda e iconos del template
+// se re-evalúen al cambiar light↔dark. Semántica offline/alarm intacta.
+function badgeStyleFor(status) {
+  return {
+    online: [rdxColor('--rdx-success-soft'), rdxColor('--rdx-success')],
+    offline: [rdxColor('--rdx-danger-soft'), rdxColor('--rdx-danger')],
+    alarm: [rdxColor('--rdx-warning-soft'), rdxColor('--rdx-warning')],
+    inactive: [rdxColor('--rdx-neutral-soft'), rdxColor('--rdx-text-muted')],
+    unknown: [rdxColor('--rdx-neutral-soft'), rdxColor('--rdx-text-muted')],
+  }[status] ?? [rdxColor('--rdx-neutral-soft'), rdxColor('--rdx-text-muted')];
+}
 
-const freshnessStyles = {
-  fresh: [rdxColor('--rdx-success-soft'), rdxColor('--rdx-success')],
-  stale: [rdxColor('--rdx-warning-soft'), rdxColor('--rdx-warning')],
-  no_data: [rdxColor('--rdx-neutral-soft'), rdxColor('--rdx-text-muted')],
-};
-
-const markerColors = {
-  online: rdxColor('--rdx-success'),
-  alarm: rdxColor('--rdx-warning'),
-  offline: rdxColor('--rdx-danger'),
-  inactive: rdxColor('--rdx-text-faint'),
-  unknown: rdxColor('--rdx-text-faint'),
-};
+function freshnessStyleFor(dataStatus) {
+  return {
+    fresh: [rdxColor('--rdx-success-soft'), rdxColor('--rdx-success')],
+    stale: [rdxColor('--rdx-warning-soft'), rdxColor('--rdx-warning')],
+    no_data: [rdxColor('--rdx-neutral-soft'), rdxColor('--rdx-text-muted')],
+  }[dataStatus] ?? [rdxColor('--rdx-neutral-soft'), rdxColor('--rdx-text-muted')];
+}
 
 const number = new Intl.NumberFormat('es-BO', {
   maximumFractionDigits: 2,
@@ -78,7 +80,14 @@ function normalize(value) {
 }
 
 function markerColor(value) {
-  return markerColors[value] ?? markerColors.unknown;
+  void effectiveTheme.value;
+  return {
+    online: rdxColor('--rdx-success'),
+    alarm: rdxColor('--rdx-warning'),
+    offline: rdxColor('--rdx-danger'),
+    inactive: rdxColor('--rdx-text-faint'),
+    unknown: rdxColor('--rdx-text-faint'),
+  }[value] ?? rdxColor('--rdx-text-faint');
 }
 
 function power(value) {
@@ -149,11 +158,11 @@ function popupFor(plant) {
   ));
   badgesRow.append(badge(
     statuses[plant.status] ?? statuses.unknown,
-    ...(badgeStyles[plant.status] ?? badgeStyles.unknown),
+    ...badgeStyleFor(plant.status),
   ));
   badgesRow.append(badge(
     freshness[plant.data_status] ?? freshness.no_data,
-    ...(freshnessStyles[plant.data_status] ?? freshnessStyles.no_data),
+    ...freshnessStyleFor(plant.data_status),
   ));
   content.append(badgesRow);
 
@@ -205,6 +214,54 @@ const legendItems = computed(() => [
   ['online', 'En línea'], ['offline', 'Sin conexión'], ['alarm', 'Con alarmas'],
   ...(filteredAllPlants.value.some(plant => ['unknown', 'inactive'].includes(plant.status)) ? [['unknown', 'Desconocido']] : []),
 ]);
+
+// UX-01C: tiles por tema (OSM en claro, CARTO dark en oscuro) con sus
+// atribuciones. Sin cambios de markers, popups, zoom ni encuadre.
+const MAP_TILES = {
+  light: {
+    url: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+    options: {
+      maxZoom: 19,
+      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+    },
+  },
+  dark: {
+    url: 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',
+    options: {
+      maxZoom: 20,
+      subdomains: 'abcd',
+      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>',
+    },
+  },
+};
+
+function mapTheme() {
+  try {
+    return document.documentElement?.dataset?.theme === 'dark' ? 'dark' : 'light';
+  } catch {
+    return 'light';
+  }
+}
+
+let tileLayer = null;
+
+function applyTileLayer() {
+  if (!map) return;
+  const tiles = MAP_TILES[mapTheme()];
+  if (tileLayer) map.removeLayer(tileLayer);
+  tileLayer = L.tileLayer(tiles.url, tiles.options).addTo(map);
+}
+
+// Al cambiar el tema: tiles apropiados + markers re-resueltos por token.
+// Sin refetch ni re-encuadre.
+function refreshMapTheme() {
+  applyTileLayer();
+  renderMarkers({ fit: false });
+}
+
+if (typeof window !== 'undefined' && typeof window.addEventListener === 'function') {
+  window.addEventListener('rdx:theme', refreshMapTheme);
+}
 
 function renderMarkers({ fit = true } = {}) {
   if (!map) return;
@@ -296,10 +353,7 @@ onMounted(async () => {
   if (controller.signal.aborted || !mapElement.value) return;
 
   map = L.map(mapElement.value);
-  L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
-    maxZoom: 19,
-    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
-  }).addTo(map);
+  applyTileLayer();
   markerLayer = L.layerGroup().addTo(map);
   map.invalidateSize();
   renderMarkers();
@@ -314,9 +368,13 @@ watch(
 
 onUnmounted(() => {
   controller.abort();
+  if (typeof window !== 'undefined' && typeof window.removeEventListener === 'function') {
+    window.removeEventListener('rdx:theme', refreshMapTheme);
+  }
   map?.remove();
   map = null;
   markerLayer = null;
+  tileLayer = null;
 });
 </script>
 

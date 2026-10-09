@@ -1,5 +1,5 @@
 <script setup>
-import { ref, watch, onBeforeUnmount } from 'vue';
+import { ref, watch, onMounted, onBeforeUnmount } from 'vue';
 import * as echarts from 'echarts/core';
 import { BarChart } from 'echarts/charts';
 import { GridComponent, TooltipComponent, LegendComponent } from 'echarts/components';
@@ -98,6 +98,19 @@ watch(() => [props.plantId, selectedDate.value, period.value], async ([id, day, 
 watch(container, () => { dispose(); render(); }, { flush: 'post' });
 watch(points, render, { flush: 'post' });
 watch(() => props.timezone, render);
+// UX-01C: los colores se resuelven por token en cada render; al cambiar el
+// tema se re-renderiza (applyTheme ya invalidó la caché). Sin refetch.
+function renderOnThemeChange() { render(); }
+onMounted(() => {
+  if (typeof window !== 'undefined' && typeof window.addEventListener === 'function') {
+    window.addEventListener('rdx:theme', renderOnThemeChange);
+  }
+});
+onBeforeUnmount(() => {
+  if (typeof window !== 'undefined' && typeof window.removeEventListener === 'function') {
+    window.removeEventListener('rdx:theme', renderOnThemeChange);
+  }
+});
 onBeforeUnmount(dispose);
 </script>
 

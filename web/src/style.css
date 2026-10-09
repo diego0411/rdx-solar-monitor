@@ -12,7 +12,7 @@
   --rdx-text-faint: #89948e;
   --rdx-focus: #529b79;
   --rdx-accent: #496c5a;
-  --rdx-success: #2b8a53;
+  --rdx-primary-text: #174d3c;  --rdx-success: #2b8a53;
   --rdx-success-soft: #e5f2e9;
   --rdx-warning: #b57417;
   --rdx-warning-soft: #fff0d8;
@@ -89,11 +89,112 @@
   font-size: 14px;
 }
 
-/* UX-01A: estructura reservada para el tema oscuro (UX-01B).
-   Intencionadamente vacío: ningún selector debe fijar [data-theme='dark']
-   hasta que la paleta oscura esté validada. El portal sigue en claro. */
+/* UX-01B: paleta oscura. Redefine los tokens existentes; el tema claro
+   de :root queda intacto. Contrastes verificados AA (texto ≥4.5:1).
+   ECharts/Leaflet y vistas individuales se adaptan en UX-01C. */
 [data-theme='dark'] {
   color-scheme: dark;
+  --rdx-primary: #2e7d5f;
+  --rdx-primary-hover: #256a4f;
+  --rdx-primary-soft: #1c3329;
+  --rdx-background: #0e1512;
+  --rdx-surface: #16211c;
+  --rdx-surface-raised: #1c2a23;
+  --rdx-border: #2a3b32;
+  --rdx-border-strong: #3a4f43;
+  --rdx-text: #e8f0eb;
+  --rdx-text-strong: #f4faf6;
+  --rdx-text-muted: #a9bdb1;
+  --rdx-text-faint: #7e9387;
+  --rdx-focus: #7cc4a0;
+  --rdx-accent: #8fceaa;
+  --rdx-primary-text: #8fceaa;
+  --rdx-success: #6fce97;
+  --rdx-success-soft: #14291d;
+  --rdx-warning: #e5a94c;
+  --rdx-warning-soft: #2e2410;
+  --rdx-danger: #e07a5f;
+  --rdx-danger-soft: #2f1a14;
+  --rdx-neutral: #93a39a;
+  --rdx-neutral-soft: #1e2a24;
+  --rdx-sidebar: #0b120e;
+  --rdx-sidebar-text: #eef5f0;
+  --rdx-sidebar-muted: #a9bdb1;
+  --rdx-sidebar-active: rgb(255 255 255 / 12%);
+  --rdx-sidebar-hover: rgb(255 255 255 / 7%);
+  --rdx-sidebar-accent: #8fceaa;
+  --rdx-sidebar-border: rgb(255 255 255 / 14%);
+  --rdx-shadow-sm: 0 1px 3px rgb(0 0 0 / 40%);
+  --rdx-shadow-md: 0 4px 12px rgb(0 0 0 / 45%);
+  --rdx-status-amber: #f2a20b;
+  --rdx-status-red: #e0654f;
+  --rdx-provider-hyxi: #57a9d6;
+  --rdx-provider-growatt: #62a818;
+  --rdx-metric-icon: #3cb782;
+  --rdx-device-icon-bg: #1c3329;
+  --rdx-device-offline-bg: #2f1a14;
+  --rdx-device-offline: #e0654f;
+  --rdx-device-alarm-bg: #2e2410;
+  --rdx-device-alarm: #e5a94c;
+  --rdx-focus-soft: rgb(124 196 160 / 25%);
+  --rdx-map-marker-ring: #16211c;
+  --rdx-on-primary: #ffffff;
+  --rdx-on-accent: #10231a;
+  --rdx-devices-table-head-bg: #1a2620;
+  --rdx-devices-row-border: #2a3b32;
+  --rdx-devices-row-selected-bg: #1c3329;
+  --rdx-devices-panel-bg: #1a2620;
+  --rdx-devices-pill-bg: #22302a;
+  --rdx-devices-pill-text: #b9cdc1;
+  --rdx-devices-subtle-text: #93a39a;
+  --rdx-devices-dot: #5f7268;
+  --rdx-devices-row-online: #4cc38a;
+  --rdx-devices-row-online-dot: #35a873;
+  --rdx-devices-row-offline: #e0654f;
+  --rdx-devices-row-offline-dot: #c85745;
+  --rdx-devices-row-alarm: #e5a94c;
+  --rdx-devices-row-alarm-dot: #d1922f;
+  --rdx-devices-error-text: #e07a5f;
+  --rdx-devices-error-border: #5a2b22;
+  --rdx-devices-error-bg: #2a1a14;
+  --rdx-map-overlay-bg: rgb(22 33 28 / 92%);
+  --rdx-map-legend-bg: rgb(22 33 28 / 94%);
+}
+
+[data-theme='dark'] .card.modal {
+  background: var(--rdx-surface-raised);
+}
+
+/* UX-01C: --rdx-primary es fondo de botones en oscuro; como texto sobre
+   superficie no alcanza AA, los enlaces y botones fantasma usan el acento. */
+[data-theme='dark'] a,
+[data-theme='dark'] .ghost-button {
+  color: var(--rdx-accent);
+}
+
+/* UX-01C fix B1: controles y popups Leaflet en oscuro. Leaflet fija fondos
+   blancos (#fff) que vuelven invisibles glifos y textos RDX; estos overrides
+   (mayor especificidad que el CSS de Leaflet) solo rigen en oscuro. */
+[data-theme='dark'] .leaflet-popup-content-wrapper,
+[data-theme='dark'] .leaflet-popup-tip {
+  background: var(--rdx-surface);
+  color: var(--rdx-text);
+}
+[data-theme='dark'] .leaflet-bar a {
+  background-color: var(--rdx-surface);
+  border-color: var(--rdx-border);
+  color: var(--rdx-text-strong);
+}
+[data-theme='dark'] .leaflet-bar a:hover,
+[data-theme='dark'] .leaflet-bar a:focus {
+  background-color: var(--rdx-surface-raised);
+}
+[data-theme='dark'] .leaflet-control-attribution {
+  background: rgb(22 33 28 / 80%);
+  color: var(--rdx-text-muted);
+}
+[data-theme='dark'] .leaflet-control-attribution a {
+  color: var(--rdx-accent);
 }
 
 * { box-sizing: border-box; }

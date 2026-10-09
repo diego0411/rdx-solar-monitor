@@ -112,6 +112,7 @@ function mapSetup(t) {
   const element = () => ({ style: {}, append() {}, addEventListener() {} });
   const h = setup('PlantMapView', {
     useRouter: () => ({ resolve: () => ({ href: '/' }) }), rdxColor: () => '#000',
+    useTheme: () => ({ effectiveTheme: Vue.ref('light') }),
     document: { createElement: element },
     console: { error() {} },
     L: { map() { creations++; return map; }, tileLayer: () => layer, layerGroup: () => layer,

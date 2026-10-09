@@ -144,7 +144,7 @@ onUnmounted(() => controller.abort());
 .clients-header p { margin: 0; color: var(--rdx-text-muted); }
 .eyebrow { font-size: 11px; font-weight: 750; letter-spacing: .08em; }
 .primary-button, .secondary-button { min-height: 40px; padding: 9px 15px; border-radius: var(--rdx-radius-sm); font: inherit; font-size: 13px; font-weight: 700; cursor: pointer; }
-.primary-button { border: 1px solid var(--rdx-primary); background: var(--rdx-primary); color: #fff; }
+.primary-button { border: 1px solid var(--rdx-primary); background: var(--rdx-primary); color: var(--rdx-on-primary); }
 .secondary-button { border: 1px solid var(--rdx-border); background: var(--rdx-surface); color: var(--rdx-text-strong); }
 button:disabled { opacity: .6; cursor: wait; }
 .notice { padding: 10px 14px; border-radius: var(--rdx-radius-sm); background: var(--rdx-success-soft); color: var(--rdx-success); }

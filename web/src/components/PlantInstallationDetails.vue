@@ -238,7 +238,7 @@ dt { color: var(--rdx-text-muted); font-size: 11px; } dd { margin: 0; overflow-w
 .installation-form input:focus { outline: 2px solid var(--rdx-primary-soft); border-color: var(--rdx-primary); }
 .form-actions { grid-column: 1 / -1; display: flex; justify-content: flex-end; gap: 8px; }
 .primary-button, .secondary-button { padding: 8px 12px; border: 1px solid var(--rdx-primary); border-radius: var(--rdx-radius-sm); font: inherit; font-size: 11px; font-weight: 700; cursor: pointer; }
-.primary-button { background: var(--rdx-primary); color: #fff; } .secondary-button { background: var(--rdx-surface); color: var(--rdx-primary); }
+.primary-button { background: var(--rdx-primary); color: var(--rdx-on-primary); } .secondary-button { background: var(--rdx-surface); color: var(--rdx-primary-text); }
 .primary-button:disabled, .secondary-button:disabled { opacity: .6; cursor: default; }
 .installation-state { margin: 12px 0 0; color: var(--rdx-text-muted); font-size: 12px; }
 .installation-state.error { color: var(--rdx-danger); }

@@ -4,6 +4,13 @@ import { useRoute, useRouter } from 'vue-router';
 import { supabase } from '../services/supabase.js';
 import { getMyProfile } from '../services/api.js';
 import { invalidateDevicesCatalog, invalidatePlantsCatalog } from '../services/catalog.js';
+import { useTheme } from '../composables/useTheme.js';
+const { preference: themePreference, setThemePreference } = useTheme();
+const themeOptions = [
+  { value: 'light', label: 'Claro' },
+  { value: 'dark', label: 'Oscuro' },
+  { value: 'auto', label: 'Automático' },
+];
 const router = useRouter();
 const route = useRoute();
 const showUsers = ref(false);
@@ -244,7 +251,19 @@ async function logout() {
             <span class="crumb-page">{{ breadcrumb.label }}</span>
           </nav>
         </div>
-        <span class="topbar-client">Nexora</span>
+        <div class="topbar-right">
+          <div class="theme-switch" role="group" aria-label="Tema visual">
+            <button
+              v-for="option in themeOptions"
+              :key="option.value"
+              type="button"
+              :aria-pressed="String(themePreference === option.value)"
+              :title="`Tema ${option.label.toLowerCase()}`"
+              @click="setThemePreference(option.value)"
+            >{{ option.label }}</button>
+          </div>
+          <span class="topbar-client">Nexora</span>
+        </div>
       </header>
       <main id="main-content" class="main-content" tabindex="-1">
         <slot />
@@ -317,6 +336,53 @@ async function logout() {
   font-weight: 700;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.topbar-right {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+
+.theme-switch {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 2px;
+  border: 1px solid var(--rdx-border);
+  border-radius: 999px;
+  background: var(--rdx-background);
+}
+
+.theme-switch button {
+  min-height: 28px;
+  padding: 3px 12px;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--rdx-text-muted);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.theme-switch button:hover {
+  color: var(--rdx-text-strong);
+}
+
+.theme-switch button[aria-pressed='true'] {
+  background: var(--rdx-surface);
+  color: var(--rdx-text-strong);
+  box-shadow: var(--rdx-shadow-sm);
+}
+
+@media (max-width: 720px) {
+  .theme-switch button {
+    padding: 3px 8px;
+    font-size: 11px;
+  }
 }
 
 .nav-group {

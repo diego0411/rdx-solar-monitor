@@ -426,7 +426,7 @@ onUnmounted(() => controller.abort());
 .badge.active, .badge.available { background: var(--rdx-success-soft); color: var(--rdx-success); }
 .badge.inactive, .badge.written_off { background: var(--rdx-warning-soft); color: var(--rdx-warning); }
 .primary-button, .secondary-button { min-height: 39px; padding: 8px 14px; border-radius: var(--rdx-radius-sm); font: inherit; font-size: 12px; font-weight: 700; cursor: pointer; }
-.primary-button { border: 1px solid var(--rdx-primary); background: var(--rdx-primary); color: #fff; }
+.primary-button { border: 1px solid var(--rdx-primary); background: var(--rdx-primary); color: var(--rdx-on-primary); }
 .secondary-button { border: 1px solid var(--rdx-border); background: var(--rdx-surface); color: var(--rdx-text-strong); }
 button:disabled { opacity: .6; cursor: wait; }
 .notice { padding: 10px 14px; border-radius: var(--rdx-radius-sm); background: var(--rdx-success-soft); color: var(--rdx-success); font-size: 12px; }

@@ -875,7 +875,7 @@ onUnmounted(() => controller.abort());
   border: none;
   border-radius: 10px;
   background: var(--rdx-accent);
-  color: #fff;
+  color: var(--rdx-on-accent);
   font-size: 14px;
   font-weight: 700;
   cursor: pointer;
