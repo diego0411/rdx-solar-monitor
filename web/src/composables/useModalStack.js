@@ -1,12 +1,99 @@
-import { onUnmounted, watch } from 'vue';
+import { nextTick, onUnmounted, watch } from 'vue';
 
 // UX-03C2A: Escape y bloqueo de scroll compartidos por los modales.
-// Pila de cierres: Escape cierra solo el modal superior (último abierto).
+// UX-03C2B: foco inicial al abrir y retorno al cerrar, sin trampa de Tab.
+// Pila de entradas: Escape cierra solo el modal superior (último abierto).
 // El scroll del fondo se bloquea mientras haya al menos un modal y se
 // restaura al cerrar el último. Un único listener global con limpieza.
 const stack = [];
 let keyAttached = false;
 let savedOverflow = null;
+
+const FOCUSABLE_SELECTOR = 'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
+
+function visibleDialogs() {
+  try {
+    if (typeof document === 'undefined' || typeof document.querySelectorAll !== 'function') return [];
+    return [...document.querySelectorAll('.modal[role="dialog"]')]
+      .filter(el => typeof el.getClientRects === 'function' && el.getClientRects().length > 0);
+  } catch {
+    return [];
+  }
+}
+
+function firstFocusable(dialog) {
+  try {
+    const controls = dialog.querySelectorAll(FOCUSABLE_SELECTOR) ?? [];
+    for (const el of controls) {
+      if (typeof el.getClientRects === 'function' && el.getClientRects().length > 0) return el;
+    }
+  } catch {
+    // Sin controles accesibles: se enfoca el contenedor.
+  }
+  return null;
+}
+
+function focusDialog(dialog) {
+  if (!dialog) return;
+  const target = firstFocusable(dialog) ?? dialog;
+  try {
+    if (target === dialog && typeof dialog.hasAttribute === 'function' && !dialog.hasAttribute('tabindex')) {
+      dialog.setAttribute('tabindex', '-1');
+    }
+    if (typeof target.focus === 'function') target.focus();
+  } catch {
+    // Foco no disponible: el modal sigue operable por puntero.
+  }
+}
+
+// El superior visible es el último en DOM (misma z: pinta encima).
+function focusTopmost() {
+  const dialogs = visibleDialogs();
+  focusDialog(dialogs[dialogs.length - 1]);
+}
+
+function focusableTrigger(trigger) {
+  try {
+    if (!trigger || typeof trigger.focus !== 'function') return false;
+    if (trigger.isConnected === false) return false;
+    if (trigger.disabled) return false;
+    if (typeof trigger.getClientRects === 'function' && trigger.getClientRects().length === 0) return false;
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function focusFallback() {
+  try {
+    if (typeof document === 'undefined' || typeof document.getElementById !== 'function') return;
+    const main = document.getElementById('main-content');
+    if (!main || typeof main.focus !== 'function') return;
+    if (typeof main.hasAttribute === 'function' && !main.hasAttribute('tabindex')) {
+      main.setAttribute('tabindex', '-1');
+    }
+    main.focus();
+  } catch {
+    // Sin destino seguro: se conserva el foco actual.
+  }
+}
+
+function returnFocus(entry) {
+  // Queda otro modal: foco al superior visible, nunca al fondo.
+  if (stack.length > 0) {
+    focusTopmost();
+    return;
+  }
+  if (focusableTrigger(entry.trigger)) {
+    try {
+      entry.trigger.focus();
+      return;
+    } catch {
+      // Disparador inválido: se usa el destino seguro.
+    }
+  }
+  focusFallback();
+}
 
 function drawerOpen() {
   try {
@@ -21,9 +108,9 @@ function onKeydown(event) {
   if (event?.key !== 'Escape' || stack.length === 0) return;
   // El drawer móvil (z superior) gestiona su propio Escape.
   if (drawerOpen()) return;
-  const closeTop = stack[stack.length - 1];
+  const top = stack[stack.length - 1];
   try {
-    closeTop();
+    top.close();
   } catch {
     // El cierre pertenece a la vista; aquí solo se delega.
   }
@@ -85,25 +172,37 @@ function refresh() {
   }
 }
 
-function pushCloser(closer) {
-  stack.push(closer);
+function pushEntry(entry) {
+  stack.push(entry);
   refresh();
 }
 
-function removeCloser(closer) {
-  const index = stack.lastIndexOf(closer);
+function removeEntry(entry) {
+  const index = stack.lastIndexOf(entry);
   if (index >= 0) stack.splice(index, 1);
   refresh();
+}
+
+function readActiveElement() {
+  try {
+    if (typeof document === 'undefined') return null;
+    return document.activeElement ?? null;
+  } catch {
+    return null;
+  }
 }
 
 /**
  * Registra el cierre de un modal mientras `active` sea verdadero.
  * `active` acepta ref o getter; `close` es la función de cierre propia
- * de la vista (la misma del backdrop). Devuelve `dispose()` para pruebas
- * y limpieza manual; además se libera solo al desmontar.
+ * de la vista (la misma del backdrop). Al abrir guarda el foco previo y,
+ * tras el render, enfoca el primer control del diálogo (o el contenedor).
+ * Al cerrar devuelve el foco al disparador, al modal que quede abierto o
+ * a un destino seguro. Devuelve `dispose()`; además se libera al desmontar.
  */
 export function useModalEscape(active, close) {
-  const closer = () => {
+  const entry = { close: null, trigger: null };
+  entry.close = () => {
     try {
       close();
     } catch {
@@ -111,12 +210,25 @@ export function useModalEscape(active, close) {
     }
   };
   const stop = watch(active, open => {
-    if (open) pushCloser(closer);
-    else removeCloser(closer);
+    if (open) {
+      entry.trigger = readActiveElement();
+      pushEntry(entry);
+      // Tras el render (v-if); si ya cerró, no se roba el foco.
+      nextTick(() => {
+        if (stack.includes(entry)) focusTopmost();
+      });
+    } else {
+      const wasOpen = stack.includes(entry);
+      removeEntry(entry);
+      // Diferido: el DOM aún conserva el diálogo que se está cerrando.
+      if (wasOpen) nextTick(() => returnFocus(entry));
+    }
   }, { immediate: true });
   const dispose = () => {
     stop();
-    removeCloser(closer);
+    const wasOpen = stack.includes(entry);
+    removeEntry(entry);
+    if (wasOpen) nextTick(() => returnFocus(entry));
   };
   try {
     onUnmounted(dispose);

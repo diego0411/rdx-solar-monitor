@@ -17,7 +17,10 @@ function fakes({ drawer = false, overflow = '' } = {}) {
   };
   globalThis.document = {
     body: { style: { overflow } },
+    activeElement: null,
     querySelector: sel => (drawer && sel === '.app-shell.nav-open' ? {} : null),
+    querySelectorAll: () => [],
+    getElementById: () => null,
   };
   const keydown = event => { for (const fn of listeners.keydown ?? []) fn(event); };
   return {
@@ -127,8 +130,7 @@ test('con drawer abierto, Escape no cierra el modal', async () => {
   }
 });
 
-test('las 9 vistas registran sus modales con sus cierres propios', () => {
-  const pairs = {
+test('las 9 vistas registran sus modales con sus cierres propios', () => {  const pairs = {
     AlarmsView: [['showDetail', 'closeDetail']],
     MaintenanceView: [['showForm', 'closeForm']],
     MaintenanceDetailView: [['pendingTransition', 'closeTransitionConfirm'], ['showEditForm', 'closeEditForm'], ['showActivityForm', 'closeActivityForm'], ['confirmingDelete', 'closeDeleteConfirm']],
@@ -149,4 +151,177 @@ test('las 9 vistas registran sus modales con sus cierres propios', () => {
     }
   }
   assert.equal(total, 22);
+});
+
+// UX-03C2B: foco inicial y retorno. Diálogos y controles simulados.
+
+function fakeControl(name, { visible = true, disabled = false } = {}) {
+  return {
+    name, disabled, focused: 0, isConnected: true,
+    getClientRects: () => (visible ? [{}] : []),
+    focus() { this.focused += 1; globalThis.document.activeElement = this; },
+  };
+}
+
+function fakeDialog(controls = [], { visible = true } = {}) {
+  const dlg = {
+    focused: 0, isConnected: true, attrs: {},
+    hasAttribute(k) { return k in this.attrs; },
+    setAttribute(k, v) { this.attrs[k] = v; },
+    getClientRects: () => (visible ? [{}] : []),
+    querySelectorAll: () => controls,
+    focus() { this.focused += 1; globalThis.document.activeElement = this; },
+  };
+  return dlg;
+}
+
+function dialogFakes({ pairs = [], main = null } = {}) {
+  const h = fakes();
+  globalThis.document.querySelectorAll = sel => {
+    if (sel !== '.modal[role="dialog"]') return [];
+    return pairs
+      .filter(p => p.flag.value)
+      .map(p => p.dialog)
+      .filter(d => d.getClientRects().length > 0);
+  };
+  globalThis.document.getElementById = id => (id === 'main-content' ? main : null);
+  return h;
+}
+
+const twoTicks = async () => { await nextTick(); await nextTick(); };
+
+test('foco inicial al primer control visible tras abrir', async () => {
+  const trigger = fakeControl('trigger');
+  const cancel = fakeControl('cancel');
+  const input = fakeControl('input');
+  const dlg = fakeDialog([cancel, input]);
+  const open = ref(false);
+  const h = dialogFakes({ pairs: [{ flag: open, dialog: dlg }] });
+  try {
+    globalThis.document.activeElement = trigger;
+    useModalEscape(() => open.value, () => { open.value = false; });
+    open.value = true;
+    await twoTicks();
+    assert.equal(cancel.focused, 1);
+    assert.equal(input.focused, 0);
+  } finally {
+    h.restore();
+  }
+});
+
+test('sin controles: contenedor con tabindex -1', async () => {
+  const dlg = fakeDialog([]);
+  const open = ref(false);
+  const h = dialogFakes({ pairs: [{ flag: open, dialog: dlg }] });
+  try {
+    useModalEscape(() => open.value, () => { open.value = false; });
+    open.value = true;
+    await twoTicks();
+    assert.equal(dlg.focused, 1);
+    assert.equal(dlg.attrs.tabindex, '-1');
+  } finally {
+    h.restore();
+  }
+});
+
+test('al cerrar, el foco vuelve al disparador', async () => {
+  const trigger = fakeControl('trigger');
+  const control = fakeControl('control');
+  const dlg = fakeDialog([control]);
+  const open = ref(false);
+  const h = dialogFakes({ pairs: [{ flag: open, dialog: dlg }] });
+  try {
+    globalThis.document.activeElement = trigger;
+    useModalEscape(() => open.value, () => { open.value = false; });
+    open.value = true;
+    await twoTicks();
+    assert.equal(control.focused, 1);
+    open.value = false;
+    await twoTicks();
+    assert.equal(trigger.focused, 1);
+  } finally {
+    h.restore();
+  }
+});
+
+test('disparador eliminado: fallback seguro a main-content', async () => {
+  const trigger = fakeControl('trigger');
+  trigger.isConnected = false;
+  const main = fakeControl('main');
+  const dlg = fakeDialog([fakeControl('control')]);
+  const open = ref(false);
+  const h = dialogFakes({ pairs: [{ flag: open, dialog: dlg }], main });
+  try {
+    globalThis.document.activeElement = trigger;
+    useModalEscape(() => open.value, () => { open.value = false; });
+    open.value = true;
+    await twoTicks();
+    open.value = false;
+    await twoTicks();
+    assert.equal(trigger.focused, 0);
+    assert.equal(main.focused, 1);
+  } finally {
+    h.restore();
+  }
+});
+
+test('apilados: cerrar el superior enfoca el restante, nunca el fondo', async () => {
+  const triggerB = fakeControl('triggerB');
+  const controlA = fakeControl('controlA');
+  const controlB = fakeControl('controlB');
+  const dlgA = fakeDialog([controlA]);
+  const dlgB = fakeDialog([controlB]);
+  const main = fakeControl('main');
+  const a = ref(false), b = ref(false);
+  const h = dialogFakes({ pairs: [{ flag: a, dialog: dlgA }, { flag: b, dialog: dlgB }], main });
+  try {
+    useModalEscape(() => a.value, () => { a.value = false; });
+    globalThis.document.activeElement = triggerB;
+    useModalEscape(() => b.value, () => { b.value = false; });
+    a.value = true;
+    await twoTicks();
+    assert.equal(controlA.focused, 1);
+    b.value = true;
+    await twoTicks();
+    assert.equal(controlB.focused, 1);
+    b.value = false;
+    await twoTicks();
+    assert.equal(controlA.focused, 2);
+    assert.equal(triggerB.focused, 0);
+    assert.equal(main.focused, 0);
+  } finally {
+    h.restore();
+  }
+});
+
+test('cierre bloqueado por saving: sin robo de foco ni desregistro', async () => {
+  const trigger = fakeControl('trigger');
+  const control = fakeControl('control');
+  const dlg = fakeDialog([control]);
+  const open = ref(false);
+  const h = dialogFakes({ pairs: [{ flag: open, dialog: dlg }] });
+  try {
+    globalThis.document.activeElement = trigger;
+    let saving = true;
+    const closeCalls = [];
+    useModalEscape(() => open.value, () => {
+      closeCalls.push(1);
+      if (!saving) open.value = false;
+    });
+    open.value = true;
+    await twoTicks();
+    assert.equal(control.focused, 1);
+    h.keydown({ key: 'Escape' });
+    assert.equal(closeCalls.length, 1);
+    assert.equal(open.value, true);
+    assert.equal(trigger.focused, 0);
+    assert.equal(control.focused, 1);
+    saving = false;
+    h.keydown({ key: 'Escape' });
+    await twoTicks();
+    assert.equal(open.value, false);
+    assert.equal(trigger.focused, 1);
+  } finally {
+    h.restore();
+  }
 });
