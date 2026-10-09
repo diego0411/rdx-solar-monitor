@@ -1,15 +1,15 @@
 <script setup>
-import { ref, watch, onMounted, onBeforeUnmount } from 'vue';
+import { computed, ref, watch, onMounted, onBeforeUnmount } from 'vue';
 import * as echarts from 'echarts/core';
-import { BarChart } from 'echarts/charts';
-import { GridComponent, TooltipComponent, LegendComponent } from 'echarts/components';
+import { BarChart, LineChart } from 'echarts/charts';
+import { DataZoomComponent, GridComponent, TooltipComponent, LegendComponent } from 'echarts/components';
 import { CanvasRenderer } from 'echarts/renderers';
 import { apiFetch } from '../services/api.js';
-import { rdxColor, CHART_SERIES_COLORS } from '../utils/rdxTokens.js';
+import { rdxColor } from '../utils/rdxTokens.js';
 import { resolveChartTimeZone } from '../utils/chartTimezone.js';
 import { toVisualEnergyPoint } from '../utils/energyHistoryChart.js';
 
-echarts.use([BarChart, GridComponent, TooltipComponent, LegendComponent, CanvasRenderer]);
+echarts.use([BarChart, LineChart, DataZoomComponent, GridComponent, TooltipComponent, LegendComponent, CanvasRenderer]);
 const props = defineProps({ plantId: { type: String, required: true }, timezone: String });
 const emit = defineEmits(['history-loaded']);
 const selectedDate = defineModel('selectedDate', { type: String, required: true });
@@ -28,6 +28,12 @@ const seriesFields = [
   ['grid_import_kwh', 'Importación de red'],
   ['grid_export_kwh', 'Exportación de red'],
 ];
+const periodLabel = computed(() => periods.find(item => item.key === period.value)?.label ?? '');
+// Mismo comportamiento de UX-04B2: rueda normal para la página, Ctrl para zoom.
+// ECharts cancela wheel antes de comprobar zoomOnMouseWheel.
+function preservePageScroll(event) {
+  if (!event.ctrlKey) event.stopPropagation();
+}
 function dispose() {
   observer?.disconnect();
   chart?.dispose();
@@ -60,16 +66,56 @@ function render() {
     return new Intl.DateTimeFormat('es-BO', { day: '2-digit', month: 'short', timeZone: 'UTC' }).format(instant);
   };
   chart.setOption({
-    color: [rdxColor('--rdx-primary'), ...CHART_SERIES_COLORS],
-    tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' }, renderMode: 'richText', backgroundColor: rdxColor('--rdx-surface'), borderColor: rdxColor('--rdx-border'), textStyle: { color: rdxColor('--rdx-text'), fontSize: 12 }, valueFormatter: value => value == null ? 'Sin datos' : new Intl.NumberFormat('es-BO', { maximumFractionDigits: 2 }).format(value) + ' kWh' },
-    legend: { type: 'scroll', bottom: 0, icon: 'circle', textStyle: { color: rdxColor('--rdx-text-muted'), fontSize: 12 }, itemGap: 24 },
+    color: [rdxColor('--rdx-chart-green'), rdxColor('--rdx-chart-amber'), rdxColor('--rdx-chart-blue'), rdxColor('--rdx-chart-purple')],
+    tooltip: {
+      trigger: 'axis', axisPointer: { type: 'shadow' }, renderMode: 'richText', confine: true,
+      backgroundColor: rdxColor('--rdx-surface'), borderColor: rdxColor('--rdx-border'),
+      textStyle: { color: rdxColor('--rdx-text'), fontSize: 12 },
+      formatter: params => {
+        const item = Array.isArray(params) ? params[0] : params;
+        const point = points.value[item?.dataIndex];
+        if (!point) return '';
+        const number = new Intl.NumberFormat('es-BO', { maximumFractionDigits: 2 });
+        // Leer el punto original conserva los cuatro valores, incluidos nulos
+        // que ECharts puede omitir de los parámetros del tooltip mixto.
+        return [labelFormatter(point.interval_start), ...seriesFields.map(([key, name]) =>
+          `${name}: ${point[key] == null ? 'Sin datos' : number.format(point[key]) + ' kWh'}`,
+        )].join('\n');
+      },
+    },
+    legend: { type: 'plain', bottom: 0, left: 'center', data: seriesFields.map(([, name]) => name), textStyle: { color: rdxColor('--rdx-text'), fontSize: 12 }, itemWidth: 18, itemHeight: 8, itemGap: 20 },
     grid: { left: 58, right: 16, top: 24, bottom: 64 },
-    xAxis: { type: 'category', data: points.value.map(point => point.interval_start), axisLabel: { color: rdxColor('--rdx-text-muted'), hideOverlap: true, formatter: labelFormatter }, axisLine: { lineStyle: { color: rdxColor('--rdx-border') } }, axisTick: { show: false } },
-    yAxis: { type: 'value', name: 'Energía (kWh)', axisLabel: { color: rdxColor('--rdx-text-muted') }, splitLine: { lineStyle: { color: rdxColor('--rdx-border'), type: 'dashed' } } },
-    series: seriesFields.map(([key, name]) => ({
-      name, type: 'bar', barMaxWidth: 26, emphasis: { focus: 'series' },
+    dataZoom: [{
+      type: 'inside', xAxisIndex: [0], filterMode: 'none',
+      preventDefaultMouseMove: false,
+      zoomOnMouseWheel: 'ctrl', moveOnMouseWheel: false, moveOnMouseMove: false,
+    }],
+    xAxis: { type: 'category', data: points.value.map(point => point.interval_start), axisLabel: { color: rdxColor('--rdx-text-muted'), fontSize: 12, hideOverlap: true, formatter: labelFormatter }, axisLine: { show: false }, axisTick: { show: false } },
+    yAxis: { type: 'value', name: 'Energía (kWh)', nameTextStyle: { color: rdxColor('--rdx-text-muted'), fontSize: 12 }, axisLabel: { color: rdxColor('--rdx-text-muted'), fontSize: 12, hideOverlap: true }, axisLine: { show: false }, axisTick: { show: false }, splitLine: { lineStyle: { color: rdxColor('--rdx-border'), opacity: .6, type: 'dashed' } } },
+    // Las cuatro magnitudes son kWh por bucket, sobre el mismo eje y sin apilar.
+    // '0%' evita el mínimo de 1 px; ECharts interpreta el número 0 como ausente.
+    series: seriesFields.map(([key, name], index) => ({
+      name, emphasis: { focus: 'series' },
+      ...(index < 2
+        ? { type: 'bar', barMinWidth: '0%', barMaxWidth: 24, barGap: '20%', barCategoryGap: '35%' }
+        : { type: 'line', smooth: false, connectNulls: false, showSymbol: true, symbolSize: 4,
+          lineStyle: { width: 1.5, type: index === 2 ? 'dashed' : 'dotted' }, z: 3 }),
       data: points.value.map(point => point[key] ?? null),
     })),
+    media: [
+      { query: { maxWidth: 600 }, option: {
+        legend: { itemGap: 12, data: [seriesFields[0][1], seriesFields[1][1], '', seriesFields[2][1], seriesFields[3][1]] },
+        grid: { bottom: 88 },
+        xAxis: { axisLabel: { fontSize: 11 } },
+        yAxis: { axisLabel: { fontSize: 11 }, nameTextStyle: { fontSize: 11 } },
+      } },
+      { option: {
+        legend: { itemGap: 20, data: seriesFields.map(([, name]) => name) },
+        grid: { bottom: 64 },
+        xAxis: { axisLabel: { fontSize: 12 } },
+        yAxis: { axisLabel: { fontSize: 12 }, nameTextStyle: { fontSize: 12 } },
+      } },
+    ],
   }, { notMerge: true });
 }
 watch(() => [props.plantId, selectedDate.value, period.value], async ([id, day, selectedPeriod], previous, onCleanup) => {
@@ -140,7 +186,7 @@ onBeforeUnmount(dispose);
     <p v-else-if="error" role="alert">{{ error }}</p>
     <p v-else-if="!selectedDate">Selecciona una fecha.</p>
     <p v-else-if="!points.length" role="status">No hay datos de energía para la fecha seleccionada.</p>
-    <div v-else ref="container" class="energy-chart" role="img" aria-label="Curva diaria de generación, consumo, importación y exportación de red en kWh"></div>
+    <div v-else ref="container" class="energy-chart" role="img" @wheel.capture="preservePageScroll" :aria-label="`Histórico energético (${periodLabel}): generación, consumo, importación y exportación de red en kWh`"></div>
   </section>
 </template>
 
