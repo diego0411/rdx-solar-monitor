@@ -33,9 +33,12 @@ test('2: series y significado intactos; colores por token en cada render', () =>
 
 test('3: mapa usa tiles duales con atribuciones y conserva markers/popups', () => {
   assert.match(map, /tile\.openstreetmap\.org/);
-  assert.match(map, /basemaps\.cartocdn\.com\/dark_all/);
-  assert.match(map, /OpenStreetMap<\/a> contributors &copy; <a href="https:\/\/carto\.com\/attributions">CARTO<\/a>/);
-  assert.match(map, /if \(tileLayer\) map\.removeLayer\(tileLayer\)/);
+  assert.ok(!map.includes('cartocdn'), 'sin CARTO (requiere API key)');
+  assert.match(map, /World_Dark_Gray_Base\/MapServer\/tile\/\{z\}\/\{y\}\/\{x\}/);
+  assert.match(map, /World_Dark_Gray_Reference\/MapServer\/tile\/\{z\}\/\{y\}\/\{x\}/);
+  assert.match(map, /Tiles &copy; Esri &mdash; Esri, HERE, Garmin/);
+  assert.match(map, /for \(const layer of tileLayers\) map\.removeLayer\(layer\)/);
+  assert.match(map, /tileLayers = \[\];/);
   assert.match(map, /renderMarkers\(\{ fit: false \}\)/);
   assert.match(map, /addEventListener\('rdx:theme', refreshMapTheme\)/);
   assert.match(map, /removeEventListener\('rdx:theme', refreshMapTheme\)/);

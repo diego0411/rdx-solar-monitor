@@ -215,23 +215,31 @@ const legendItems = computed(() => [
   ...(filteredAllPlants.value.some(plant => ['unknown', 'inactive'].includes(plant.status)) ? [['unknown', 'Desconocido']] : []),
 ]);
 
-// UX-01C: tiles por tema (OSM en claro, CARTO dark en oscuro) con sus
-// atribuciones. Sin cambios de markers, popups, zoom ni encuadre.
+// UX-01C: tiles por tema. Claro: OSM. Oscuro: Esri gris oscuro (base +
+// referencia con etiquetas), servicio gratuito sin API key tras el cierre
+// de CARTO anónimo. Atribuciones preservadas en ambos temas.
 const MAP_TILES = {
   light: {
-    url: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-    options: {
-      maxZoom: 19,
-      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
-    },
+    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+    layers: [
+      {
+        url: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+        options: { maxZoom: 19 },
+      },
+    ],
   },
   dark: {
-    url: 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',
-    options: {
-      maxZoom: 20,
-      subdomains: 'abcd',
-      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>',
-    },
+    attribution: 'Tiles &copy; Esri &mdash; Esri, HERE, Garmin, (c) <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+    layers: [
+      {
+        url: 'https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}',
+        options: { maxZoom: 19 },
+      },
+      {
+        url: 'https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Reference/MapServer/tile/{z}/{y}/{x}',
+        options: { maxZoom: 19 },
+      },
+    ],
   },
 };
 
@@ -243,13 +251,15 @@ function mapTheme() {
   }
 }
 
-let tileLayer = null;
+let tileLayers = [];
 
 function applyTileLayer() {
   if (!map) return;
-  const tiles = MAP_TILES[mapTheme()];
-  if (tileLayer) map.removeLayer(tileLayer);
-  tileLayer = L.tileLayer(tiles.url, tiles.options).addTo(map);
+  const entry = MAP_TILES[mapTheme()];
+  for (const layer of tileLayers) map.removeLayer(layer);
+  tileLayers = entry.layers.map(({ url, options }) =>
+    L.tileLayer(url, { ...options, attribution: entry.attribution }).addTo(map),
+  );
 }
 
 // Al cambiar el tema: tiles apropiados + markers re-resueltos por token.
@@ -374,7 +384,7 @@ onUnmounted(() => {
   map?.remove();
   map = null;
   markerLayer = null;
-  tileLayer = null;
+  tileLayers = [];
 });
 </script>
 
