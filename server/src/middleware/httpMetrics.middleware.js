@@ -14,13 +14,27 @@
  * Overhead cuando está desactivada: una comparación de string.
  *
  * Sub-mediciones: requireAuth guarda res.locals.auth_ms y loadProfile
- * res.locals.profile_ms (reloj monotónico, también en error). Este
- * middleware las incorpora al log cuando están disponibles.
+ * res.locals.profile_ms (reloj monotónico, también en error). El
+ * controlador de energy-history guarda energy_read_ms (lectura inicial),
+ * energy_sync_ms (sync-on-read con el fabricante), energy_reread_ms
+ * (relectura posterior), energy_range_ms (rango semanal adicional),
+ * energy_aggregate_ms (agregación/transformación final) y la bandera
+ * energy_sync_occurred (solo cuando hubo sincronización). Este
+ * middleware las incorpora al log cuando están disponibles; las etapas
+ * no ejecutadas se omiten, sin valores ficticios.
  */
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const NUMERIC_PATTERN = /^\d+$/;
-const SUB_MEASUREMENTS = ['auth_ms', 'profile_ms'];
+const SUB_MEASUREMENTS = [
+  'auth_ms',
+  'profile_ms',
+  'energy_read_ms',
+  'energy_sync_ms',
+  'energy_reread_ms',
+  'energy_range_ms',
+  'energy_aggregate_ms',
+];
 
 export function metricsEnabled() {
   return process.env.HTTP_METRICS_ENABLED === 'true';
@@ -71,6 +85,12 @@ export function httpMetrics(req, res, next) {
       if (typeof value === 'number' && Number.isFinite(value) && value >= 0) {
         entry[key] = value;
       }
+    }
+    // Bandera de sync-on-read (energy-history): solo presente cuando el
+    // controlador ejecutó una sincronización con el fabricante. Sin IDs,
+    // URLs ni payloads: únicamente el hecho de que ocurrió.
+    if (res.locals?.energy_sync_occurred === true) {
+      entry.energy_sync_occurred = true;
     }
     const bytes = responseBytes(res);
     if (bytes !== undefined) entry.response_bytes = bytes;

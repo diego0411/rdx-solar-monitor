@@ -3,6 +3,7 @@ import { syncGrowattEnergyHistory, syncGrowattEnergyRollups } from '../services/
 import { listEnergyIntervals, listEnergyIntervalsRange } from '../repositories/energyIntervals.repository.js';
 import { getStoredPlantById } from '../repositories/plants.repository.js';
 import { plantInScope } from '../middleware/authorization.middleware.js';
+import { elapsedMs, metricsEnabled } from '../middleware/httpMetrics.middleware.js';
 import { localDateKey } from '../utils/timezone.js';
 import { aggregateHistory, energyTimeType, periodRange } from '../services/historyPeriods.js';
 
@@ -35,6 +36,17 @@ export function intradayEnergyBucket(row) {
   };
 }
 
+// Sub-medición opt-in de etapas internas (solo observa, sin alterar la
+// respuesta): cada etapa completada guarda su duración en ms en
+// res.locals y el middleware httpMetrics la incorpora al registro
+// http_metric. Las etapas no ejecutadas se omiten, sin valores
+// ficticios. Con métricas desactivadas no se marca nada.
+function recordEnergyStage(res, key, start) {
+  if (start === null) return;
+  if (res.locals === undefined || res.locals === null) res.locals = {};
+  res.locals[key] = elapsedMs(start);
+}
+
 export async function postHyxiSyncEnergyHistory(req, res) {
   if (!validQuery(req.query)) return res.status(400).json({ error: 'timeType o startTime inválidos' });
   try {
@@ -57,23 +69,41 @@ export async function getStoredEnergyHistory(req, res) {
   try {
     const expectedType = energyTimeType(period);
     const timeType = period ? expectedType : Number(req.query.timeType);
+    const measure = metricsEnabled();
+    const mark = () => (measure ? process.hrtime.bigint() : null);
+    const readStart = mark();
     let rows = await listEnergyIntervals(req.params.plantId, timeType, req.query.startTime);
+    recordEnergyStage(res, 'energy_read_ms', readStart);
     if (!hasEnergyValues(rows)) {
       const plant = await getStoredPlantById(req.params.plantId);
+      const syncStart = mark();
+      let synced = false;
       if (plant?.provider === 'hyxi' && plant.active && plant.external_plant_id) {
+        synced = true;
         await syncHyxiEnergyHistory(plant.external_plant_id, timeType, req.query.startTime);
       } else if (plant?.provider === 'growatt' && plant.active) {
+        synced = true;
         if (timeType === 1) await syncGrowattEnergyHistory(plant, req.query.startTime);
         else await syncGrowattEnergyRollups(plant, period, req.query.startTime);
       }
+      if (synced) {
+        recordEnergyStage(res, 'energy_sync_ms', syncStart);
+        if (res.locals === undefined || res.locals === null) res.locals = {};
+        res.locals.energy_sync_occurred = true;
+      }
+      const rereadStart = mark();
       rows = await listEnergyIntervals(req.params.plantId, timeType, req.query.startTime);
+      recordEnergyStage(res, 'energy_reread_ms', rereadStart);
     }
     if (!period) return res.json(rows);
     if (period === 'day') {
-      return res.json({
+      const aggregateStart = mark();
+      const payload = {
         period, start: req.query.startTime, end: periodRange('day', req.query.startTime).end,
         bucket: 'intraday', buckets: rows.map(intradayEnergyBucket),
-      });
+      };
+      recordEnergyStage(res, 'energy_aggregate_ms', aggregateStart);
+      return res.json(payload);
     }
     const range = periodRange(period, req.query.startTime);
     if (period === 'month' || period === 'year') {
@@ -83,16 +113,24 @@ export async function getStoredEnergyHistory(req, res) {
       // solo consume kWh y fechas, idénticos en ambas proyecciones, por
       // lo que se reutilizan y se evita la relectura. Week conserva su
       // lectura de rango (conjunto distinto: semana vs día).
-      return res.json(aggregateHistory(rows, {
+      const aggregateStart = mark();
+      const payload = aggregateHistory(rows, {
         period, selectedDate: req.query.startTime, kind: 'energy',
         localDate: row => localDateKey(row.interval_start, row.timezone),
-      }));
+      });
+      recordEnergyStage(res, 'energy_aggregate_ms', aggregateStart);
+      return res.json(payload);
     }
+    const rangeStart = mark();
     rows = await listEnergyIntervalsRange(req.params.plantId, timeType, range.start, range.end);
-    return res.json(aggregateHistory(rows, {
+    recordEnergyStage(res, 'energy_range_ms', rangeStart);
+    const aggregateStart = mark();
+    const payload = aggregateHistory(rows, {
       period, selectedDate: req.query.startTime, kind: 'energy',
       localDate: row => localDateKey(row.interval_start, row.timezone),
-    }));
+    });
+    recordEnergyStage(res, 'energy_aggregate_ms', aggregateStart);
+    return res.json(payload);
   } catch (error) {
     if (error?.frequentAccess) return res.status(503).json({ error: 'FREQUENTLY_ACCESS' });
     return res.status(503).json({ error: 'No se pudo consultar el histórico energético' });
