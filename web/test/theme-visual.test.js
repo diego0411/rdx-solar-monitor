@@ -86,6 +86,13 @@ test('8: foco visible en filtros de Dispositivos y filas seleccionables', () => 
   assert.match(css, /tbody tr\[tabindex\]:focus-visible \{\n  outline: 2px solid var\(--rdx-focus\);\n  outline-offset: -2px;\n\}/);
 });
 
+test('9: panel de detalle en Devices queda debajo de la topbar', () => {
+  const devices = readFileSync(new URL('../src/views/DevicesView.vue', import.meta.url), 'utf8');
+  assert.match(devices, /\.detail\{position:sticky;top:calc\(var\(--rdx-topbar-height, 46px\) \+ 24px\)\}/);
+  assert.ok(!devices.includes('.detail{position:sticky;top:18px}'), 'sin offset bajo la topbar');
+  assert.match(devices, /\.detail\{position:fixed;z-index:1200;left:14px;right:14px;bottom:14px;/);
+});
+
 test('5: textos sobre fondos de marca con contraste en ambos temas', () => {
   assert.match(css, /--rdx-on-primary: #ffffff;/);
   assert.match(css, /--rdx-on-accent: #ffffff;/);
