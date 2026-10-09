@@ -1,6 +1,7 @@
 <script setup>
 import { onMounted, onUnmounted, ref } from 'vue';
 import { getMyProfile } from '../services/api.js';
+import { useModalEscape } from '../composables/useModalStack.js';
 import {
   createClient,
   listClients,
@@ -95,6 +96,10 @@ const statusSaving = ref(false);
 const statusError = ref('');
 function askStatus(client) { confirming.value = client; statusError.value = ''; }
 function closeStatus() { if (!statusSaving.value) confirming.value = null; }
+
+// UX-03C2A: Escape cierra el modal superior; scroll del fondo bloqueado.
+useModalEscape(() => showForm.value, closeForm);
+useModalEscape(() => confirming.value, closeStatus);
 async function applyStatus() {
   if (!confirming.value || statusSaving.value) return;
   statusSaving.value = true; statusError.value = '';

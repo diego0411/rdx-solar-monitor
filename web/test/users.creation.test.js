@@ -18,7 +18,7 @@ const script = compileScript(descriptor, { id: 'users-test' }).content
   .replace('export default', 'return');
 const makeComponent = new Function('deps', `
   const { ref, computed, onMounted, onUnmounted, getMyProfile,
-    listUsers, createUser, updateUser, setUserStatus } = deps;
+    listUsers, createUser, updateUser, setUserStatus, useModalEscape } = deps;
   ${script}
 `);
 
@@ -27,6 +27,7 @@ function setup(overrides = {}) {
   let unmount;
   const component = makeComponent({
     ref, computed, onMounted() {}, onUnmounted(fn) { unmount = fn; },
+    useModalEscape: () => () => {},
     getMyProfile: async () => ({ profile: { role: 'rdx_admin' } }),
     listUsers: async () => [], setUserStatus: async () => {},
     createUser: async payload => {

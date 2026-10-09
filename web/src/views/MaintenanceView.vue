@@ -2,6 +2,7 @@
 import { computed, onMounted, onUnmounted, ref } from 'vue';
 import { apiFetch, getMyProfile } from '../services/api.js';
 import { getPlantsCatalog } from '../services/catalog.js';
+import { useModalEscape } from '../composables/useModalStack.js';
 import { createMaintenanceVisit, listMaintenanceVisits } from '../services/maintenance.js';
 
 const statusLabels = {
@@ -67,6 +68,9 @@ function closeForm() {
   showForm.value = false;
   formError.value = '';
 }
+
+// UX-03C2A: Escape cierra el modal superior; scroll del fondo bloqueado.
+useModalEscape(() => showForm.value, closeForm);
 
 function toApiDateTime(value) {
   if (!value) return null;

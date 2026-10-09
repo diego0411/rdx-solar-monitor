@@ -1,6 +1,7 @@
 <script setup>
 import { computed, onMounted, onUnmounted, ref } from 'vue';
 import { useRoute } from 'vue-router';
+import { useModalEscape } from '../composables/useModalStack.js';
 import { getMyProfile } from '../services/api.js';
 import { cancelRequest, deliverRequest, getRequest, listAvailableItems, prepareSerializedItem, releaseSerializedItem, setPreparedQuantity, transitionRequest } from '../services/operations.js';
 import { buildDeliveries, cancellableStatus, destinationDisplay, eventLabel, friendlyOperationsError, isPartialDelivery, isWarehouseRole, newIdempotencyKey, priorityLabel, reasonLabel, statusLabel, transitionActions } from '../utils/operations.js';
@@ -365,6 +366,12 @@ function closeDeliver() {
   deliverError.value = '';
   deliverKey.value = null;
 }
+
+// UX-03C2A: Escape cierra el modal superior; scroll del fondo bloqueado.
+useModalEscape(() => pendingTransition.value, closeTransitionConfirm);
+useModalEscape(() => showCancelConfirm.value, closeCancelConfirm);
+useModalEscape(() => serialPicker.value, closeSerialPicker);
+useModalEscape(() => showDeliverModal.value, closeDeliver);
 
 const deliverPreview = computed(() => {
   const { deliveries } = buildDeliveries(lines.value, deliverQuantities.value);

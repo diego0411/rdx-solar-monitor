@@ -13,6 +13,7 @@ const code = compileScript(descriptor, { id: 'inventory-view-test' }).content
 function setup({ role = 'rdx_admin', products = [], create = null, listError = null } = {}) {
   const deps = {
     ref, computed, watch, onMounted() {}, onUnmounted() {},
+    useModalEscape: () => () => {},
     categories: inventoryCategoryLabels,
     categoryLabel: inventoryCategoryLabel,
     getMyProfile: async () => ({ profile: { role } }),

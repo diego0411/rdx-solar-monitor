@@ -13,6 +13,7 @@ function setupClients(overrides = {}) {
   const calls = { create: [], update: [], status: [] };
   const deps = {
     ref, computed, onMounted() {}, onUnmounted() {},
+    useModalEscape: () => () => {},
     getMyProfile: async () => ({ profile: { role: 'rdx_admin' } }),
     listClients: async () => overrides.clients ?? [],
     createClient: async payload => { calls.create.push(payload); return { id: 'new', active: true, ...payload }; },
@@ -34,6 +35,7 @@ function setupUsers(overrides = {}) {
   const calls = { create: [], update: [] };
   const deps = {
     ref, computed, onMounted() {}, onUnmounted() {},
+    useModalEscape: () => () => {},
     getMyProfile: async () => ({ profile: { role: overrides.role ?? 'rdx_admin' } }),
     listUsers: async () => [],
     createUser: async payload => { calls.create.push(payload); return { id: 'new', ...payload }; },

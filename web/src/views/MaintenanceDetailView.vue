@@ -3,6 +3,7 @@ import { computed, onMounted, onUnmounted, ref } from 'vue';
 import { useRoute } from 'vue-router';
 import { getMyProfile } from '../services/api.js';
 import { getDevicesCatalog, getPlantsCatalog } from '../services/catalog.js';
+import { useModalEscape } from '../composables/useModalStack.js';
 import {
   createMaintenanceActivity,
   deleteMaintenanceActivity,
@@ -394,6 +395,12 @@ function closeDeleteConfirm() {
   if (deleteSaving.value) return;
   confirmingDelete.value = null;
 }
+
+// UX-03C2A: Escape cierra el modal superior; scroll del fondo bloqueado.
+useModalEscape(() => pendingTransition.value, closeTransitionConfirm);
+useModalEscape(() => showEditForm.value, closeEditForm);
+useModalEscape(() => showActivityForm.value, closeActivityForm);
+useModalEscape(() => confirmingDelete.value, closeDeleteConfirm);
 
 async function applyDeleteActivity() {
   const activity = confirmingDelete.value;

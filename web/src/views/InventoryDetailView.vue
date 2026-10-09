@@ -4,6 +4,7 @@ import { useRoute } from 'vue-router';
 import { apiFetch, getMyProfile } from '../services/api.js';
 import { getDevicesCatalog, getPlantsCatalog } from '../services/catalog.js';
 import { listClients } from '../services/clients.js';
+import { useModalEscape } from '../composables/useModalStack.js';
 import {
   createQuantityInventoryMovement,
   createSerializedInventoryItem,
@@ -318,6 +319,12 @@ const quantityForm = ref(emptyMovement());
 const quantityAvailablePlants = computed(() => plants.value);
 function openQuantity() { quantityForm.value = emptyMovement(); quantityError.value = ''; showQuantity.value = true; }
 function closeQuantity() { if (!quantitySaving.value) showQuantity.value = false; }
+
+// UX-03C2A: Escape cierra el modal superior; scroll del fondo bloqueado.
+useModalEscape(() => showEdit.value, closeEdit);
+useModalEscape(() => showNewItem.value, closeNewItem);
+useModalEscape(() => transitionItem.value, closeTransition);
+useModalEscape(() => showQuantity.value, closeQuantity);
 const quantityNeedsSource = computed(() => ['sell', 'write_off'].includes(quantityForm.value.movement_type));
 const quantityNeedsContext = computed(() => ['assign', 'install', 'return'].includes(quantityForm.value.movement_type)
   || quantityForm.value.movement_type === 'sell' && quantityForm.value.source_status === 'assigned'

@@ -16,6 +16,7 @@ function setup({
 } = {}) {
   const deps = {
     ref, computed, watch, nextTick, onMounted() {}, onUnmounted() {},
+    useModalEscape: () => () => {},
     SearchableSelect: {},
     useRouter: () => ({ push: async path => { if (pushed) pushed.paths.push(path); } }),
     getMyProfile: async () => ({ profile: { role } }),

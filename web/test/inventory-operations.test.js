@@ -35,6 +35,7 @@ function apiError(status, detail) {
 
 const deps = {
   ref, computed, watch, onMounted() {}, onUnmounted() {},
+  useModalEscape: () => () => {},
   categories: inventoryCategoryLabels,
   categoryLabel: inventoryCategoryLabel,
   getMyProfile: async () => ({ profile: { role: currentRole, module_permissions: currentPermissions } }),

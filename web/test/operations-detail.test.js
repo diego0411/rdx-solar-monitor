@@ -57,6 +57,7 @@ function setup({ role = 'client_admin', status = 'preparing', api = {} } = {}) {
   const data = fixture(status);
   const deps = {
     ref, computed, onMounted() {}, onUnmounted() {},
+    useModalEscape: () => () => {},
     useRoute: () => ({ params: { id: REQ } }),
     getMyProfile: async () => ({ profile: { role } }),
     getRequest: api.getRequest ?? (async () => structuredClone(data)),

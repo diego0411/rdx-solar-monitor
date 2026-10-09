@@ -36,6 +36,7 @@ function setup({
   const clientRequests = [];
   const deps = {
     ref, computed, onUnmounted() {},
+    useModalEscape: () => () => {},
     categories: inventoryCategoryLabels,
     categoryLabel: inventoryCategoryLabel,
     watch(sourceFn, callback) {

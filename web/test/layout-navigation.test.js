@@ -30,6 +30,7 @@ function setup({ routeName = 'dashboard', storage = null, role = 'rdx_admin' } =
     supabase: null,
     getMyProfile: async () => ({ profile: { role, display_name: 'Ana', module_permissions: [] } }),
     invalidatePlantsCatalog: () => {},
+    useModalEscape: () => () => {},
     useTheme: () => ({ preference: ref('light'), setThemePreference: () => true }),
     ThemeSwitch: 'ThemeSwitch',
   };

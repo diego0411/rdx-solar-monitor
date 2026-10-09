@@ -2,6 +2,7 @@
 import { computed, onMounted, onUnmounted, ref } from 'vue';
 import { getMyProfile } from '../services/api.js';
 import { listUsers, createUser, updateUser, setUserStatus } from '../services/users.js';
+import { useModalEscape } from '../composables/useModalStack.js';
 
 const roleNames = { client_admin: 'Administrador', client_user: 'Usuario' };
 // Módulos con UI funcional. Reportes queda reservado hasta que exista el módulo.
@@ -179,6 +180,10 @@ function closeConfirm() {
   if (statusSaving.value) return;
   confirming.value = null;
 }
+
+// UX-03C2A: Escape cierra el modal superior; scroll del fondo bloqueado.
+useModalEscape(() => showForm.value, closeForm);
+useModalEscape(() => confirming.value, closeConfirm);
 
 async function applyStatus() {
   const user = confirming.value;

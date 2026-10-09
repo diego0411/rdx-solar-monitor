@@ -14,6 +14,7 @@ const iso = offset => new Date(Date.now() + offset).toISOString();
 function setup({ role = 'client_admin', permissions = ['maintenance'], visits = [], plants = [], create = null } = {}) {
   const deps = {
     ref, computed, onMounted() {}, onUnmounted() {},
+    useModalEscape: () => () => {},
     getMyProfile: async () => ({ profile: { role, module_permissions: permissions } }),
     apiFetch: async () => plants,
     getPlantsCatalog: async () => plants.map(plant => ({ id: plant.id, name: plant.name ?? plant.id })),
@@ -231,6 +232,7 @@ test('listado vacío y error de carga', async () => {
   assert.equal(empty.error.value, '');
 
   const deps = { ref, computed, onMounted() {}, onUnmounted() {},
+    useModalEscape: () => () => {},
     getMyProfile: async () => ({ profile: { role: 'client_admin' } }),
     apiFetch: async () => [],
     getPlantsCatalog: async () => [],

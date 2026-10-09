@@ -1,6 +1,7 @@
 <script setup>
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
 import { getMyProfile } from '../services/api.js';
+import { useModalEscape } from '../composables/useModalStack.js';
 import { createInventoryProduct, listInventoryProducts } from '../services/inventory.js';
 import {
   cancelOperation,
@@ -438,6 +439,11 @@ function closeOpDetail() {
   showOpDetail.value = false;
   selectedOp.value = null;
 }
+
+// UX-03C2A: Escape cierra el modal superior; scroll del fondo bloqueado.
+useModalEscape(() => showCreate.value, closeCreate);
+useModalEscape(() => showOpCreate.value, closeOpCreate);
+useModalEscape(() => showOpDetail.value, closeOpDetail);
 
 function askOpAction(kind) {
   pendingAction.value = kind;

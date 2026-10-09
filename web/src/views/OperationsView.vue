@@ -2,6 +2,7 @@
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue';
 import { useRouter } from 'vue-router';
 import SearchableSelect from '../components/SearchableSelect.vue';
+import { useModalEscape } from '../composables/useModalStack.js';
 import { apiFetch, getMyProfile } from '../services/api.js';
 import { getPlantsCatalog } from '../services/catalog.js';
 import { createRequest, listClients, listProducts, listRequests } from '../services/operations.js';
@@ -203,6 +204,9 @@ function closeForm() {
   showForm.value = false;
   formError.value = '';
 }
+
+// UX-03C2A: Escape cierra el modal superior; scroll del fondo bloqueado.
+useModalEscape(() => showForm.value, closeForm);
 
 function removeLine(index) {
   form.value.lines.splice(index, 1);

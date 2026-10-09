@@ -2,6 +2,7 @@
 import { computed, onMounted, onUnmounted, ref } from 'vue';
 import { getAlarm, getAlarmSummary, listAlarms } from '../services/alarms.js';
 import { getPlantsCatalog } from '../services/catalog.js';
+import { useModalEscape } from '../composables/useModalStack.js';
 
 const PAGE_SIZE = 10;
 
@@ -223,6 +224,9 @@ function closeDetail() {
   detail.value = null;
   detailError.value = '';
 }
+
+// UX-03C2A: Escape cierra el modal superior; scroll del fondo bloqueado.
+useModalEscape(() => showDetail.value, closeDetail);
 
 function toggleTechnical() {
   technicalOpen.value = !technicalOpen.value;

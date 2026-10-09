@@ -11,6 +11,7 @@ const code = compileScript(descriptor, { id: 'maintenance-detail-test' }).conten
 function setup({ role = 'client_admin', permissions = ['maintenance'], visit = null, visitError = null, plants = [], devices = [], activityApi = {}, updateVisit = null, updateStatus = null } = {}) {
   const deps = {
     ref, computed, onMounted() {}, onUnmounted() {},
+    useModalEscape: () => () => {},
     useRoute: () => ({ params: { id: 'v1' } }),
     getMyProfile: async () => ({ profile: { role, module_permissions: permissions } }),
     apiFetch: async path => (String(path).startsWith('/devices') ? devices : plants),

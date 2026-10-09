@@ -29,6 +29,7 @@ function setup({ alarms = [alarm()], summary = null, plants = [], detail = null,
   const total = alarms.length;
   const deps = {
     ref, computed, onMounted() {}, onUnmounted() {},
+    useModalEscape: () => () => {},
     apiFetch: async () => plants,
     getPlantsCatalog: async () => plants.map(plant => ({ id: plant.id, name: plant.name ?? plant.id })),
     listAlarms: async params => {
