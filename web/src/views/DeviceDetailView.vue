@@ -520,7 +520,8 @@ dd {
 }
 
 .no-power {
-  color: var(--rdx-text-faint);
+  /* UX-05E1 C7: texto informativo (13px); faint en claro: 3.14:1. Usa muted (5.51:1). */
+  color: var(--rdx-text-muted);
   font-size: 13px;
   font-style: italic;
 }

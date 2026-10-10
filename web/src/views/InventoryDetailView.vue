@@ -458,6 +458,8 @@ td { padding: 13px 12px; border-top: 1px solid var(--rdx-border); color: var(--r
 .strong { color: var(--rdx-text-strong); font-weight: 650; }
 .row-actions { display: flex; flex-wrap: wrap; gap: 2px; min-width: 160px; }
 .link-button { padding: 4px 6px; border: 0; background: transparent; color: var(--rdx-primary); font: inherit; font-size: 11px; font-weight: 700; cursor: pointer; }
+/* UX-05E1 C3: primary sobre superficie en oscuro: 3.32:1. El botón usa accent (9.13:1). */
+[data-theme='dark'] .link-button { color: var(--rdx-accent); }
 .empty-state, .page-state { padding: 32px 20px; color: var(--rdx-text-muted); text-align: center; }
 .error-state, .form-error { color: var(--rdx-danger); }
 .modal-backdrop { position: fixed; inset: 0; z-index: 50; display: grid; place-items: center; padding: 20px; background: rgb(0 0 0 / .45); }

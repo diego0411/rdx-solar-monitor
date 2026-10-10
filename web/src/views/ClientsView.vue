@@ -164,6 +164,8 @@ td { padding: 14px 15px; border-top: 1px solid var(--rdx-border); color: var(--r
 .badge.inactive { background: var(--rdx-warning-soft); color: var(--rdx-warning); }
 .actions { display: flex; flex-wrap: wrap; gap: 4px; min-width: 150px; }
 .link-button { border: 0; background: none; color: var(--rdx-primary); font: inherit; font-size: 12px; font-weight: 700; cursor: pointer; }
+/* UX-05E1 C3: primary sobre superficie en oscuro: 3.32:1. El botón usa accent (9.13:1). */
+[data-theme='dark'] .link-button { color: var(--rdx-accent); }
 .page-state { padding: 35px 20px; text-align: center; color: var(--rdx-text-muted); }
 .error-state, .form-error { color: var(--rdx-danger); }
 .modal-backdrop { position: fixed; inset: 0; z-index: 50; display: grid; place-items: center; padding: 20px; background: rgb(0 0 0 / .45); }

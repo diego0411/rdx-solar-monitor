@@ -584,6 +584,8 @@ onUnmounted(() => controller.abort());
 .telemetry-no_data { color: var(--rdx-text-muted) !important; }
 .detail-link { display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-width: 118px; min-height: 38px; margin-left: 12px; padding: 7px 13px; border-radius: var(--rdx-radius-sm); background: var(--rdx-primary-soft); color: var(--rdx-primary); font-size: 12px; font-weight: 700; white-space: nowrap; transition: background-color var(--rdx-transition), color var(--rdx-transition); }
 .detail-link:hover { background: var(--rdx-primary); color: var(--rdx-on-primary); }
+/* UX-05E1 C2: primary sobre primary-soft en oscuro: 2.71:1. El enlace usa accent (7.45:1); el hover ya es blanco sobre primary (4.98:1). */
+[data-theme='dark'] .detail-link { color: var(--rdx-accent); }
 .pagination { margin-top: 20px; }
 @media (max-width: 1199px) {
   .summary-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }

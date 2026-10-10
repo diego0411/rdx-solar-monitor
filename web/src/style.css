@@ -12,11 +12,11 @@
   --rdx-text-faint: #89948e;
   --rdx-focus: #529b79;
   --rdx-accent: #496c5a;
-  --rdx-primary-text: #174d3c;  --rdx-success: #2b8a53;
+  --rdx-primary-text: #174d3c;  --rdx-success: #20693d;
   --rdx-success-soft: #e5f2e9;
-  --rdx-warning: #b57417;
+  --rdx-warning: #8a5a0b;
   --rdx-warning-soft: #fff0d8;
-  --rdx-danger: #c25238;
+  --rdx-danger: #a63a2c;
   --rdx-danger-soft: #fbe8e4;
   --rdx-neutral: #8a9991;
   --rdx-neutral-soft: #edf0ef;
@@ -53,8 +53,8 @@
   --rdx-chart-purple: #9070ac;
   --rdx-status-amber: #f2a20b;
   --rdx-status-red: #df3f3f;
-  --rdx-provider-hyxi: #148ac1;
-  --rdx-provider-growatt: #62a818;
+  --rdx-provider-hyxi: #0e6f9e;
+  --rdx-provider-growatt: #4a760e;
   --rdx-metric-icon: #098a51;
   --rdx-device-icon-bg: #edf6f2;
   --rdx-device-offline-bg: #fff0ee;
@@ -76,7 +76,7 @@
   --rdx-devices-row-online-dot: #1b976c;
   --rdx-devices-row-offline: #b84f45;
   --rdx-devices-row-offline-dot: #df5b4f;
-  --rdx-devices-row-alarm: #b97508;
+  --rdx-devices-row-alarm: #7d5207;
   --rdx-devices-row-alarm-dot: #ee9d19;
   --rdx-devices-error-text: #a7443b;
   --rdx-devices-error-border: #f0c4bf;
@@ -179,6 +179,18 @@
    superficie no alcanza AA, los enlaces y botones fantasma usan el acento. */
 [data-theme='dark'] a,
 [data-theme='dark'] .ghost-button {
+  color: var(--rdx-accent);
+}
+
+/* UX-05E1 C1: .logout-error usaba danger-soft (#2f1a14) sobre el sidebar
+   (#0b120e): 1.16:1. En oscuro el texto de error usa danger (6.43:1). */
+/* UX-05E1 C9: .page-btn:hover pasaba el texto a primary (#2e7d5f) sobre
+   superficie (#16211c): 3.32:1. En oscuro el hover usa accent (9.13:1). */
+[data-theme='dark'] .logout-error {
+  color: var(--rdx-danger);
+}
+
+[data-theme='dark'] .page-btn:not(:disabled):hover {
   color: var(--rdx-accent);
 }
 

@@ -158,8 +158,11 @@ const statusLabels = { fresh: 'Actual', stale: 'Atrasada', no_data: 'Sin datos' 
 .link-imp.active, .link-exp.active { color: var(--rdx-accent); }
 .link-ld.active { color: var(--rdx-warning); }
 .link-chg.active, .link-dch.active { color: var(--rdx-success); }
-.flow-link.zero { color: var(--rdx-text-faint); opacity: .6; }
-.flow-link.link-neutral { color: var(--rdx-text-faint); }
+/* UX-05E1 C7: faint (#89948e, 2.92:1 sobre fondo) solo para decoración.
+   Los valores de flujo son informativos y usan muted (5.12:1). Sin opacidad
+   atenuada en .zero para conservar el contraste del texto. */
+.flow-link.zero { color: var(--rdx-text-muted); }
+.flow-link.link-neutral { color: var(--rdx-text-muted); }
 .link-neutral .ln::after { display: none; }
 
 .link-exp .ln::after, .link-chg .ln::after { right: -1px; left: auto; top: -3px; bottom: auto; transform: rotate(45deg); }
