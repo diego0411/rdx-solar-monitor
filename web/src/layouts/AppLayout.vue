@@ -110,6 +110,57 @@ function onGlobalKeydown(event) {
   if (event?.key === 'Escape' && mobileNavOpen.value) closeMobileNav();
 }
 
+// UX-05C D4: contención local del foco en el drawer móvil. Solo actúa con
+// el drawer abierto; no registra listeners globales y no interfiere con
+// useModalStack (el drawer nunca entra en su pila; Escape ya cede al drawer).
+const DRAWER_FOCUSABLE = 'button:not([disabled]), [href], input:not([disabled]):not([type="hidden"]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
+
+function drawerControls() {
+  try {
+    if (!sidebarRef.value || typeof sidebarRef.value.querySelectorAll !== 'function') return [];
+    return [...sidebarRef.value.querySelectorAll(DRAWER_FOCUSABLE)]
+      .filter(el => typeof el.getClientRects === 'function' && el.getClientRects().length > 0);
+  } catch {
+    return [];
+  }
+}
+
+function readDrawerActiveElement() {
+  try {
+    if (typeof document === 'undefined') return null;
+    return document.activeElement ?? null;
+  } catch {
+    return null;
+  }
+}
+
+function onDrawerKeydown(event) {
+  if (!isMobile.value || !mobileNavOpen.value) return;
+  if (!event || event.key !== 'Tab') return;
+  const controls = drawerControls();
+  if (!controls.length) {
+    if (typeof event.preventDefault === 'function') event.preventDefault();
+    return;
+  }
+  const first = controls[0];
+  const last = controls[controls.length - 1];
+  const active = readDrawerActiveElement();
+  let redirect = null;
+  if (active === first && event.shiftKey) redirect = last;
+  else if (active === last && !event.shiftKey) redirect = first;
+  else if (typeof sidebarRef.value?.contains === 'function' ? !sidebarRef.value.contains(active) : active !== sidebarRef.value) {
+    redirect = event.shiftKey ? last : first;
+  }
+  if (redirect) {
+    try {
+      redirect.focus();
+    } catch {
+      // Foco no disponible: se conserva el actual.
+    }
+    if (typeof event.preventDefault === 'function') event.preventDefault();
+  }
+}
+
 function syncMobile(event) {
   const matches = typeof event?.matches === 'boolean'
     ? event.matches
@@ -253,7 +304,7 @@ async function logout() {
 <template>
   <div class="app-shell" :class="{ 'sidebar-collapsed': sidebarCollapsed, 'nav-open': mobileNavOpen }">
     <a class="skip-link" href="#main-content">Saltar al contenido</a>
-    <aside ref="sidebarRef" class="sidebar" id="primary-sidebar" tabindex="-1" :class="{ collapsed: sidebarCollapsed }">
+    <aside ref="sidebarRef" class="sidebar" id="primary-sidebar" tabindex="-1" :class="{ collapsed: sidebarCollapsed }" :role="isMobile ? 'dialog' : undefined" :aria-modal="isMobile ? 'true' : undefined" :aria-label="isMobile ? 'Menú de navegación' : undefined" @keydown="onDrawerKeydown">
       <button type="button" class="drawer-close" aria-label="Cerrar menú de navegación" aria-controls="primary-sidebar" @click="closeMobileNav()">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18" /></svg>
       </button>
@@ -349,7 +400,7 @@ async function logout() {
           <nav v-if="breadcrumb.section" class="breadcrumb" aria-label="Ubicación actual">
             <span class="crumb-section">{{ breadcrumb.section }}</span>
             <span class="crumb-separator" aria-hidden="true">›</span>
-            <span class="crumb-page">{{ breadcrumb.label }}</span>
+            <span class="crumb-page" :title="breadcrumb.label">{{ breadcrumb.label }}</span>
           </nav>
         </div>
         <div class="topbar-right">
@@ -440,6 +491,7 @@ async function logout() {
 .crumb-page {
   color: var(--rdx-text-strong);
   font-weight: 700;
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
 }
@@ -619,8 +671,14 @@ async function logout() {
     stroke-linecap: round;
   }
 
-  .nav-group {
-    display: contents;
+  /* UX-05C D6: el drawer usa una sola columna; la retícula de dos columnas
+     de la navegación de escritorio estrecha queda anulada aquí. */
+  .app-shell .sidebar nav {
+    grid-template-columns: 1fr;
+  }
+
+  .app-shell .sidebar .sidebar-account {
+    grid-template-columns: 1fr;
   }
 }
 </style>
