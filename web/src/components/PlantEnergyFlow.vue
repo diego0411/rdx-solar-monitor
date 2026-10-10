@@ -117,6 +117,8 @@ const statusLabels = { fresh: 'Actual', stale: 'Atrasada', no_data: 'Sin datos' 
 .energy-flow { margin: 20px 0 24px; padding: 20px; border: 1px solid var(--rdx-border); border-radius: var(--rdx-radius-lg); background: var(--rdx-background); }
 .flow-header { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 18px; }
 .flow-header h3 { margin: 0; color: var(--rdx-primary); font-size: 16px; }
+/* UX-05E3: primary sobre background en oscuro: 3.71:1. El título usa accent (10.20:1). */
+[data-theme='dark'] .flow-header h3 { color: var(--rdx-accent); }
 .flow-status { display: inline-flex; align-items: center; gap: 7px; color: var(--rdx-text-muted); font-size: 12px; }
 .flow-status i { width: 7px; height: 7px; border-radius: 50%; background: var(--rdx-success); }
 .flow-stale .flow-status i { background: var(--rdx-warning); }

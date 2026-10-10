@@ -13,6 +13,7 @@ const clients = readFileSync(new URL('../src/views/ClientsView.vue', import.meta
 const inventoryDetail = readFileSync(new URL('../src/views/InventoryDetailView.vue', import.meta.url), 'utf8');
 const flow = readFileSync(new URL('../src/components/PlantEnergyFlow.vue', import.meta.url), 'utf8');
 const deviceDetail = readFileSync(new URL('../src/views/DeviceDetailView.vue', import.meta.url), 'utf8');
+const dashboard = readFileSync(new URL('../src/views/DashboardView.vue', import.meta.url), 'utf8');
 
 // Antes (auditoría UX-05E) → después (UX-05E1). Solo tokens claros de
 // semáforo/proveedor/alarma + overrides oscuros acotados.
@@ -110,4 +111,16 @@ test('7: sin cambios fuera de C1–C9 — faint, charts, estados y oscuro intact
     ['--rdx-devices-row-alarm', '#e5a94c'],
   ]) assert.equal(dark.get(name), hex, `${name} oscuro intacto`);
   assert.equal(dark.get('--rdx-on-primary'), '#ffffff', 'on-primary oscuro intacto');
+});
+
+test('8: flow-h3 oscuro — título sobre background ≥4.5:1 (antes 3.71:1)', () => {
+  atLeast(dark.get('--rdx-accent'), dark.get('--rdx-background'), 4.5, 'accent/background');
+  assert.match(flow, /\[data-theme='dark'\] \.flow-header h3 \{ color: var\(--rdx-accent\); \}/);
+  assert.match(flow, /\.flow-header h3 \{ margin: 0; color: var\(--rdx-primary\); font-size: 16px; \}/);
+});
+
+test('9: provider-logo oscuro — distintivo sobre background ≥4.5:1 (antes 3.71:1)', () => {
+  atLeast(dark.get('--rdx-accent'), dark.get('--rdx-background'), 4.5, 'accent/background');
+  assert.match(dashboard, /\[data-theme='dark'\] \.provider-logo \{ color: var\(--rdx-accent\); \}/);
+  assert.match(dashboard, /\.provider-logo \{ display: grid; place-items: center; width: 48px; height: 48px; flex: 0 0 48px; border-radius: 50%; background: var\(--rdx-background\); font-size: 12px; font-weight: 600; color: var\(--rdx-primary\); \}/);
 });

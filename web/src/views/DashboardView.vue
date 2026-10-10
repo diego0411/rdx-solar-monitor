@@ -1264,6 +1264,8 @@ onUnmounted(() => {
 .top-plant:last-child { border: 0; }
 .top-rank { font-size: 12px; color: var(--rdx-text-muted); text-align: center; }
 .provider-logo { display: grid; place-items: center; width: 48px; height: 48px; flex: 0 0 48px; border-radius: 50%; background: var(--rdx-background); font-size: 12px; font-weight: 600; color: var(--rdx-primary); }
+/* UX-05E3: primary sobre background en oscuro: 3.71:1. El distintivo usa accent (10.20:1). */
+[data-theme='dark'] .provider-logo { color: var(--rdx-accent); }
 .top-plant .provider-logo { width: 38px; height: 26px; border-radius: 5px; font-size: 12px; }
 .top-plant-info { min-width: 0; }
 .top-plant-info strong { display: block; font-size: 14px; font-weight: 500; color: var(--rdx-text-strong); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
