@@ -1,6 +1,7 @@
 <script setup>
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
 import { apiFetch } from '../services/api.js';
+import { useModalEscape } from '../composables/useModalStack.js';
 import { deviceInCategory, deviceTypeCategoryLabel, deviceTypeLabel, visibleDeviceTypeCategories } from '../utils/deviceDisplay.js';
 
 const PAGE_SIZE = 8;
@@ -16,6 +17,16 @@ const deviceType = ref('');
 const status = ref('');
 const page = ref(1);
 let controller;
+
+// UX-05B: a ≤900px el detalle es un diálogo inferior (sheet). El breakpoint
+// se detecta por matchMedia; en desktop el aside conserva su conducta intacta.
+const NARROW_QUERY = '(max-width: 900px)';
+const isNarrow = ref(false);
+let narrowQuery = null;
+function onNarrowChange(event) { isNarrow.value = event.matches; }
+const sheetActive = computed(() => selected.value !== null && isNarrow.value);
+function closeDetail() { selected.value = null; }
+useModalEscape(sheetActive, closeDetail);
 
 const providerNames = { hyxi: 'HYXi', growatt: 'Growatt' };
 const statuses = { online: 'En línea', offline: 'Sin conexión', alarm: 'Con alarma', inactive: 'Inactivo', unknown: 'Desconocido', standby: 'En espera' };
@@ -115,8 +126,31 @@ async function loadDevices() {
 
 watch([search, plant, provider, deviceType, status], () => { page.value = 1; });
 watch(totalPages, value => { if (page.value > value) page.value = value; });
-onMounted(loadDevices);
-onUnmounted(() => controller?.abort());
+onMounted(() => {
+  loadDevices();
+  try {
+    if (typeof window !== 'undefined' && typeof window.matchMedia === 'function') {
+      narrowQuery = window.matchMedia(NARROW_QUERY);
+      isNarrow.value = narrowQuery.matches;
+      if (typeof narrowQuery.addEventListener === 'function') narrowQuery.addEventListener('change', onNarrowChange);
+      else if (typeof narrowQuery.addListener === 'function') narrowQuery.addListener(onNarrowChange);
+    }
+  } catch {
+    // Sin matchMedia: el detalle conserva el comportamiento desktop.
+  }
+});
+onUnmounted(() => {
+  controller?.abort();
+  try {
+    if (narrowQuery) {
+      if (typeof narrowQuery.removeEventListener === 'function') narrowQuery.removeEventListener('change', onNarrowChange);
+      else if (typeof narrowQuery.removeListener === 'function') narrowQuery.removeListener(onNarrowChange);
+    }
+  } catch {
+    // Limpieza no disponible.
+  }
+  narrowQuery = null;
+});
 </script>
 
 <template>
@@ -167,8 +201,9 @@ onUnmounted(() => controller?.abort());
           <nav v-if="filtered.length" class="pagination" aria-label="Paginación"><span>{{ pageRange }}</span><div><button :disabled="page <= 1" @click="goToPage(page - 1)">‹</button><b>{{ page }}</b><button :disabled="page >= totalPages" @click="goToPage(page + 1)">›</button></div></nav>
         </section>
 
-        <aside v-if="selected" class="detail">
-          <header><div><span>Detalle del dispositivo</span><h2>{{ deviceTitle(selected) }}</h2></div><button aria-label="Cerrar detalle" @click="selected = null">×</button></header>
+        <div v-if="sheetActive" class="detail-backdrop" @click="closeDetail"></div>
+        <aside v-if="selected" class="detail" :class="{ modal: isNarrow }" :role="isNarrow ? 'dialog' : undefined" :aria-modal="isNarrow ? 'true' : undefined" :aria-label="isNarrow ? 'Detalle del dispositivo' : undefined">
+          <header><div><span>Detalle del dispositivo</span><h2>{{ deviceTitle(selected) }}</h2></div><button aria-label="Cerrar detalle" @click="closeDetail">×</button></header>
           <div class="detail-hero"><i class="device-picture">▤</i><span class="status" :class="`state-${selected.status ?? 'unknown'}`"><i />{{ statuses[selected.status] ?? statuses.unknown }}</span></div>
           <dl><div><dt>Número de serie</dt><dd>{{ selected.serial_number ?? '—' }}</dd></div><div><dt>Planta</dt><dd>{{ selected.plant_name ?? '—' }}</dd></div><div><dt>Proveedor</dt><dd>{{ providerNames[selected.provider] ?? selected.provider ?? '—' }}</dd></div><div><dt>Modelo</dt><dd>{{ selected.model ?? '—' }}</dd></div><div><dt>Tipo</dt><dd>{{ typeLabel(selected.device_type) }}</dd></div></dl>
           <section class="telemetry"><h3>Telemetría</h3><p><span>Potencia actual</span><strong>{{ power(currentPower(selected)) }}</strong></p><p><span>Última lectura</span><strong>{{ fullDate(selected.collected_at) }}</strong></p></section>
@@ -182,7 +217,7 @@ onUnmounted(() => controller?.abort());
 <style scoped>
 .devices-header,.header-actions,.summary-grid article,.content,.device,.status,.pagination,.pagination div,.detail header,.detail-hero{display:flex}.devices-header{justify-content:space-between;gap:24px;margin-bottom:22px}.devices-header h1{margin:0;font-size:34px;letter-spacing:-.04em}.devices-header p{margin:7px 0 0;color:var(--rdx-text-muted);font-size:14px}.header-actions{align-items:center;gap:18px}.header-actions p{display:grid;text-align:right}.header-actions span{font-size:10px}.header-actions strong{font-size:12px}.header-actions button{height:40px;padding:0 16px;border:1px solid var(--rdx-border);border-radius:8px;background:var(--rdx-surface);color:var(--rdx-accent);font-weight:700;cursor:pointer}.summary-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px;margin-bottom:18px}.summary-grid article,.filters,.table-card,.detail{border:1px solid var(--rdx-border);border-radius:11px;background:var(--rdx-surface);box-shadow:0 7px 24px rgba(26,55,47,.055)}.summary-grid article{align-items:center;gap:14px;min-height:105px;padding:18px}.summary-grid p{margin:0;color:var(--rdx-text-muted);font-size:12px}.summary-grid strong{display:block;font-size:27px}.summary-grid small{color:var(--rdx-text-muted);font-size:10px}.icon,.device-picture{display:grid;place-items:center;width:43px;height:43px;border-radius:50%;background:var(--rdx-device-icon-bg);color:var(--rdx-accent);font-style:normal}.icon.offline{background:var(--rdx-device-offline-bg);color:var(--rdx-device-offline)}.icon.alarm{background:var(--rdx-device-alarm-bg);color:var(--rdx-device-alarm)}.filters{display:grid;grid-template-columns:minmax(230px,2fr) repeat(4,minmax(120px,1fr));gap:12px;align-items:end;padding:16px;margin-bottom:18px}.filters label{display:grid;gap:6px;color:var(--rdx-text-muted);font-size:10px;font-weight:700}.filters input,.filters select{width:100%;height:39px;min-width:0;padding:0 11px;border:1px solid var(--rdx-border);border-radius:7px;background:var(--rdx-surface);color:var(--rdx-text-strong)}.filters input:focus-visible,.filters select:focus-visible{outline:2px solid var(--rdx-focus);border-color:var(--rdx-accent)}.content{display:grid;grid-template-columns:minmax(0,1fr);gap:18px;align-items:start}.content.detailed{grid-template-columns:minmax(0,1fr) 300px}.table-card,.detail{overflow:hidden}.table-card>header{padding:17px 19px;border-bottom:1px solid var(--rdx-border)}.table-card h2{margin:0;font-size:15px}.table-card header p{margin:4px 0 0;color:var(--rdx-text-muted);font-size:10px}.table-scroll{max-width:100%;overflow-x:auto}table{width:100%;min-width:850px;border-collapse:collapse}th{padding:11px 12px;background:var(--rdx-devices-table-head-bg);color:var(--rdx-text-muted);font-size:10px;text-align:left;text-transform:uppercase;white-space:nowrap}td{padding:12px;border-top:1px solid var(--rdx-devices-row-border);font-size:10px}tbody tr{cursor:pointer}tbody tr:hover,tbody tr:focus:not(:focus-visible),tbody tr.selected{outline:0;background:var(--rdx-devices-row-selected-bg)}.device{align-items:center;gap:9px;min-width:175px}.device>i{display:grid;place-items:center;width:33px;height:33px;border-radius:7px;background:var(--rdx-device-icon-bg);color:var(--rdx-accent);font-style:normal}.device span{display:grid;gap:3px}.device strong{max-width:170px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:11px}.device small,.date{display:block;color:var(--rdx-text-muted);font-size:10px;line-height:1.4}.provider{padding:4px 7px;border-radius:4px;background:var(--rdx-devices-pill-bg);color:var(--rdx-devices-pill-text);font-size:10px;text-transform:uppercase}.status{align-items:center;gap:6px;white-space:nowrap;font-size:10px;font-weight:700;color:var(--rdx-text-muted)}.status i{width:7px;height:7px;border-radius:50%;background:var(--rdx-devices-dot)}.state-online{color:var(--rdx-devices-row-online)}.state-online i{background:var(--rdx-devices-row-online-dot)}.state-offline{color:var(--rdx-devices-row-offline)}.state-offline i{background:var(--rdx-devices-row-offline-dot)}.state-alarm{color:var(--rdx-devices-row-alarm)}.state-alarm i{background:var(--rdx-devices-row-alarm-dot)}.power,td>strong{font-weight:700;white-space:nowrap}.date{margin-top:3px}.row-action{border:0;background:transparent;color:var(--rdx-accent);font-size:21px;cursor:pointer}.pagination{justify-content:space-between;align-items:center;padding:12px 18px;border-top:1px solid var(--rdx-border);color:var(--rdx-text-muted);font-size:10px}.pagination div{gap:5px}.pagination button,.pagination b{display:grid;place-items:center;width:28px;height:28px;border:1px solid var(--rdx-border);border-radius:6px;background:var(--rdx-surface)}.pagination b{background:var(--rdx-accent);color:var(--rdx-on-accent)}.detail{position:sticky;top:calc(var(--rdx-topbar-height, 46px) + 24px)}.detail header{justify-content:space-between;padding:18px;border-bottom:1px solid var(--rdx-border)}.detail header span{color:var(--rdx-text-muted);font-size:10px}.detail h2{margin:4px 0 0;font-size:16px}.detail header button{border:0;background:transparent;color:var(--rdx-text-muted);font-size:24px;cursor:pointer}.detail-hero{justify-content:space-between;align-items:center;padding:19px 18px}.device-picture{width:62px;height:62px;border-radius:12px;font-size:25px}.detail dl{margin:0;padding:0 18px}.detail dl div{display:flex;justify-content:space-between;gap:15px;padding:10px 0;border-bottom:1px solid var(--rdx-devices-row-border)}.detail dt{color:var(--rdx-text-muted);font-size:10px}.detail dd{margin:0;max-width:58%;font-size:10px;font-weight:700;text-align:right;overflow-wrap:anywhere}.telemetry{margin:16px 18px 0;padding:13px;border-radius:8px;background:var(--rdx-devices-panel-bg)}.telemetry h3{margin:0 0 10px;font-size:11px}.telemetry p{display:flex;justify-content:space-between;gap:10px;margin:8px 0;font-size:10px}.telemetry span{color:var(--rdx-text-muted)}.detail>a{display:flex;justify-content:space-between;margin:18px;padding:11px;border-radius:7px;background:var(--rdx-accent);color:var(--rdx-on-accent);font-size:10px;font-weight:700;text-decoration:none}.feedback,.empty{padding:26px}.error,.inline-error{color:var(--rdx-devices-error-text)}.inline-error{padding:10px;border:1px solid var(--rdx-devices-error-border);border-radius:7px;background:var(--rdx-devices-error-bg)}.sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
 @media(max-width:1200px){.summary-grid{grid-template-columns:repeat(2,1fr)}.filters{grid-template-columns:repeat(4,minmax(0,1fr))}.search{grid-column:span 2}.content.detailed{grid-template-columns:minmax(0,1fr) 280px}}
-@media(max-width:900px){.content.detailed{grid-template-columns:1fr}.detail{position:fixed;z-index:40;left:14px;right:14px;bottom:14px;top:auto;max-height:calc(100vh - 28px);overflow-y:auto;box-shadow:0 18px 60px rgba(13,43,34,.25)}}
+@media(max-width:900px){.content.detailed{grid-template-columns:1fr}.detail{position:fixed;z-index:40;left:14px;right:14px;bottom:14px;top:auto;max-height:calc(100vh - 28px);overflow-y:auto;box-shadow:0 18px 60px rgba(13,43,34,.25)}.detail-backdrop{position:fixed;inset:0;z-index:35;background:rgb(0 0 0 / .45)}}
 @media(max-width:680px){.devices-header{flex-direction:column}.header-actions{width:100%;justify-content:space-between}.header-actions p{text-align:left}.filters{grid-template-columns:repeat(2,1fr)}.search{grid-column:1/-1}.summary-grid article{min-height:88px;padding:13px}}
 @media(max-width:420px){.summary-grid,.filters{grid-template-columns:1fr}.search{grid-column:auto}.summary-grid article{min-height:76px}.header-actions button{padding:0 10px}}@media(max-width:720px){.devices-header h1{font-size:28px}}
 </style>
