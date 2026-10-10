@@ -200,18 +200,18 @@ test('selector de tema único: topbar en vistas, encabezado en Dashboard', () =>
   const meta = dashboard.slice(dashboard.indexOf('<div class="header-meta">'));
   assert.match(meta, /<ThemeSwitch \/>/);
   const component = readFileSync(new URL('../src/components/ThemeSwitch.vue', import.meta.url), 'utf8');
-  assert.match(component, /role="group" aria-label="Tema visual"/);
-  assert.match(component, /:aria-pressed="String\(themePreference === option\.value\)"/);
-  assert.match(component, /:aria-label="`Tema \$\{option\.label\.toLowerCase\(\)\}`"/);
+  assert.match(component, /role="menu" aria-label="Tema visual"/);
+  assert.match(component, /:aria-checked="String\(themePreference === option\.value\)"/);
+  assert.match(component, /:aria-label="`Tema \$\{activeTheme\.label\.toLowerCase\(\)\}\. Cambiar tema visual`"/);
   assert.match(component, /class="theme-icon"/);
-  assert.match(component, /class="theme-label"/);
+  assert.match(component, /aria-haspopup="menu"/);
   assert.match(component, /value: 'light'.*value: 'dark'.*value: 'auto'/s);
   const styles = descriptor.styles.map(block => block.content).join('\n').replace(/\r\n/g, '\n');
   assert.match(styles, /\.topbar-right \{\n  display: flex;/);
   const componentStyles = component.slice(component.indexOf('<style'));
-  assert.match(componentStyles, /\.theme-switch \{\n  display: flex;\n  flex-direction: row;/);
-  assert.match(componentStyles, /\.theme-icon \{\n  width: 16px;/);
-  assert.match(componentStyles, /button\[aria-pressed='true'\] \{\n  background: var\(--rdx-neutral-soft\);/);
+  assert.match(componentStyles, /\.theme-switch \{\n  display: inline-flex;/);
+  assert.match(componentStyles, /\.theme-trigger \{[^}]*width: 36px;[^}]*height: 36px;/);
+  assert.match(componentStyles, /\.theme-option\[aria-checked='true'\] \{\n  background: var\(--rdx-neutral-soft\);/);
 });
 
 test('UX-02B: drawer móvil abre/cierra con Escape y al navegar', async () => {
