@@ -1,7 +1,7 @@
 <script setup>
 import { computed, ref, watch, onMounted, onBeforeUnmount } from 'vue';
 import * as echarts from 'echarts/core';
-import { BarChart, LineChart } from 'echarts/charts';
+import { LineChart } from 'echarts/charts';
 import { DataZoomComponent, GridComponent, TooltipComponent, LegendComponent } from 'echarts/components';
 import { CanvasRenderer } from 'echarts/renderers';
 import { apiFetch } from '../services/api.js';
@@ -9,7 +9,7 @@ import { rdxColor } from '../utils/rdxTokens.js';
 import { resolveChartTimeZone } from '../utils/chartTimezone.js';
 import { toVisualEnergyPoint } from '../utils/energyHistoryChart.js';
 
-echarts.use([BarChart, LineChart, DataZoomComponent, GridComponent, TooltipComponent, LegendComponent, CanvasRenderer]);
+echarts.use([LineChart, DataZoomComponent, GridComponent, TooltipComponent, LegendComponent, CanvasRenderer]);
 const props = defineProps({ plantId: { type: String, required: true }, timezone: String });
 const emit = defineEmits(['history-loaded']);
 const selectedDate = defineModel('selectedDate', { type: String, required: true });
@@ -93,13 +93,12 @@ function render() {
     xAxis: { type: 'category', data: points.value.map(point => point.interval_start), axisLabel: { color: rdxColor('--rdx-text-muted'), fontSize: 12, hideOverlap: true, formatter: labelFormatter }, axisLine: { show: false }, axisTick: { show: false } },
     yAxis: { type: 'value', name: 'Energía (kWh)', nameTextStyle: { color: rdxColor('--rdx-text-muted'), fontSize: 12 }, axisLabel: { color: rdxColor('--rdx-text-muted'), fontSize: 12, hideOverlap: true }, axisLine: { show: false }, axisTick: { show: false }, splitLine: { lineStyle: { color: rdxColor('--rdx-border'), opacity: .6, type: 'dashed' } } },
     // Las cuatro magnitudes son kWh por bucket, sobre el mismo eje y sin apilar.
-    // '0%' evita el mínimo de 1 px; ECharts interpreta el número 0 como ausente.
     series: seriesFields.map(([key, name], index) => ({
-      name, emphasis: { focus: 'series' },
-      ...(index < 2
-        ? { type: 'bar', barMinWidth: '0%', barMaxWidth: 24, barGap: '20%', barCategoryGap: '35%' }
-        : { type: 'line', smooth: false, connectNulls: false, showSymbol: true, symbolSize: 4,
-          lineStyle: { width: 1.5, type: index === 2 ? 'dashed' : 'dotted' }, z: 3 }),
+      name, type: 'line', smooth: false, connectNulls: false, showSymbol: false,
+      emphasis: { focus: 'series' },
+      lineStyle: { width: index === 0 ? 2.5 : index === 1 ? 2 : 1.5,
+        type: index === 2 ? 'dashed' : index === 3 ? 'dotted' : 'solid' },
+      ...(index === 0 ? { areaStyle: { opacity: .10 } } : {}),
       data: points.value.map(point => point[key] ?? null),
     })),
     media: [

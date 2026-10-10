@@ -4,7 +4,7 @@ import { readFileSync } from 'node:fs';
 import { parse, compileScript } from '@vue/compiler-sfc';
 import { ref, computed, mergeModels } from 'vue';
 import * as echarts from 'echarts/core';
-import { BarChart, LineChart } from 'echarts/charts';
+import { LineChart } from 'echarts/charts';
 import { DataZoomComponent, GridComponent, TooltipComponent, LegendComponent } from 'echarts/components';
 import { SVGRenderer } from 'echarts/renderers';
 import { toVisualEnergyPoint } from '../src/utils/energyHistoryChart.js';
@@ -30,7 +30,7 @@ function setup(period = 'day', overrides = {}) {
     ref, computed, _mergeModels: mergeModels, watch() {}, onMounted() {}, onBeforeUnmount() {},
     _useModel: (props, key) => ref(props[key]),
     echarts: { use() {}, init: () => ({ setOption(value) { option = value; } }) },
-    BarChart, LineChart, DataZoomComponent, GridComponent, TooltipComponent, LegendComponent, CanvasRenderer: {},
+    LineChart, DataZoomComponent, GridComponent, TooltipComponent, LegendComponent, CanvasRenderer: {},
     ResizeObserver: class { observe() {} }, apiFetch() { throw new Error('Unexpected fetch'); },
     rdxColor: name => name, resolveChartTimeZone, toVisualEnergyPoint,
     ...overrides,
@@ -50,8 +50,8 @@ test('cuatro series conservan cada timestamp, valor, cero y nulo en todos los pe
     assert.deepEqual(option.series.map(s => s.name), names);
     option.series.forEach((series, i) => {
       assert.deepEqual(series.data, buckets.map(p => p[fields[i]]));
-      if (i >= 2) assert.equal(series.smooth, false);
-      if (i >= 2) assert.equal(series.connectNulls, false);
+      assert.equal(series.smooth, false);
+      assert.equal(series.connectNulls, false);
       assert.equal(series.sampling, undefined);
       assert.equal(series.stack, undefined);
     });
@@ -87,15 +87,13 @@ test('carga mantiene períodos, timestamps y tratamiento diario de provenance si
 test('jerarquía, tokens y zoom inside sin filtrado ni slider', () => {
   const { option } = setup();
   assert.deepEqual(option.color, ['--rdx-chart-green', '--rdx-chart-amber', '--rdx-chart-blue', '--rdx-chart-purple']);
-  assert.deepEqual(option.series.map(s => s.type), ['bar', 'bar', 'line', 'line']);
-  for (const bar of option.series.slice(0, 2)) {
-    assert.equal(bar.barMinWidth, '0%');
-    assert.equal(bar.barMaxWidth, 24);
-    assert.equal(bar.barGap, '20%');
-    assert.equal(bar.barCategoryGap, '35%');
-  }
-  assert.deepEqual(option.series.slice(2).map(s => s.lineStyle), [{ width: 1.5, type: 'dashed' }, { width: 1.5, type: 'dotted' }]);
-  assert.ok(option.series.slice(2).every(s => s.showSymbol && s.symbolSize === 4));
+  assert.deepEqual(option.series.map(s => s.type), ['line', 'line', 'line', 'line']);
+  assert.deepEqual(option.series.map(s => s.lineStyle), [
+    { width: 2.5, type: 'solid' }, { width: 2, type: 'solid' },
+    { width: 1.5, type: 'dashed' }, { width: 1.5, type: 'dotted' },
+  ]);
+  assert.deepEqual(option.series.map(s => s.areaStyle), [{ opacity: .10 }, undefined, undefined, undefined]);
+  assert.ok(option.series.every(s => s.showSymbol === false));
   assert.deepEqual(option.dataZoom, [{
     type: 'inside', xAxisIndex: [0], filterMode: 'none',
     preventDefaultMouseMove: false,
@@ -130,29 +128,27 @@ test('aria-label refleja el período seleccionado', () => {
   assert.match(source, /:aria-label="`Histórico energético \(\$\{periodLabel\}\)/);
 });
 
-echarts.use([BarChart, LineChart, DataZoomComponent, GridComponent, TooltipComponent, LegendComponent, SVGRenderer]);
-test('barras de grupos vecinos no se solapan hasta 288 muestras en los seis anchos', () => {
+echarts.use([LineChart, DataZoomComponent, GridComponent, TooltipComponent, LegendComponent, SVGRenderer]);
+test('cuatro líneas sin símbolos permanentes conservan todas las muestras en los seis anchos', () => {
   const { option } = setup();
   option.animation = false;
-  for (const count of [24, 96, 288]) {
+  for (const count of [24, 96, 288, 1440]) {
     option.xAxis.data = Array.from({ length: count }, (_, i) => new Date(Date.UTC(2026, 9, 9, 0, i)).toISOString());
-    option.series.forEach(series => { series.data = Array(count).fill(1); });
+    option.series.forEach(series => { series.data = Array.from({ length: count }, (_, i) => i % 7 === 0 ? null : i); });
     for (const width of [328, 390, 720, 900, 1200, 1600]) {
       const chart = echarts.init(null, null, { renderer: 'svg', ssr: true, width, height: width <= 600 ? 300 : 320 });
       try {
         chart.setOption(option);
-        const generation = chart.getModel().getSeriesByIndex(0).getData();
-        const consumption = chart.getModel().getSeriesByIndex(1).getData();
-        for (let i = 0; i < count - 1; i++) {
-          const first = generation.getItemLayout(i);
-          const second = consumption.getItemLayout(i);
-          const next = generation.getItemLayout(i + 1);
-          assert.ok(first.width > 0 && second.width > 0);
-          assert.ok(first.x + first.width <= second.x + 1e-6);
-          assert.ok(second.x + second.width <= next.x + 1e-6, `${count} puntos, ${width}px, grupo ${i}: ${JSON.stringify({ first, second, next })}`);
-        }
+        assert.equal(chart.getOption().dataZoom[0].start, 0);
+        assert.equal(chart.getOption().dataZoom[0].end, 100);
         for (let i = 0; i < 4; i++) {
-          assert.equal(chart.getModel().getSeriesByIndex(i).getData().count(), count);
+          const series = chart.getModel().getSeriesByIndex(i);
+          assert.equal(series.subType, 'line');
+          assert.equal(series.getData().count(), count);
+          assert.deepEqual(chart.getOption().series[i].data, option.series[i].data);
+          let symbols = 0;
+          series.getData().eachItemGraphicEl(() => symbols++);
+          assert.equal(symbols, 0);
         }
       } finally { chart.dispose(); }
     }
