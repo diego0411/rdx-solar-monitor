@@ -389,5 +389,7 @@ h2 { margin: 0 0 12px; font-size: 18px; }
 @media (max-width: 720px) {
   .page-header { flex-direction: column; }
   .users-table th:nth-child(5), .users-table td:nth-child(5) { display: none; }
+  .modal-actions { flex-direction: column-reverse; }
+  .modal-actions button { width: 100%; }
 }
 </style>

@@ -1115,4 +1115,10 @@ h1 {
     flex-direction: column;
   }
 }
+
+@media (max-width: 720px) {
+  .header-actions { flex-wrap: wrap; }
+  .modal-actions { flex-direction: column-reverse; }
+  .modal-actions button { width: 100%; }
+}
 </style>

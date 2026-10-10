@@ -926,4 +926,9 @@ onUnmounted(() => controller.abort());
     gap: 2px;
   }
 }
+
+@media (max-width: 720px) {
+  .modal-actions { flex-direction: column-reverse; }
+  .modal-actions button { width: 100%; }
+}
 </style>
