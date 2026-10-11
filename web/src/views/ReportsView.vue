@@ -411,8 +411,12 @@ onUnmounted(() => {
   .kpi, .credit, .disclaimers, .preview :deep(.energy-chart) { break-inside: avoid; }
   /* ECO-04D7: el avoid del lienzo no basta; la tarjeta .energy-section
      (título + gráfico) debe ser atómica para que el salto ocurra antes del
-     bloque completo (~420px, siempre cabe en una página A4 fresca). */
-  .preview :deep(.energy-section) { break-inside: avoid; }
+     bloque completo (~420px, siempre cabe en una página A4 fresca).
+     ECO-04D8: avoid impide fragmentar pero no estabiliza la posición (el
+     gráfico flotaba según el contenido previo). La sección abre página
+     propia en impresión; indicadores, tarifas, créditos y advertencias
+     quedan en las anteriores. Solo print: la web no cambia. */
+  .preview :deep(.energy-section) { break-inside: avoid; break-before: page; }
 }
 @media (max-width: 767px) {
   .reports-header h1 { font-size: 28px; }
