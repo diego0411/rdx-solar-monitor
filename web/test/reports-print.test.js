@@ -65,3 +65,10 @@ test('7: ECO-04D9 canvas proporcional sin recorte derecho en A4', () => {
   assert.match(view, /\.preview :deep\(\.energy-chart canvas\) \{ max-width: 100% !important; height: auto !important; \}/);
   assert.ok(!view.includes('overflow: hidden') && !view.includes('overflow:hidden'), 'sin ocultar contenido');
 });
+
+test('8: ECO-04D10 advertencias fragmentables, gráfico en página propia', () => {
+  assert.ok(!view.includes('.disclaimers, .preview'), 'lista fuera de la regla indivisible');
+  assert.match(view, /\.preview h3 \{ break-after: avoid; \}/);
+  assert.match(view, /\.kpi, \.credit, \.preview :deep\(\.energy-chart\) \{ break-inside: avoid; \}/);
+  assert.match(view, /\.preview :deep\(\.energy-section\) \{ break-inside: avoid; break-before: page; \}/);
+});

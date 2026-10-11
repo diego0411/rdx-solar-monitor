@@ -408,7 +408,11 @@ onUnmounted(() => {
   .print-footer { margin-top: 14px; padding-top: 8px; border-top: 1px solid #dfe7e1; }
   .print-footer p { font-size: 10px; color: #5b6d63; }
   .preview h3 { break-after: avoid; }
-  .kpi, .credit, .disclaimers, .preview :deep(.energy-chart) { break-inside: avoid; }
+  .kpi, .credit, .preview :deep(.energy-chart) { break-inside: avoid; }
+  /* ECO-04D10: .disclaimers era indivisible y saltaba completo a página 2
+     aunque cupiera parte en la 1 (h3 con break-after arrastra el inicio).
+     La lista puede fragmentarse de forma controlada; el h3 sigue unido al
+     primer aviso y las tarjetas KPI y el gráfico no se cortan. */
   /* ECO-04D7: el avoid del lienzo no basta; la tarjeta .energy-section
      (título + gráfico) debe ser atómica para que el salto ocurra antes del
      bloque completo (~420px, siempre cabe en una página A4 fresca).
