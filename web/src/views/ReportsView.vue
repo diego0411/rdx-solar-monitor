@@ -4,6 +4,7 @@ import { apiFetch } from '../services/api.js';
 import { getPlantsCatalog } from '../services/catalog.js';
 import PlantEnergyHistory from '../components/PlantEnergyHistory.vue';
 import { buildReportIndicators } from '../utils/reportPresentation.js';
+import { clearRdxColorCache } from '../utils/rdxTokens.js';
 
 // ECO-04D1: estructura del módulo Reportes. ECO-04D2: vista previa
 // energética con datos reales del contrato energy-history (vía el
@@ -71,6 +72,12 @@ const previewTypeLabel = computed(() => reportTypes.find(item => item.key === pr
 const isEconomicPreview = computed(() => preview.value?.type === 'energy_economics');
 const tzVerified = computed(() => preview.value?.timezone !== null && preview.value?.timezone !== undefined);
 const report = computed(() => (preview.value && isEconomicPreview.value ? buildReportIndicators(economicsData.value) : null));
+// Vista lista para imprimir: foto vigente, sin consultas pendientes,
+// gráfico recibido y (en económico) indicadores sin error.
+const canPrint = computed(() => preview.value !== null
+  && !previewLoading.value && !ecoLoading.value
+  && history.value !== null
+  && (!isEconomicPreview.value || (economicsData.value !== null && !ecoError.value)));
 const generatedAt = computed(() => {
   if (!preview.value?.generatedAt) return '';
   const parsed = new Date(preview.value.generatedAt);
@@ -154,6 +161,62 @@ function onHistoryLoaded(data) {
   history.value = data && typeof data === 'object' ? data : null;
 }
 
+// Impresión A4 por diálogo del navegador, solo por acción explícita y con
+// foto lista. El lienzo del gráfico conserva la paleta del tema activo: antes
+// de imprimir se pasa temporalmente a claro con los mecanismos existentes
+// (atributo + evento rdx:theme + invalidación de caché) y se restaura
+// después (finally + afterprint como red de seguridad, idempotente).
+const PRINT_SETTLE_MS = 350;
+let printSnapshot = null;
+function restorePrintState() {
+  if (!printSnapshot) return;
+  const { title, dark } = printSnapshot;
+  printSnapshot = null;
+  try {
+    if (typeof document !== 'undefined') {
+      document.title = title;
+      if (dark) {
+        document.documentElement.setAttribute('data-theme', 'dark');
+        clearRdxColorCache();
+        window.dispatchEvent(new CustomEvent('rdx:theme', { detail: { theme: 'dark' } }));
+      }
+    }
+  } catch {
+    // Restauración no disponible: nada que revertir.
+  }
+}
+function onAfterPrint() {
+  restorePrintState();
+}
+async function handlePrint() {
+  if (!canPrint.value) return;
+  try {
+    if (typeof document !== 'undefined') {
+      printSnapshot = {
+        title: document.title,
+        dark: !!document.documentElement?.hasAttribute?.('data-theme'),
+      };
+      const stamp = [preview.value?.plantName, previewPeriodLabel.value, preview.value?.date]
+        .filter(part => part !== null && part !== undefined && String(part) !== '')
+        .join(' ').replace(/\s+/g, ' ').trim();
+      if (stamp) document.title = `RDX Reporte ${stamp}`.slice(0, 120);
+      if (printSnapshot.dark) {
+        document.documentElement.removeAttribute('data-theme');
+        clearRdxColorCache();
+        window.dispatchEvent(new CustomEvent('rdx:theme', { detail: { theme: 'light' } }));
+      }
+    }
+  } catch {
+    // Sin DOM: se intenta imprimir con el estado vigente.
+  }
+  if (printSnapshot?.dark) await new Promise(resolve => setTimeout(resolve, PRINT_SETTLE_MS));
+  try {
+    window.print();
+  } finally {
+    restorePrintState();
+  }
+}
+
 async function loadPlants() {
   loading.value = true;
   error.value = '';
@@ -166,8 +229,27 @@ async function loadPlants() {
   }
 }
 
-onMounted(loadPlants);
-onUnmounted(() => { controller.abort(); previewController?.abort(); ecoController?.abort(); });
+onMounted(() => {
+  loadPlants();
+  try {
+    if (typeof window !== 'undefined' && typeof window.addEventListener === 'function') {
+      window.addEventListener('afterprint', onAfterPrint);
+    }
+  } catch {
+    // Sin ventana: no hay red de seguridad que registrar.
+  }
+});
+onUnmounted(() => {
+  controller.abort(); previewController?.abort(); ecoController?.abort();
+  try {
+    if (typeof window !== 'undefined' && typeof window.removeEventListener === 'function') {
+      window.removeEventListener('afterprint', onAfterPrint);
+    }
+  } catch {
+    // Limpieza no disponible.
+  }
+  restorePrintState();
+});
 </script>
 
 <template>
@@ -217,8 +299,14 @@ onUnmounted(() => { controller.abort(); previewController?.abort(); ecoControlle
           <p>Selecciona planta, periodo, fecha y tipo de reporte, y pulsa «Generar reporte». Aquí aparecerá la vista previa sin descargar ningún archivo.</p>
         </template>
         <template v-else>
+          <div class="print-only print-header" aria-hidden="true">
+            <p class="print-brand">RDX Technology · RDX Solar Monitor</p>
+          </div>
           <h2>Vista previa {{ previewTypeLabel.toLowerCase() }}</h2>
           <p class="preview-meta">Planta {{ preview.plantName }} · Periodo {{ previewPeriodLabel }}<span v-if="history?.start && history?.end"> · Rango {{ history.start }} → {{ history.end }}</span><span v-if="generatedAt"> · Generada {{ generatedAt }}</span></p>
+          <div class="preview-actions">
+            <button class="secondary-button" type="button" :disabled="!canPrint" @click="handlePrint">Imprimir / Guardar PDF</button>
+          </div>
           <p v-if="previewLoading" role="status">Cargando información de la planta…</p>
           <p v-if="previewError" class="preview-warn" role="alert">{{ previewError }}</p>
           <p v-if="preview.timezone === null || preview.timezone === undefined" class="preview-warn" role="alert">Zona horaria de la planta no determinada: este periodo no puede considerarse verificado.</p>
@@ -274,6 +362,9 @@ onUnmounted(() => { controller.abort(); previewController?.abort(); ecoControlle
             :timezone="preview.timezone"
             @history-loaded="onHistoryLoaded"
           />
+          <div class="print-only print-footer" aria-hidden="true">
+            <p>RDX Solar Monitor<span v-if="generatedAt"> · Emitido {{ generatedAt }}</span></p>
+          </div>
         </template>
       </section>
     </template>
@@ -304,9 +395,21 @@ onUnmounted(() => { controller.abort(); previewController?.abort(); ecoControlle
 .kpi-coverage { font-size: 11px !important; font-weight: 400 !important; color: var(--rdx-text-muted) !important; }
 .disclaimers { margin: 8px 0 0; padding-left: 20px; color: var(--rdx-text-muted); font-size: 12px; display: grid; gap: 4px; }
 .credit { margin-top: 4px; }
+.print-only { display: none; }
 /* El gráfico reutilizado aporta sus propios controles; en la vista previa
    mandan los selectores del reporte. */
 .preview :deep(.period-controls) { display: none; }
+@media print {
+  .reports-header, .filters, .preview-actions { display: none !important; }
+  .preview { border: 0; box-shadow: none; padding: 0; }
+  .print-only { display: block; }
+  .print-header { margin: 0 0 10px; padding-bottom: 8px; border-bottom: 2px solid #174d3c; }
+  .print-brand { margin: 0; font-size: 11px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: #174d3c; }
+  .print-footer { margin-top: 14px; padding-top: 8px; border-top: 1px solid #dfe7e1; }
+  .print-footer p { font-size: 10px; color: #5b6d63; }
+  .preview h3 { break-after: avoid; }
+  .kpi, .credit, .disclaimers, .preview :deep(.energy-chart) { break-inside: avoid; }
+}
 @media (max-width: 767px) {
   .reports-header h1 { font-size: 28px; }
   .filters { grid-template-columns: 1fr; }

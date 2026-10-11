@@ -446,3 +446,26 @@ tbody tr[tabindex]:focus-visible {
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; scroll-behavior: auto !important; }
 }
+
+/* ECO-04D6: impresión A4 del módulo Reportes. Solo cromo de la app y papel
+   claro garantizado; la vista previa aporta sus propias reglas. */
+@media print {
+  @page { size: A4 portrait; margin: 14mm 12mm 16mm; }
+  body { background: #fff; }
+  .app-shell { display: block; background: #fff; }
+  .sidebar, .app-topbar, .skip-link, .nav-backdrop, .drawer-close { display: none !important; }
+  .main-content { max-width: none; width: 100%; margin: 0; padding: 0; }
+  button { display: none !important; }
+  /* Papel siempre claro para el informe, con identidad RDX. */
+  .reports-view .preview { background: #fff; color: #243b32; border-color: #dfe7e1; }
+  .reports-view .preview h2, .reports-view .preview h3 { color: #173f33; }
+  .reports-view .preview p, .reports-view .preview dt,
+  .reports-view .preview .kpi-coverage, .reports-view .disclaimers { color: #5b6d63; }
+  .reports-view .preview .kpi { background: #f5f7f5; border-color: #dfe7e1; }
+  .reports-view .preview .kpi dd { color: #173f33; }
+  .reports-view .preview .preview-warn { color: #8a5a0b; }
+  .reports-view .preview .badge { background: #e6f0e9; color: #496c5a; }
+  .reports-view .preview .badge.state-online { background: #e5f2e9; color: #20693d; }
+  .reports-view .preview .badge.data-stale { background: #fff0d8; color: #8a5a0b; }
+  .reports-view .preview .badge.state-offline { background: #edf0ef; color: #5b6d63; }
+}
