@@ -58,3 +58,10 @@ test('6: ECO-04D7 bloque gráfico atómico y sin página en blanco', () => {
   assert.match(view, /\.preview :deep\(\.energy-section\) \{ break-inside: avoid; break-before: page; \}/);
   assert.match(css, /\.app-shell \{ display: block; background: #fff; min-height: 0; \}/);
 });
+
+test('7: ECO-04D9 canvas proporcional sin recorte derecho en A4', () => {
+  assert.match(view, /\.preview :deep\(\.energy-chart\) \{ height: auto !important; \}/);
+  assert.match(view, /\.preview :deep\(\.energy-chart > div\) \{ max-width: 100% !important; \}/);
+  assert.match(view, /\.preview :deep\(\.energy-chart canvas\) \{ max-width: 100% !important; height: auto !important; \}/);
+  assert.ok(!view.includes('overflow: hidden') && !view.includes('overflow:hidden'), 'sin ocultar contenido');
+});

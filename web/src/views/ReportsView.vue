@@ -417,6 +417,13 @@ onUnmounted(() => {
      propia en impresión; indicadores, tarifas, créditos y advertencias
      quedan en las anteriores. Solo print: la web no cambia. */
   .preview :deep(.energy-section) { break-inside: avoid; break-before: page; }
+  /* ECO-04D9: el canvas y la raíz zrender conservan el ancho de pantalla en
+     px fijos mientras la columna A4 es más angosta → recorte derecho
+     (últimas fechas, colas de curva, leyenda). Ajuste proporcional solo
+     print: nunca amplía, nunca deforma, nunca recorta ni oculta. */
+  .preview :deep(.energy-chart) { height: auto !important; }
+  .preview :deep(.energy-chart > div) { max-width: 100% !important; }
+  .preview :deep(.energy-chart canvas) { max-width: 100% !important; height: auto !important; }
 }
 @media (max-width: 767px) {
   .reports-header h1 { font-size: 28px; }
