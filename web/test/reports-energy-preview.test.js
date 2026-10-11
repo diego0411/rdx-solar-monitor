@@ -14,9 +14,10 @@ test('1: gráfico reutilizado con datos reales del contrato', () => {
   assert.match(view, /:plant-id="preview\.plantId"/);
 });
 
-test('2: consulta real solo al generar (overview para timezone)', () => {
+test('2: consultas reales solo al generar (overview; economics solo económico)', () => {
   assert.match(view, /\/plants\/\$\{encodeURIComponent\(plantId\.value\)\}\/overview/);
-  assert.ok(!view.includes('/economics'), 'sin endpoint económico');
+  assert.match(view, /\/plants\/\$\{encodeURIComponent\(plantId\.value\)\}\/economics\?period=/);
+  assert.match(view, /reportType\.value !== 'energy_economics'/);
   assert.ok(!view.includes('energy-history?'), 'el componente hace su propia consulta');
   assert.ok(!view.includes('watch('), 'sin consultas reactivas automáticas');
 });
@@ -37,12 +38,11 @@ test('4: cobertura por conteo sin sumar energía', () => {
   assert.ok(!view.includes('?? 0'), 'sin null→0');
 });
 
-test('5: estados de carga, vacío, error y tipo económico intacto', () => {
+test('5: estados de carga, vacío, error y gráfico intacto', () => {
   assert.match(view, /previewLoading/);
   assert.match(view, /previewError/);
   assert.match(view, /history\?\.start && history\?\.end/);
-  assert.match(view, /preview\.type === 'energy_economics'/);
-  assert.match(view, /aún no está habilitada/);
+  assert.match(view, /ecoLoading/);
   assert.ok(!view.includes('jsPDF') && !view.includes('pdfmake'), 'sin PDF');
   assert.match(view, /\.period-controls\) \{ display: none; \}/);
 });

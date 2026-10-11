@@ -3,11 +3,14 @@ import { computed, onMounted, onUnmounted, ref } from 'vue';
 import { apiFetch } from '../services/api.js';
 import { getPlantsCatalog } from '../services/catalog.js';
 import PlantEnergyHistory from '../components/PlantEnergyHistory.vue';
+import { buildReportIndicators } from '../utils/reportPresentation.js';
 
 // ECO-04D1: estructura del módulo Reportes. ECO-04D2: vista previa
 // energética con datos reales del contrato energy-history (vía el
-// componente compartido). Sin agregaciones propias, sin null→0, sin
-// interpolación, sin PDF. El acceso lo protege la ruta (módulo 'reports').
+// componente compartido). ECO-04D3: indicadores confiables del contrato
+// economics preparados exclusivamente con buildReportIndicators().
+// Sin agregaciones propias, sin null→0, sin interpolación, sin PDF.
+// El acceso lo protege la ruta (módulo 'reports').
 const periods = [
   { key: 'day', label: 'Día' },
   { key: 'week', label: 'Semana' },
@@ -18,6 +21,21 @@ const reportTypes = [
   { key: 'energy', label: 'Energético' },
   { key: 'energy_economics', label: 'Energético + económico' },
 ];
+const energyKpiFields = [
+  ['generation_kwh', 'Generación'],
+  ['consumption_kwh', 'Consumo'],
+  ['self_consumption_kwh', 'Autoconsumo*'],
+  ['grid_import_kwh', 'Importación de red'],
+  ['grid_export_kwh', 'Exportación de red'],
+];
+const moneyKpiFields = [
+  ['production_value', 'Producción'],
+  ['self_consumption_savings', 'Ahorro por autoconsumo'],
+  ['export_value', 'Valor de exportación'],
+  ['estimated_economic_benefit', 'Beneficio económico estimado'],
+];
+const statusLabels = { normal: 'Normal', provisional: 'Provisional', warning: 'Advertencia', unavailable: 'No disponible' };
+const statusClasses = { normal: 'state-online', provisional: '', warning: 'data-stale', unavailable: 'state-offline' };
 
 const plants = ref([]);
 const loading = ref(true);
@@ -35,18 +53,24 @@ const preview = ref(null);
 const chartPeriod = ref('month');
 const chartDate = ref('');
 const history = ref(null);
+const economicsData = ref(null);
 const previewLoading = ref(false);
 const previewError = ref('');
+const ecoLoading = ref(false);
+const ecoError = ref('');
 let previewController = null;
+let ecoController = null;
 
 const periodLabel = computed(() => periods.find(item => item.key === period.value)?.label ?? '');
-const typeLabel = computed(() => reportTypes.find(item => item.key === reportType.value)?.label ?? '');
 const plantName = computed(() => plants.value.find(item => item.id === plantId.value)?.name ?? '');
 const validDate = computed(() => /^\d{4}-\d{2}-\d{2}$/.test(selectedDate.value));
 const canGenerate = computed(() => plantId.value !== '' && period.value !== '' && validDate.value && reportType.value !== '');
 
 const previewPeriodLabel = computed(() => periods.find(item => item.key === preview.value?.period)?.label ?? '');
 const previewTypeLabel = computed(() => reportTypes.find(item => item.key === preview.value?.type)?.label ?? '');
+const isEconomicPreview = computed(() => preview.value?.type === 'energy_economics');
+const tzVerified = computed(() => preview.value?.timezone !== null && preview.value?.timezone !== undefined);
+const report = computed(() => (preview.value && isEconomicPreview.value ? buildReportIndicators(economicsData.value) : null));
 const generatedAt = computed(() => {
   if (!preview.value?.generatedAt) return '';
   const parsed = new Date(preview.value.generatedAt);
@@ -68,17 +92,21 @@ const coverageCounts = computed(() => {
 
 function invalidatePreview() {
   previewController?.abort();
+  ecoController?.abort();
   previewController = null;
+  ecoController = null;
   preview.value = null;
   history.value = null;
+  economicsData.value = null;
   previewError.value = '';
+  ecoError.value = '';
   previewLoading.value = false;
+  ecoLoading.value = false;
 }
 
 async function requestReport() {
   if (!canGenerate.value) return;
   invalidatePreview();
-  if (reportType.value !== 'energy') return;
   preview.value = {
     plantId: plantId.value,
     plantName: plantName.value,
@@ -103,6 +131,23 @@ async function requestReport() {
   } finally {
     if (!request.signal.aborted) previewLoading.value = false;
   }
+  if (reportType.value !== 'energy_economics' || request.signal.aborted) return;
+  ecoLoading.value = true;
+  const ecoRequest = new AbortController();
+  ecoController = ecoRequest;
+  try {
+    const data = await apiFetch(`/plants/${encodeURIComponent(plantId.value)}/economics?period=${encodeURIComponent(period.value)}&startTime=${encodeURIComponent(selectedDate.value)}`, { signal: ecoRequest.signal });
+    if (ecoRequest.signal.aborted) return;
+    economicsData.value = data ?? null;
+    if (!data || typeof data !== 'object') throw new Error('Respuesta inválida');
+  } catch {
+    if (!ecoRequest.signal.aborted) {
+      economicsData.value = null;
+      ecoError.value = 'No se pudieron cargar los indicadores económicos. Comprueba la conexión o selecciona otra fecha.';
+    }
+  } finally {
+    if (!ecoRequest.signal.aborted) ecoLoading.value = false;
+  }
 }
 
 function onHistoryLoaded(data) {
@@ -122,7 +167,7 @@ async function loadPlants() {
 }
 
 onMounted(loadPlants);
-onUnmounted(() => { controller.abort(); previewController?.abort(); });
+onUnmounted(() => { controller.abort(); previewController?.abort(); ecoController?.abort(); });
 </script>
 
 <template>
@@ -171,19 +216,57 @@ onUnmounted(() => { controller.abort(); previewController?.abort(); });
           <h2>Vista previa</h2>
           <p>Selecciona planta, periodo, fecha y tipo de reporte, y pulsa «Generar reporte». Aquí aparecerá la vista previa sin descargar ningún archivo.</p>
         </template>
-        <template v-else-if="preview.type === 'energy_economics'">
-          <h2>Vista previa no disponible todavía</h2>
-          <p>Parámetros elegidos: {{ preview.plantName }} · {{ previewPeriodLabel }} · {{ preview.date }} · {{ previewTypeLabel }}.</p>
-          <p>La generación de reportes aún no está habilitada; no se ha consultado ningún dato energético ni económico.</p>
-        </template>
         <template v-else>
-          <h2>Vista previa energética</h2>
+          <h2>Vista previa {{ previewTypeLabel.toLowerCase() }}</h2>
           <p class="preview-meta">Planta {{ preview.plantName }} · Periodo {{ previewPeriodLabel }}<span v-if="history?.start && history?.end"> · Rango {{ history.start }} → {{ history.end }}</span><span v-if="generatedAt"> · Generada {{ generatedAt }}</span></p>
           <p v-if="previewLoading" role="status">Cargando información de la planta…</p>
           <p v-if="previewError" class="preview-warn" role="alert">{{ previewError }}</p>
+          <p v-if="preview.timezone === null || preview.timezone === undefined" class="preview-warn" role="alert">Zona horaria de la planta no determinada: este periodo no puede considerarse verificado.</p>
           <p v-if="coverageCounts" class="preview-meta" role="status">
             Intervalos: {{ coverageCounts.total }} · Disponibles: {{ coverageCounts.available }} · Parciales: {{ coverageCounts.partial }} · Sin datos: {{ coverageCounts.none }}
           </p>
+          <template v-if="isEconomicPreview">
+            <p v-if="ecoLoading" role="status">Cargando indicadores económicos…</p>
+            <p v-else-if="ecoError" class="preview-warn" role="alert">{{ ecoError }}</p>
+            <template v-else-if="report">
+              <h3>Indicadores energéticos</h3>
+              <dl class="kpi-grid">
+                <div v-for="[field, label] in energyKpiFields" :key="field" class="kpi">
+                  <dt>{{ label }}</dt>
+                  <dd>{{ report.energy[field]?.text ?? '—' }}</dd>
+                  <dd><span class="badge" :class="statusClasses[report.energy[field]?.status] ?? ''">{{ statusLabels[report.energy[field]?.status] ?? '' }}</span></dd>
+                  <dd v-if="report.energy[field]?.coverage" class="kpi-coverage">{{ report.energy[field].coverage }}</dd>
+                </div>
+              </dl>
+              <h3>Indicadores monetarios</h3>
+              <p v-if="!report.monetaryPublishable.publishable" class="preview-warn" role="alert">
+                Totales no publicables: {{ report.monetaryPublishable.reasons.join(', ') }}.
+              </p>
+              <dl class="kpi-grid">
+                <div v-for="[field, label] in moneyKpiFields" :key="field" class="kpi">
+                  <dt>{{ label }}</dt>
+                  <dd>{{ report.money[field]?.text ?? '—' }}</dd>
+                  <dd><span class="badge" :class="statusClasses[report.money[field]?.status] ?? ''">{{ statusLabels[report.money[field]?.status] ?? '' }}</span></dd>
+                  <dd v-if="report.money[field]?.coverage" class="kpi-coverage">{{ report.money[field].coverage }}</dd>
+                </div>
+              </dl>
+              <h3>Tarifas y moneda</h3>
+              <p class="preview-meta">
+                Moneda: {{ report.tariffs.currency ?? 'No determinada' }} ·
+                Compra: {{ report.tariffs.purchase_energy_rate.text }} ·
+                Exportación: {{ report.tariffs.export_energy_rate.text }} ·
+                Compensación: {{ report.tariffs.compensation_type ?? '—' }}
+              </p>
+              <div v-if="report.credit.mode === 'energy_credit' || report.credit.kwh.raw !== null" class="credit">
+                <h3>Crédito energético</h3>
+                <p class="preview-meta">Generado: {{ report.credit.kwh.text }}<span v-if="report.credit.value.rule === 'purchase-price'"> · Valorizado a precio de compra (regla vigente)</span><span v-if="report.credit.value.raw !== null"> · Valor: {{ report.credit.value.text }}</span></p>
+              </div>
+              <h3>Advertencias</h3>
+              <ul class="disclaimers">
+                <li v-for="notice in report.disclaimers" :key="notice.id">{{ notice.text }}</li>
+              </ul>
+            </template>
+          </template>
           <PlantEnergyHistory
             v-model:period="chartPeriod"
             v-model:selected-date="chartDate"
@@ -210,9 +293,17 @@ onUnmounted(() => { controller.abort(); previewController?.abort(); });
 .form-actions { grid-column: 1 / -1; display: flex; justify-content: flex-end; }
 .preview { padding: 24px; }
 .preview h2 { margin: 0 0 8px; font-size: 18px; }
+.preview h3 { margin: 18px 0 8px; font-size: 15px; }
 .preview p { margin: 6px 0 0; color: var(--rdx-text-muted); font-size: 13px; }
 .preview-meta { font-size: 12px; }
 .preview-warn { color: var(--rdx-warning); font-weight: 600; }
+.kpi-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; margin: 10px 0 0; padding: 0; }
+.kpi { display: grid; gap: 4px; min-width: 0; margin: 0; padding: 12px; border: 1px solid var(--rdx-border); border-radius: var(--rdx-radius-sm); background: var(--rdx-background); }
+.kpi dt { color: var(--rdx-text-muted); font-size: 11px; font-weight: 600; }
+.kpi dd { margin: 0; color: var(--rdx-text-strong); font-size: 14px; font-weight: 700; overflow-wrap: anywhere; }
+.kpi-coverage { font-size: 11px !important; font-weight: 400 !important; color: var(--rdx-text-muted) !important; }
+.disclaimers { margin: 8px 0 0; padding-left: 20px; color: var(--rdx-text-muted); font-size: 12px; display: grid; gap: 4px; }
+.credit { margin-top: 4px; }
 /* El gráfico reutilizado aporta sus propios controles; en la vista previa
    mandan los selectores del reporte. */
 .preview :deep(.period-controls) { display: none; }
@@ -222,5 +313,6 @@ onUnmounted(() => { controller.abort(); previewController?.abort(); });
   .form-actions { justify-content: stretch; }
   .form-actions .primary-button { width: 100%; }
   .preview { padding: 16px; }
+  .kpi-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 </style>

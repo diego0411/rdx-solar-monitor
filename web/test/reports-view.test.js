@@ -40,11 +40,7 @@ test('4: selectores de planta, periodo, fecha y tipo con validación', () => {
   assert.match(view, /:disabled="!canGenerate"/);
 });
 
-test('5: vista previa vacía sin generación real ni datos', () => {
+test('5: vista previa vacía inicial sin PDF', () => {
   assert.match(view, /Vista previa/);
-  assert.match(view, /aún no está habilitada/);
-  assert.ok(!view.includes('/economics'), 'sin consulta económica');
-  assert.ok(!view.includes('energy-history?'), 'sin consulta energética directa (la hace el componente)');
-  assert.ok(!view.includes('buildReportIndicators'), 'sin presentación de datos');
   assert.ok(!view.includes('jsPDF') && !view.includes('pdfmake'), 'sin PDF');
 });
