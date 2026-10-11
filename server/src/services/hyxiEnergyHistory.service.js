@@ -14,10 +14,14 @@ const derivedFields = {
   grid_export_power_w: 'grid_export_kwh',
 };
 
-function energyFromPower(value, intervalHours) {
+export function energyFromPower(value, intervalHours) {
   if (value === null || value === undefined || String(value).trim() === '') return null;
   const power = Number(value);
-  return Number.isFinite(power) ? power * intervalHours / 1000 : null;
+  if (!Number.isFinite(power)) return null;
+  // Energía derivada nunca negativa: potencia instantánea con signo (válida
+  // en power) integrada en negativo es energía inválida → ausencia (null).
+  const energy = power * intervalHours / 1000;
+  return energy >= 0 ? energy : null;
 }
 
 async function deriveFromPowerHistory(plantId, startTime) {

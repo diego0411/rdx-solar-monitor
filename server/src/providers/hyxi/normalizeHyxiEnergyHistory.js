@@ -13,6 +13,11 @@ function numeric(value) {
   return Number.isFinite(number) ? number : null;
 }
 
+function nonNegativeEnergy(value) {
+  const number = numeric(value);
+  return number !== null && number >= 0 ? number : null;
+}
+
 export function normalizeHyxiEnergyHistory(response) {
   const data = response?.data;
   if (!data || !Array.isArray(data.timePoint)) {
@@ -38,8 +43,11 @@ export function normalizeHyxiEnergyHistory(response) {
       ]));
       return {
         timestamp: date.toISOString(),
+        // Energía (kWh) nunca negativa: el fabricante puede reportar
+        // negativos inválidos; se representan como ausencia (null), nunca
+        // como cero. raw_data conserva el original para auditoría.
         ...Object.fromEntries(Object.entries(fields).map(([key, column]) => [
-          column, numeric(raw_data[key]),
+          column, nonNegativeEnergy(raw_data[key]),
         ])),
         raw_data,
       };
