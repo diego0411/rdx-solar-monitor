@@ -25,6 +25,7 @@ const router = createRouter({
     { path: '/inventory/:id', name: 'inventory-detail', component: () => import('../views/InventoryDetailView.vue') },
     { path: '/operations', name: 'operations', component: () => import('../views/OperationsView.vue') },
     { path: '/operations/:id', name: 'operations-detail', component: () => import('../views/MaterialRequestDetailView.vue') },
+    { path: '/reports', name: 'reports', component: () => import('../views/ReportsView.vue') },
   ],
 });
 
@@ -42,6 +43,7 @@ const routeModules = {
   'inventory-detail': 'inventory',
   operations: 'operations',
   'operations-detail': 'operations',
+  reports: 'reports',
 };
 
 router.beforeEach(async to => {

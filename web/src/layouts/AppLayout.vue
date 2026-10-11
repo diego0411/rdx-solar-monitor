@@ -208,6 +208,7 @@ const routeSections = {
   'inventory-detail': 'operaciones',
   operations: 'operaciones',
   'operations-detail': 'operaciones',
+  reports: 'monitoreo',
   users: 'administracion',
   clients: 'administracion',
 };
@@ -237,6 +238,7 @@ const routeCrumbs = {
   'inventory-detail': { section: 'Operaciones', label: 'Inventario' },
   operations: { section: 'Operaciones', label: 'Solicitudes de materiales' },
   'operations-detail': { section: 'Operaciones', label: 'Solicitudes de materiales' },
+  reports: { section: 'Monitoreo', label: 'Reportes' },
   users: { section: 'Administración', label: 'Usuarios' },
   clients: { section: 'Administración', label: 'Clientes' },
 };
@@ -337,6 +339,10 @@ async function logout() {
           <RouterLink v-if="canSee('devices')" to="/alarms" class="nav-link" active-class="is-active">
             <svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M18 9a6 6 0 0 0-12 0c0 7-3 7-3 8h18c0-1-3-1-3-8ZM9.5 20h5" /></svg>
             <span>Alarmas</span>
+          </RouterLink>
+          <RouterLink v-if="canSee('reports')" to="/reports" class="nav-link" active-class="is-active">
+            <svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 2h9l5 5v15H6V2Zm9 1.5V8h4.5M9 12h8m-8 4h8" /></svg>
+            <span>Reportes</span>
           </RouterLink>
         </div>
         <button type="button" class="nav-heading nav-toggle" :aria-expanded="String(openSections.operaciones)" @click="toggleSection('operaciones')">
