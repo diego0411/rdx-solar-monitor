@@ -53,3 +53,8 @@ test('5: encabezado, pie y cobertura diferenciada en la impresión', () => {
   assert.match(view, /Totales no publicables/);
   assert.match(view, /no puede considerarse verificado/);
 });
+
+test('6: ECO-04D7 bloque gráfico atómico y sin página en blanco', () => {
+  assert.match(view, /\.preview :deep\(\.energy-section\) \{ break-inside: avoid; \}/);
+  assert.match(css, /\.app-shell \{ display: block; background: #fff; min-height: 0; \}/);
+});

@@ -409,6 +409,10 @@ onUnmounted(() => {
   .print-footer p { font-size: 10px; color: #5b6d63; }
   .preview h3 { break-after: avoid; }
   .kpi, .credit, .disclaimers, .preview :deep(.energy-chart) { break-inside: avoid; }
+  /* ECO-04D7: el avoid del lienzo no basta; la tarjeta .energy-section
+     (título + gráfico) debe ser atómica para que el salto ocurra antes del
+     bloque completo (~420px, siempre cabe en una página A4 fresca). */
+  .preview :deep(.energy-section) { break-inside: avoid; }
 }
 @media (max-width: 767px) {
   .reports-header h1 { font-size: 28px; }

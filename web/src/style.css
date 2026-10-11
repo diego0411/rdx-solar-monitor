@@ -452,7 +452,8 @@ tbody tr[tabindex]:focus-visible {
 @media print {
   @page { size: A4 portrait; margin: 14mm 12mm 16mm; }
   body { background: #fff; }
-  .app-shell { display: block; background: #fff; }
+  /* ECO-04D7: sin min-height:100vh en papel (provoca última página en blanco). */
+  .app-shell { display: block; background: #fff; min-height: 0; }
   .sidebar, .app-topbar, .skip-link, .nav-backdrop, .drawer-close { display: none !important; }
   .main-content { max-width: none; width: 100%; margin: 0; padding: 0; }
   button { display: none !important; }
