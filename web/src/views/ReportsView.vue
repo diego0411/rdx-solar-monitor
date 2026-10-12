@@ -3,7 +3,7 @@ import { computed, onMounted, onUnmounted, ref } from 'vue';
 import { apiFetch } from '../services/api.js';
 import { getPlantsCatalog } from '../services/catalog.js';
 import PlantEnergyHistory from '../components/PlantEnergyHistory.vue';
-import { buildReportIndicators } from '../utils/reportPresentation.js';
+import { buildReportIndicators, buildReportCopy } from '../utils/reportPresentation.js';
 import { clearRdxColorCache } from '../utils/rdxTokens.js';
 import { getInstanceByDom } from 'echarts/core';
 
@@ -74,6 +74,7 @@ const previewTypeLabel = computed(() => reportTypes.find(item => item.key === pr
 const isEconomicPreview = computed(() => preview.value?.type === 'energy_economics');
 const tzVerified = computed(() => preview.value?.timezone !== null && preview.value?.timezone !== undefined);
 const report = computed(() => (preview.value && isEconomicPreview.value ? buildReportIndicators(economicsData.value) : null));
+const reportCopy = computed(() => buildReportCopy(report.value, history.value?.bucket));
 // Vista lista para imprimir: foto vigente, sin consultas pendientes,
 // gráfico recibido y (en económico) indicadores sin error.
 const canPrint = computed(() => preview.value !== null
@@ -328,7 +329,7 @@ onUnmounted(() => {
           <p v-if="previewError" class="preview-warn" role="alert">{{ previewError }}</p>
           <p v-if="preview.timezone === null || preview.timezone === undefined" class="preview-warn" role="alert">Zona horaria de la planta no determinada: este periodo no puede considerarse verificado.</p>
           <p v-if="coverageCounts" class="preview-meta" role="status">
-            Intervalos: {{ coverageCounts.total }} · Disponibles: {{ coverageCounts.available }} · Parciales: {{ coverageCounts.partial }} · Sin datos: {{ coverageCounts.none }}
+            {{ reportCopy.graphIntervals }}: {{ coverageCounts.total }} · Disponibles: {{ coverageCounts.available }} · Parciales: {{ coverageCounts.partial }} · Sin datos: {{ coverageCounts.none }}
           </p>
           <template v-if="isEconomicPreview">
             <p v-if="ecoLoading" role="status">Cargando indicadores económicos…</p>
@@ -343,28 +344,29 @@ onUnmounted(() => {
                   <dd v-if="report.energy[field]?.coverage" class="kpi-coverage">{{ report.energy[field].coverage }}</dd>
                 </div>
               </dl>
-              <h3>Indicadores monetarios</h3>
+              <h3>Indicadores monetarios · registros almacenados</h3>
               <p v-if="!report.monetaryPublishable.publishable" class="preview-warn" role="alert">
-                Totales no publicables: {{ report.monetaryPublishable.reasons.join(', ') }}.
+                {{ reportCopy.publicationWarning }}
               </p>
               <dl class="kpi-grid">
                 <div v-for="[field, label] in moneyKpiFields" :key="field" class="kpi">
-                  <dt>{{ label }}</dt>
+                  <dt>{{ reportCopy.money[field]?.label ?? label }}</dt>
                   <dd>{{ report.money[field]?.text ?? '—' }}</dd>
-                  <dd><span class="badge" :class="statusClasses[report.money[field]?.status] ?? ''">{{ statusLabels[report.money[field]?.status] ?? '' }}</span></dd>
-                  <dd v-if="report.money[field]?.coverage" class="kpi-coverage">{{ report.money[field].coverage }}</dd>
+                  <dd><span class="badge" :class="statusClasses[report.money[field]?.status] ?? ''">{{ reportCopy.money[field]?.stateLabel }}</span></dd>
+                  <dd v-if="report.money[field]?.coverage" class="kpi-coverage">{{ reportCopy.money[field]?.coverage }}</dd>
                 </div>
               </dl>
               <h3>Tarifas y moneda</h3>
               <p class="preview-meta">
                 Moneda: {{ report.tariffs.currency ?? 'No determinada' }} ·
                 Compra: {{ report.tariffs.purchase_energy_rate.text }} ·
-                Exportación: {{ report.tariffs.export_energy_rate.text }} ·
-                Compensación: {{ report.tariffs.compensation_type ?? '—' }}
+                Tarifa de exportación: {{ reportCopy.exportRate }} ·
+                Compensación: {{ reportCopy.compensation }}
               </p>
               <div v-if="report.credit.mode === 'energy_credit' || report.credit.kwh.raw !== null" class="credit">
                 <h3>Crédito energético</h3>
-                <p class="preview-meta">Generado: {{ report.credit.kwh.text }}<span v-if="report.credit.value.rule === 'purchase-price'"> · Valorizado a precio de compra (regla vigente)</span><span v-if="report.credit.value.raw !== null"> · Valor: {{ report.credit.value.text }}</span></p>
+                <p class="preview-meta">Generado: {{ report.credit.kwh.text }} · {{ reportCopy.credit.stateLabel }}<span v-if="report.credit.kwh.coverage"> · {{ reportCopy.credit.coverage }}</span><span v-if="report.credit.value.rule !== 'purchase-price' && report.credit.value.raw !== null"> · Valor: {{ report.credit.value.text }}</span></p>
+                <p v-if="report.credit.value.rule === 'purchase-price'" class="preview-meta">Valor a tarifa de compra: {{ reportCopy.creditValue.text }} · {{ reportCopy.creditValue.stateLabel }}<span v-if="reportCopy.creditValue.coverage"> · {{ reportCopy.creditValue.coverage }}</span></p>
               </div>
               <h3>Advertencias</h3>
               <ul class="disclaimers">

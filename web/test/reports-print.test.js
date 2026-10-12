@@ -50,7 +50,7 @@ test('5: encabezado, pie y cobertura diferenciada en la impresión', () => {
   assert.match(view, /RDX Technology/);
   assert.match(view, /Emitido \{\{ generatedAt \}\}/);
   assert.match(view, /Cobertura del gráfico|coverageCounts/);
-  assert.match(view, /Totales no publicables/);
+  assert.match(view, /reportCopy\.publicationWarning/);
   assert.match(view, /no puede considerarse verificado/);
 });
 

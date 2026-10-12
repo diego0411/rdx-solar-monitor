@@ -8,7 +8,7 @@ import { readFileSync } from 'node:fs';
 const view = readFileSync(new URL('../src/views/ReportsView.vue', import.meta.url), 'utf8');
 
 test('1: economics solo al generar el tipo económico', () => {
-  assert.match(view, /import \{ buildReportIndicators \} from '\.\.\/utils\/reportPresentation\.js'/);
+  assert.match(view, /import \{ buildReportIndicators, buildReportCopy \} from '\.\.\/utils\/reportPresentation\.js'/);
   assert.match(view, /\/plants\/\$\{encodeURIComponent\(plantId\.value\)\}\/economics\?period=/);
   assert.match(view, /reportType\.value !== 'energy_economics'/);
   assert.match(view, /buildReportIndicators\(economicsData\.value\)/);
@@ -25,7 +25,7 @@ test('2: KPIs energéticos y monetarios solo económico', () => {
 test('3: estados, cobertura, publicación y moneda', () => {
   assert.match(view, /statusClasses\[report\.\w+\[field\]\?\.status\]/);
   assert.match(view, /report\.monetaryPublishable\.publishable/);
-  assert.match(view, /report\.monetaryPublishable\.reasons\.join/);
+  assert.match(view, /reportCopy\.publicationWarning/);
   assert.match(view, /report\.tariffs\.currency/);
   assert.match(view, /report\.credit\.value\.rule === 'purchase-price'/);
   assert.match(view, /v-for="notice in report\.disclaimers"/);

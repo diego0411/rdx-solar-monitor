@@ -5,6 +5,7 @@ import {
   buildReportIndicators, classifyIndicator,
   formatReportEnergy, formatReportMoney,
 } from '../src/utils/reportPresentation.js';
+import * as presentation from '../src/utils/reportPresentation.js';
 
 // ECO-04B: matriz ECO-04A sobre resúmenes sintéticos con forma del API.
 
@@ -144,4 +145,106 @@ test('9: redondeo solo al presentar, crudo intacto', () => {
   assert.equal(report.energy.generation_kwh.raw, 42.567);
   assert.equal(report.energy.generation_kwh.text, '42,57 kWh');
   assert.equal(classifyIndicator(null, {}).status, 'unavailable');
+});
+
+const copyOf = (report, bucket) => presentation.buildReportCopy(report, bucket);
+
+test('ECO-04F4: crédito energético y valoración parcial conservan coberturas distintas', () => {
+  const shaped = summaryShape({ compensation_type: 'energy_credit', production_value: null,
+    export_credit_kwh: null, export_credit_estimated_value: null, export_energy_rate: null });
+  shaped.coverage.missing_tariff_intervals = 1502;
+  shaped.metrics.self_consumption_savings = entry(23.282481621980693, 'PARTIAL', 737, 2265);
+  shaped.metrics.export_value = entry(145.5684260805844, 'PARTIAL', 737, 2265);
+  shaped.metrics.estimated_economic_benefit = entry(168.8509077025651, 'PARTIAL', 737, 2265);
+  shaped.metrics.energy_credit_generated_kwh = entry(418.9000706747174, 'PARTIAL', 2160, 2265);
+  const input = structuredClone(shaped);
+  const report = buildReportIndicators(shaped);
+  const snapshot = structuredClone(report);
+  const copy = copyOf(report, 'day');
+  assert.equal(copy.money?.production_value?.label, 'Valor de producción');
+  assert.equal(copy.money?.export_value?.label, 'Valor estimado del crédito');
+  assert.equal(copy.money?.export_value?.stateLabel, 'Parcial');
+  assert.equal(copy.money?.export_value?.coverage, '737/2265 válidos (32,5%)');
+  assert.equal(copy.credit?.stateLabel, 'Parcial');
+  assert.equal(copy.credit?.coverage, '2160/2265 válidos (95,4%)');
+  assert.equal(copy.creditValue?.text, 'Bs 145,57');
+  assert.equal(copy.creditValue?.coverage, '737/2265 válidos (32,5%)');
+  assert.equal(copy.compensation, 'Crédito energético');
+  assert.equal(copy.exportRate, 'No aplica');
+  assert.equal(copy.graphIntervals, 'Días del gráfico');
+  assert.equal(copy.publicationWarning, 'Sin total completo: falta tarifa en parte del periodo; valor de producción no disponible.');
+  assert.deepEqual(report, snapshot, 'la copia comercial no altera indicadores ni condiciones');
+  assert.deepEqual(shaped, input, 'no se modifica el contrato recibido');
+  assert.deepEqual(report.monetaryPublishable, { publishable: false,
+    reasons: ['tarifa-incompleta', 'production_value-no-disponible'] });
+});
+
+test('ECO-04F4: EXACT no fabrica cobertura parcial y mantiene importe y publicación', () => {
+  const shaped = summaryShape({ compensation_type: 'energy_credit', export_credit_kwh: 17.4,
+    export_credit_estimated_value: 26.1 });
+  shaped.metrics.energy_credit_generated_kwh = entry(17.4, 'EXACT');
+  shaped.metrics.export_value = entry(26.1, 'EXACT');
+  const report = buildReportIndicators(shaped);
+  const copy = copyOf(report, 'month');
+  assert.equal(copy.credit?.stateLabel, 'Normal');
+  assert.equal(copy.credit?.coverage, '');
+  assert.equal(copy.creditValue?.text, 'Bs 26,10');
+  assert.equal(copy.creditValue?.coverage, '');
+  assert.equal(copy.publicationWarning, '');
+  assert.equal(copy.graphIntervals, 'Meses del gráfico');
+  assert.equal(report.monetaryPublishable.publishable, true);
+});
+
+test('ECO-04F4: UNAVAILABLE y SUSPECT no se convierten en cero ni en crédito valorado', () => {
+  for (const quality of ['UNAVAILABLE', 'SUSPECT']) {
+    const shaped = summaryShape({ compensation_type: 'energy_credit', export_credit_kwh: null,
+      export_credit_estimated_value: null });
+    shaped.metrics.energy_credit_generated_kwh = entry(null, quality, 0, 2265);
+    shaped.metrics.export_value = entry(null, quality, 0, 2265);
+    const report = buildReportIndicators(shaped);
+    const copy = copyOf(report, 'intraday');
+    assert.equal(report.credit.kwh.text, '—');
+    assert.equal(copy.credit?.stateLabel, 'No disponible');
+    assert.equal(copy.creditValue?.text, '—');
+    assert.equal(copy.creditValue?.stateLabel, 'No disponible');
+    assert.equal(copy.graphIntervals, 'Intervalos del gráfico');
+    assert.ok(!copy.publicationWarning?.includes('export_value'));
+    assert.equal(report.monetaryPublishable.publishable, false);
+  }
+});
+
+test('ECO-04F4: monetary y none conservan importes y etiquetas compatibles', () => {
+  const monetary = buildReportIndicators(summaryShape());
+  const moneyCopy = copyOf(monetary);
+  assert.equal(moneyCopy.money?.export_value?.label, 'Valor de exportación');
+  assert.equal(moneyCopy.compensation, 'Compensación monetaria');
+  assert.equal(moneyCopy.exportRate, 'Bs 0,5/kWh');
+  assert.equal(monetary.money.export_value.text, 'Bs 8,70');
+  const shaped = summaryShape({ compensation_type: 'none', export_value: 0, export_compensation_value: 0 });
+  shaped.metrics.export_value = entry(0, 'EXACT');
+  const none = buildReportIndicators(shaped);
+  const noneCopy = copyOf(none);
+  assert.equal(noneCopy.compensation, 'Sin compensación');
+  assert.equal(noneCopy.exportRate, 'No aplica');
+  assert.equal(noneCopy.money?.export_value?.label, 'Valor de exportación');
+  assert.equal(none.money.export_value.text, 'Bs 0,00', 'cero solo cuando existe en el contrato');
+  const mixedCopy = copyOf(buildReportIndicators(summaryShape({ compensation_type: 'mixed' })));
+  assert.equal(mixedCopy.compensation, 'mixed', 'modalidad sin etiqueta validada conserva el texto anterior');
+  assert.equal(mixedCopy.exportRate, 'Bs 0,5/kWh');
+});
+
+test('ECO-04F4: motivos legibles, periodo en curso y proveedor no alteran los estados', () => {
+  const shaped = summaryShape();
+  shaped.coverage.period_in_progress = true;
+  shaped.data_observation.providers = ['hyxi'];
+  const report = buildReportIndicators(shaped);
+  const copy = copyOf(report);
+  assert.equal(copy.publicationWarning, 'Sin total completo: periodo en curso.');
+  assert.equal(copy.money?.self_consumption_savings?.stateLabel, 'Provisional');
+  assert.equal(report.money.self_consumption_savings.status, 'provisional');
+  assert.ok(!report.disclaimers.some(d => d.id === 'growatt-method'));
+  const growatt = buildReportIndicators(summaryShape());
+  assert.match(growatt.disclaimers.find(d => d.id === 'growatt-method').text, /^Datos de origen Growatt:/);
+  const unknown = copyOf({ ...report, monetaryPublishable: { publishable: false, reasons: ['internal_unknown'] } });
+  assert.equal(unknown.publicationWarning, 'Sin total completo: información insuficiente.');
 });

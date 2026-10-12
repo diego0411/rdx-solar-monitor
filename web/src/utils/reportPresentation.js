@@ -156,11 +156,11 @@ export function buildReportIndicators(summary) {
     disclaimers.push({ id: 'no-carryover', text: 'El crédito corresponde al periodo consultado y no incluye arrastre de periodos anteriores.' });
   }
   if (creditMode) {
-    disclaimers.push({ id: 'credit-rule', text: 'Crédito valorizado a precio de compra según la regla vigente del API.' });
+    disclaimers.push({ id: 'credit-rule', text: 'Crédito valorado a tarifa de compra en los registros válidos.' });
   }
   const providers = summary.data_observation?.providers;
   if (Array.isArray(providers) && providers.includes('growatt')) {
-    disclaimers.push({ id: 'growatt-method', text: 'Planta Growatt: la energía se deriva de contadores del fabricante; los intervalos sin muestra válida quedan como ausencia de dato.' });
+    disclaimers.push({ id: 'growatt-method', text: 'Datos de origen Growatt: energía derivada de contadores; sin muestra válida, no hay dato.' });
   }
   if (inProgress) {
     disclaimers.push({ id: 'in-progress', text: 'Período en curso: valores provisionales con los datos registrados hasta el momento.' });
@@ -202,5 +202,47 @@ export function buildReportIndicators(summary) {
     } : null,
     disclaimers,
     monetaryPublishable,
+  };
+}
+
+// ECO-04F4: textos comerciales sobre indicadores ya preparados. No modifica
+// valores, estados, conteos ni la puerta de publicación de buildReportIndicators.
+export function buildReportCopy(report, bucket) {
+  const creditMode = report?.credit?.mode === 'energy_credit';
+  const labels = {
+    production_value: 'Valor de producción',
+    self_consumption_savings: 'Ahorro por autoconsumo',
+    export_value: creditMode ? 'Valor estimado del crédito' : 'Valor de exportación',
+    estimated_economic_benefit: 'Beneficio económico estimado',
+  };
+  const indicatorCopy = indicator => ({
+    text: indicator?.text ?? '—',
+    stateLabel: indicator?.status === 'warning' && indicator.coverage ? 'Parcial'
+      : ({ normal: 'Normal', provisional: 'Provisional', warning: 'Advertencia', unavailable: 'No disponible' }[indicator?.status] ?? 'No disponible'),
+    // El porcentaje ya pertenece al indicador; solo cambia la palabra.
+    coverage: (indicator?.coverage ?? '').replace(' intervalos', ' válidos'),
+  });
+  const reasons = {
+    'sin-datos': 'sin datos',
+    'moneda-mixta': 'monedas distintas',
+    'tarifa-incompleta': 'falta tarifa en parte del periodo',
+    'production_value-no-disponible': 'valor de producción no disponible',
+    'self_consumption_savings-no-disponible': 'ahorro no disponible',
+    'export_value-no-disponible': creditMode ? 'valor del crédito no disponible' : 'valor de exportación no disponible',
+    'estimated_economic_benefit-no-disponible': 'beneficio no disponible',
+    'periodo-en-curso': 'periodo en curso',
+  };
+  const messages = [...new Set((report?.monetaryPublishable?.reasons ?? [])
+    .map(reason => reasons[reason] ?? 'información insuficiente'))];
+  const mode = report?.tariffs?.compensation_type;
+  return {
+    money: Object.fromEntries(Object.entries(labels).map(([field, label]) =>
+      [field, { label, ...indicatorCopy(report?.money?.[field]) }])),
+    credit: indicatorCopy(report?.credit?.kwh),
+    creditValue: indicatorCopy(creditMode ? report?.money?.export_value : null),
+    publicationWarning: messages.length ? `Sin total completo: ${messages.join('; ')}.` : '',
+    compensation: ({ energy_credit: 'Crédito energético', monetary: 'Compensación monetaria', none: 'Sin compensación' }[mode] ?? mode ?? '—'),
+    exportRate: mode === 'energy_credit' || mode === 'none' ? 'No aplica' : (report?.tariffs?.export_energy_rate.text ?? '—'),
+    graphIntervals: bucket === 'day' ? 'Días del gráfico' : bucket === 'month' ? 'Meses del gráfico' : 'Intervalos del gráfico',
   };
 }
