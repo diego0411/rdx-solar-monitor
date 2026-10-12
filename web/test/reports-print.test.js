@@ -60,9 +60,9 @@ test('6: ECO-04D7 bloque gráfico atómico y sin página en blanco', () => {
 });
 
 test('7: ECO-04D9 canvas proporcional sin recorte derecho en A4', () => {
-  assert.match(view, /\.preview :deep\(\.energy-chart\) \{ height: auto !important; \}/);
   assert.match(view, /\.preview :deep\(\.energy-chart > div\) \{ max-width: 100% !important; \}/);
   assert.match(view, /\.preview :deep\(\.energy-chart canvas\) \{ max-width: 100% !important; height: auto !important; \}/);
+  assert.ok(!view.includes(':deep(.energy-chart) { height:'), 'contenedor con altura fija (ECO-04D12, sin colapso)');
   assert.ok(!view.includes('overflow: hidden') && !view.includes('overflow:hidden'), 'sin ocultar contenido');
 });
 

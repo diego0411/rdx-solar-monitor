@@ -424,8 +424,11 @@ onUnmounted(() => {
   /* ECO-04D9: el canvas y la raíz zrender conservan el ancho de pantalla en
      px fijos mientras la columna A4 es más angosta → recorte derecho
      (últimas fechas, colas de curva, leyenda). Ajuste proporcional solo
-     print: nunca amplía, nunca deforma, nunca recorta ni oculta. */
-  .preview :deep(.energy-chart) { height: auto !important; }
+     print: nunca amplía, nunca deforma, nunca recorta ni oculta.
+     ECO-04D12: el contenedor conserva sus 320px en impresión. Fijarlo en
+     auto provocaba colapso a cero (canvas auto + contenedor auto + resize
+     se realimentan); con altura fija el resize es estable y el tope
+     max-width sigue evitando el desborde aunque el bitmap sea anterior. */
   .preview :deep(.energy-chart > div) { max-width: 100% !important; }
   .preview :deep(.energy-chart canvas) { max-width: 100% !important; height: auto !important; }
 }
