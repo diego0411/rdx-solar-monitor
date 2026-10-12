@@ -5,6 +5,7 @@ import { getPlantsCatalog } from '../services/catalog.js';
 import PlantEnergyHistory from '../components/PlantEnergyHistory.vue';
 import { buildReportIndicators } from '../utils/reportPresentation.js';
 import { clearRdxColorCache } from '../utils/rdxTokens.js';
+import { getInstanceByDom } from 'echarts/core';
 
 // ECO-04D1: estructura del módulo Reportes. ECO-04D2: vista previa
 // energética con datos reales del contrato energy-history (vía el
@@ -54,6 +55,7 @@ const preview = ref(null);
 const chartPeriod = ref('month');
 const chartDate = ref('');
 const history = ref(null);
+const reportsRoot = ref(null);
 const economicsData = ref(null);
 const previewLoading = ref(false);
 const previewError = ref('');
@@ -98,6 +100,7 @@ const coverageCounts = computed(() => {
 });
 
 function invalidatePreview() {
+  restorePrintState();
   previewController?.abort();
   ecoController?.abort();
   previewController = null;
@@ -170,9 +173,10 @@ const PRINT_SETTLE_MS = 350;
 let printSnapshot = null;
 function restorePrintState() {
   if (!printSnapshot) return;
-  const { title, dark } = printSnapshot;
+  const { title, dark, section, sectionStyle, chart } = printSnapshot;
   printSnapshot = null;
   try {
+    if (section) section.style.cssText = sectionStyle;
     if (typeof document !== 'undefined') {
       document.title = title;
       if (dark) {
@@ -181,6 +185,7 @@ function restorePrintState() {
         window.dispatchEvent(new CustomEvent('rdx:theme', { detail: { theme: 'dark' } }));
       }
     }
+    if (chart && !chart.isDisposed()) chart.resize({ animation: { duration: 0 } });
   } catch {
     // Restauración no disponible: nada que revertir.
   }
@@ -190,12 +195,24 @@ function onAfterPrint() {
 }
 async function handlePrint() {
   if (!canPrint.value) return;
+  if (printSnapshot) return;
+  let session;
   try {
     if (typeof document !== 'undefined') {
-      printSnapshot = {
+      const section = reportsRoot.value?.querySelector('.energy-section');
+      const container = reportsRoot.value?.querySelector('.energy-chart');
+      session = printSnapshot = {
         title: document.title,
         dark: !!document.documentElement?.hasAttribute?.('data-theme'),
+        section,
+        sectionStyle: section?.style.cssText,
+        chart: container ? getInstanceByDom(container) : null,
       };
+      // ECO-04F3: A4 (210mm) menos los márgenes laterales (12 + 12mm).
+      // Preparar la tarjeta a su ancho de papel antes del diálogo permite
+      // a ECharts dibujar a tamaño real (altura 320px), sin reducir el bitmap
+      // de pantalla ni sus etiquetas. También funciona desde pantalla móvil.
+      if (section) section.style.cssText += '; width: 186mm; max-width: none; box-sizing: border-box;';
       const stamp = [preview.value?.plantName, previewPeriodLabel.value, preview.value?.date]
         .filter(part => part !== null && part !== undefined && String(part) !== '')
         .join(' ').replace(/\s+/g, ' ').trim();
@@ -206,14 +223,14 @@ async function handlePrint() {
         window.dispatchEvent(new CustomEvent('rdx:theme', { detail: { theme: 'light' } }));
       }
     }
-  } catch {
-    // Sin DOM: se intenta imprimir con el estado vigente.
-  }
-  if (printSnapshot?.dark) await new Promise(resolve => setTimeout(resolve, PRINT_SETTLE_MS));
-  try {
+    // Dejar que Vue, la paleta y ResizeObserver se estabilicen también en
+    // tema claro; el resize final es síncrono antes del diálogo.
+    await new Promise(resolve => setTimeout(resolve, PRINT_SETTLE_MS));
+    if (session && printSnapshot !== session) return;
+    if (session?.chart && !session.chart.isDisposed()) session.chart.resize({ animation: { duration: 0 } });
     window.print();
   } finally {
-    restorePrintState();
+    if (printSnapshot === session) restorePrintState();
   }
 }
 
@@ -253,7 +270,7 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div class="reports-view">
+  <div ref="reportsRoot" class="reports-view">
     <header class="reports-header">
       <div>
         <h1>Reportes</h1>
