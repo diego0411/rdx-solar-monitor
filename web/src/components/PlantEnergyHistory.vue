@@ -56,11 +56,15 @@ function render() {
   }
   const labelFormatter = value => {
     const instant = new Date(value);
+    // ECO-04G1: Semana/Mes/Año reciben fechas de calendario ya agrupadas
+    // en la zona de planta, codificadas a medianoche UTC. Leerlas en UTC
+    // conserva esa fecha; solo Día contiene instantes reales a convertir.
+    // Ejes y tooltips reutilizan este mismo formateador.
     if (period.value === 'year') {
-      return new Intl.DateTimeFormat('es-BO', { month: 'short', timeZone }).format(instant);
+      return new Intl.DateTimeFormat('es-BO', { month: 'short', timeZone: 'UTC' }).format(instant);
     }
     if (period.value === 'month') {
-      return new Intl.DateTimeFormat('es-BO', { day: '2-digit', month: 'short', timeZone }).format(instant);
+      return new Intl.DateTimeFormat('es-BO', { day: '2-digit', month: 'short', timeZone: 'UTC' }).format(instant);
     }
     if (period.value === 'day') return formatter.format(instant);
     return new Intl.DateTimeFormat('es-BO', { day: '2-digit', month: 'short', timeZone: 'UTC' }).format(instant);

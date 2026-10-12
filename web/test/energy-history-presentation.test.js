@@ -24,7 +24,7 @@ const buckets = Array.from({ length: 24 }, (_, i) => ({
   grid_export_kwh: i * 3,
 }));
 
-function setup(period = 'day', overrides = {}) {
+function setup(period = 'day', overrides = {}, props = {}, points = buckets) {
   let option;
   const deps = {
     ref, computed, _mergeModels: mergeModels, watch() {}, onMounted() {}, onBeforeUnmount() {},
@@ -36,8 +36,8 @@ function setup(period = 'day', overrides = {}) {
     ...overrides,
   };
   const component = new Function(...Object.keys(deps), code)(...Object.values(deps));
-  const view = component.setup({ plantId: 'p1', selectedDate: '2026-10-09', period, timezone: 'GMT-4' }, { expose() {}, emit() {} });
-  view.points.value = structuredClone(buckets);
+  const view = component.setup({ plantId: 'p1', selectedDate: '2026-10-09', period, timezone: 'GMT-4', ...props }, { expose() {}, emit() {} });
+  view.points.value = structuredClone(points);
   view.container.value = {};
   view.render();
   return { option, view };
@@ -119,6 +119,61 @@ test('tooltip muestra cuatro valores individuales en kWh, incluso series nulas o
   view.points.value = [{ ...buckets[0], ...Object.fromEntries(fields.map(field => [field, null])) }];
   assert.equal(option.tooltip.formatter([{ dataIndex: 0 }]).split('Sin datos').length, 5);
   assert.equal(option.tooltip.formatter([]), '');
+});
+
+function checkDates(period, timestamps, labels, timezone) {
+  const points = timestamps.map((interval_start, i) => ({ ...buckets[i % buckets.length], interval_start }));
+  const snapshot = structuredClone(points);
+  const { option, view } = setup(period, {}, { timezone }, points);
+  assert.deepEqual(option.xAxis.data, timestamps);
+  labels.forEach((label, i) => {
+    assert.equal(option.xAxis.axisLabel.formatter(timestamps[i]), label, `eje ${period}: ${timestamps[i]} / ${timezone}`);
+    assert.equal(option.tooltip.formatter([{ dataIndex: i }]).split('\n')[0], label, `tooltip ${period}: ${timestamps[i]} / ${timezone}`);
+  });
+  fields.forEach((field, i) => assert.deepEqual(option.series[i].data, points.map(p => p[field])));
+  assert.deepEqual(view.points.value, snapshot, 'timestamps, valores y nulos conservados');
+  assert.deepEqual(points, snapshot, 'fixture sin mutaciones');
+}
+
+test('ECO-04G1: septiembre conserva los 30 días de calendario en ejes y tooltips', () => {
+  const dates = Array.from({ length: 30 }, (_, i) => `2026-09-${String(i + 1).padStart(2, '0')}T00:00:00.000Z`);
+  const labels = Array.from({ length: 30 }, (_, i) => `${String(i + 1).padStart(2, '0')}-sept`);
+  for (const timezone of ['GMT-4', 'America/La_Paz', 'America/Los_Angeles', 'Pacific/Kiritimati']) {
+    checkDates('month', dates, labels, timezone);
+  }
+});
+
+test('ECO-04G1: enero a diciembre conservan el mes del bucket en ejes y tooltips', () => {
+  const dates = Array.from({ length: 12 }, (_, i) => `2026-${String(i + 1).padStart(2, '0')}-01T00:00:00.000Z`);
+  const labels = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sept', 'oct', 'nov', 'dic'];
+  for (const timezone of ['GMT-4', 'America/La_Paz', 'America/Los_Angeles', 'Pacific/Kiritimati']) {
+    checkDates('year', dates, labels, timezone);
+  }
+});
+
+test('ECO-04G1: semana entre septiembre y octubre conserva fechas de calendario', () => {
+  const dates = ['2026-09-28', '2026-09-29', '2026-09-30', '2026-10-01', '2026-10-02', '2026-10-03', '2026-10-04']
+    .map(date => `${date}T00:00:00.000Z`);
+  const labels = ['28-sept', '29-sept', '30-sept', '01-oct', '02-oct', '03-oct', '04-oct'];
+  for (const timezone of ['GMT-4', 'America/Los_Angeles', 'Pacific/Kiritimati']) {
+    checkDates('week', dates, labels, timezone);
+  }
+});
+
+test('ECO-04G1: día sigue convirtiendo instantes reales a la zona de planta, incluso DST', () => {
+  for (const [timezone, instant, expected] of [
+    ['GMT-4', '2026-09-29T15:22:49Z', '11:22 a. m.'],
+    ['America/La_Paz', '2026-09-29T11:22:49-04:00', '11:22 a. m.'],
+    ['UTC', '2026-09-29T15:22:49Z', '03:22 p. m.'],
+    ['Asia/Tokyo', '2026-09-29T15:22:49Z', '12:22 a. m.'],
+    ['America/New_York', '2026-03-08T06:30:00Z', '01:30 a. m.'],
+    ['America/New_York', '2026-03-08T07:30:00Z', '03:30 a. m.'],
+  ]) {
+    const { option, view } = setup('day', {}, { timezone }, [{ ...buckets[0], interval_start: instant }]);
+    assert.equal(option.xAxis.axisLabel.formatter(instant).replace(/\s+/g, ' '), expected);
+    assert.equal(option.tooltip.formatter([{ dataIndex: 0 }]).split('\n')[0].replace(/\s+/g, ' '), expected);
+    assert.equal(view.points.value[0].interval_start, instant);
+  }
 });
 
 test('aria-label refleja el período seleccionado', () => {
