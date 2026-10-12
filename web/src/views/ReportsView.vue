@@ -432,7 +432,7 @@ onUnmounted(() => {
   .preview :deep(.energy-chart > div) { max-width: 100% !important; }
   .preview :deep(.energy-chart canvas) { max-width: 100% !important; height: auto !important; }
 }
-@media (max-width: 767px) {
+@media screen and (max-width: 767px) {
   .reports-header h1 { font-size: 28px; }
   .filters { grid-template-columns: 1fr; }
   .form-actions { justify-content: stretch; }
