@@ -87,15 +87,31 @@ const generatedAt = computed(() => {
   return Number.isFinite(parsed.getTime())
     ? new Intl.DateTimeFormat('es-BO', { dateStyle: 'short', timeStyle: 'short' }).format(parsed) : '';
 });
-// Conteo de cobertura por bucket (presentación, sin sumar energía).
+// Disponibilidad de puntos recibidos, no completitud temporal ni calidad
+// económica. Día no aporta coverage: se observan sus cuatro campos crudos.
+const intradayFields = ['generation_kwh', 'consumption_kwh', 'grid_import_kwh', 'grid_export_kwh'];
 const coverageCounts = computed(() => {
   const buckets = Array.isArray(history.value?.buckets) ? history.value.buckets : null;
   if (!buckets) return null;
   const counts = { total: buckets.length, available: 0, partial: 0, none: 0 };
   for (const bucket of buckets) {
-    if (bucket?.coverage === 'available') counts.available += 1;
+    if (history.value.bucket === 'intraday') {
+      let present = 0;
+      for (const field of intradayFields) {
+        const value = bucket?.[field];
+        if (value === null) continue;
+        // No convertir null, campos omitidos, blancos o booleanos en cero.
+        // La API puede serializar las columnas numéricas como strings.
+        if ((typeof value !== 'number' && typeof value !== 'string')
+          || (typeof value === 'string' && value.trim() === '')
+          || !Number.isFinite(Number(value))) return null;
+        present += 1;
+      }
+      counts[present === intradayFields.length ? 'available' : present > 0 ? 'partial' : 'none'] += 1;
+    } else if (bucket?.coverage === 'available') counts.available += 1;
     else if (bucket?.coverage === 'partial') counts.partial += 1;
-    else counts.none += 1;
+    else if (bucket?.coverage === 'none') counts.none += 1;
+    else return null;
   }
   return counts;
 });
@@ -331,6 +347,7 @@ onUnmounted(() => {
           <p v-if="coverageCounts" class="preview-meta" role="status">
             {{ reportCopy.graphIntervals }}: {{ coverageCounts.total }} · Disponibles: {{ coverageCounts.available }} · Parciales: {{ coverageCounts.partial }} · Sin datos: {{ coverageCounts.none }}
           </p>
+          <p v-else-if="history" class="preview-meta" role="status">Cobertura no disponible</p>
           <template v-if="isEconomicPreview">
             <p v-if="ecoLoading" role="status">Cargando indicadores económicos…</p>
             <p v-else-if="ecoError" class="preview-warn" role="alert">{{ ecoError }}</p>
