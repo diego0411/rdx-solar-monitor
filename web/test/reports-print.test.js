@@ -55,7 +55,7 @@ test('5: encabezado, pie y cobertura diferenciada en la impresión', () => {
 });
 
 test('6: ECO-04D7 bloque gráfico atómico y sin página en blanco', () => {
-  assert.match(view, /\.preview :deep\(\.energy-section\) \{ break-inside: avoid; break-before: page; \}/);
+  assert.match(view, /\.preview :deep\(\.energy-section\) \{ break-inside: avoid; break-before: auto; \}/);
   assert.match(css, /\.app-shell \{ display: block; background: #fff; min-height: 0; \}/);
 });
 
@@ -66,9 +66,9 @@ test('7: ECO-04D9 canvas proporcional sin recorte derecho en A4', () => {
   assert.ok(!view.includes('overflow: hidden') && !view.includes('overflow:hidden'), 'sin ocultar contenido');
 });
 
-test('8: ECO-04D10 advertencias fragmentables, gráfico en página propia', () => {
+test('8: ECO-04D10 advertencias fragmentables, gráfico sin avisos aislados (ECO-04G4)', () => {
   assert.ok(!view.includes('.disclaimers, .preview'), 'lista fuera de la regla indivisible');
   assert.match(view, /\.preview h3 \{ break-after: avoid; \}/);
   assert.match(view, /\.kpi, \.credit, \.preview :deep\(\.energy-chart\) \{ break-inside: avoid; \}/);
-  assert.match(view, /\.preview :deep\(\.energy-section\) \{ break-inside: avoid; break-before: page; \}/);
+  assert.match(view, /\.preview :deep\(\.energy-section\) \{ break-inside: avoid; break-before: auto; \}/);
 });

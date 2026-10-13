@@ -454,11 +454,13 @@ onUnmounted(() => {
   /* ECO-04D7: el avoid del lienzo no basta; la tarjeta .energy-section
      (título + gráfico) debe ser atómica para que el salto ocurra antes del
      bloque completo (~420px, siempre cabe en una página A4 fresca).
-     ECO-04D8: avoid impide fragmentar pero no estabiliza la posición (el
-     gráfico flotaba según el contenido previo). La sección abre página
-     propia en impresión; indicadores, tarifas, créditos y advertencias
-     quedan en las anteriores. Solo print: la web no cambia. */
-  .preview :deep(.energy-section) { break-inside: avoid; break-before: page; }
+     ECO-04G4: se retira el break-before: page (ECO-04D8). El salto forzado,
+     combinado con advertencias fragmentadas, aislaba el último aviso en
+     una página intermedia (resumen+avisos, aviso huérfano, gráfico). Con
+     break-before: auto el gráfico sigue abriendo página propia en los
+     reportes habituales y fluye tras el último aviso si hay desborde: sin
+     avisos aislados, sin recortes y sin tocar la pantalla. Solo print. */
+  .preview :deep(.energy-section) { break-inside: avoid; break-before: auto; }
   /* ECO-04D9: el canvas y la raíz zrender conservan el ancho de pantalla en
      px fijos mientras la columna A4 es más angosta → recorte derecho
      (últimas fechas, colas de curva, leyenda). Ajuste proporcional solo
