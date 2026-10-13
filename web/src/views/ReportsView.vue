@@ -73,7 +73,9 @@ const previewPeriodLabel = computed(() => periods.find(item => item.key === prev
 const previewTypeLabel = computed(() => reportTypes.find(item => item.key === preview.value?.type)?.label ?? '');
 const isEconomicPreview = computed(() => preview.value?.type === 'energy_economics');
 const tzVerified = computed(() => preview.value?.timezone !== null && preview.value?.timezone !== undefined);
-const report = computed(() => (preview.value && isEconomicPreview.value ? buildReportIndicators(economicsData.value) : null));
+// null durante carga/error no es un reporte económico renderizable.
+const report = computed(() => (preview.value && isEconomicPreview.value && economicsData.value !== null
+  ? buildReportIndicators(economicsData.value) : null));
 const reportCopy = computed(() => buildReportCopy(report.value, history.value?.bucket));
 // Vista lista para imprimir: foto vigente, sin consultas pendientes,
 // gráfico recibido y (en económico) indicadores sin error.
