@@ -281,13 +281,16 @@ export class GrowattProvider {
   }
 
   async queryLastData(deviceType, deviceSns, apiToken) {
-    const cacheKey = `${deviceType}:${apiToken}`;
+    const url = new URL(LAST_DATA_PATH, this.baseUrl);
+    const body = new URLSearchParams({ deviceType, deviceSn: deviceSns.join(',') });
+    // Cuenta/token, endpoint efectivo y lote exacto identifican la respuesta,
+    // también al reutilizar datos vencidos ante rate limit.
+    const cacheKey = JSON.stringify([url.href, apiToken, body.toString()]);
     const cached = lastDataCache.get(cacheKey);
     if (cached && cached.expiresAt > Date.now()) {
       return { payload: cached.payload, rateLimited: false };
     }
 
-    const url = new URL(LAST_DATA_PATH, this.baseUrl);
     const response = await fetch(url, {
       method: 'POST',
       headers: {
@@ -295,7 +298,7 @@ export class GrowattProvider {
         token: apiToken,
         'Content-Type': 'application/x-www-form-urlencoded',
       },
-      body: new URLSearchParams({ deviceType, deviceSn: deviceSns.join(',') }),
+      body,
       redirect: 'error',
       signal: AbortSignal.timeout(10000),
     });
