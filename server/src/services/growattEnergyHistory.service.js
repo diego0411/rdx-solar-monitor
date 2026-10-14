@@ -254,8 +254,14 @@ export function mergeMeterEnergy({ plant, minDevices, baseRows, powerRows, meter
       continue;
     }
     if (existingInstants.has(meterDelta.instant)) {
-      // Colisión temporal exacta con fila existente: rellenar solo nulls.
-      const rowIndex = baseRows.findIndex(row => Date.parse(row.interval_start) === meterDelta.instant);
+      // Colisión temporal exacta con fila existente (MIN o ya empujada):
+      // rellenar solo nulls, nunca un segundo contador para el mismo instante.
+      const rowIndex = rows.findIndex(row => Date.parse(row.interval_start) === meterDelta.instant);
+      if (rowIndex === -1) {
+        // Defensivo: el instante quedó en existingInstants sin fila localizable.
+        unmatchedMeterSamples += 1;
+        continue;
+      }
       const target = rows[rowIndex];
       if (target.grid_import_kwh === null) target.grid_import_kwh = meterDelta.grid_import_kwh;
       if (target.grid_export_kwh === null) target.grid_export_kwh = meterDelta.grid_export_kwh;

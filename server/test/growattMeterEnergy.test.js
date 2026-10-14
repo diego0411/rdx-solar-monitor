@@ -353,3 +353,45 @@ test('T: muestras DESC del provider igual verifican invariante', () => {
   assert.equal(run([...asc].reverse()).meta.invariant_ok, true);
 });
 
+test('bug D1: segundo delta no reclamado en instante ya empujado → fila única sin throw', () => {
+  const powerRows = [minRow('2026-09-27T10:00:00.000Z', 5)];
+  const run = samples => mergeMeterEnergy({
+    plant,
+    minDevices: [minDevice],
+    baseRows: deriveGrowattEnergyHistory(plant, [minDevice], powerRows),
+    powerRows,
+    meterSamples: samples,
+    meter,
+  });
+  // Baseline del día (delta 0), luego DOS deltas no reclamados en el mismo
+  // instante (MIN está a 600s, fuera de la ventana de 150s): el segundo
+  // entra en la rama de colisión exacta sobre la fila empujada por el primero.
+  const { rows, meta } = run([
+    meterSample('2026-09-27 04:00:00', 0, 0),
+    meterSample('2026-09-27 06:10:00', 1, 0),
+    meterSample('2026-09-27 06:10:00', 3, 0),
+  ]);
+  // Sin throw y sin fila duplicada para el instante compartido.
+  assert.equal(rows.length, 2);
+  const collided = rows.filter(row => row.interval_start === '2026-09-27T10:10:00.000Z');
+  assert.equal(collided.length, 1);
+  // La fila empujada conserva sus valores: el delta 2 no se suma encima.
+  assert.equal(collided[0].generation_kwh, null);
+  assert.equal(collided[0].grid_import_kwh, 1);
+  assert.equal(collided[0].grid_export_kwh, 0);
+  // consumption solo se rellena si estaba null y las partes lo permiten
+  // (generation null → sigue null).
+  assert.equal(collided[0].consumption_kwh, null);
+  // La fila MIN queda intacta (fuera de ventana): nulls sin pisar.
+  const base = rows.find(row => row.interval_start === '2026-09-27T10:00:00.000Z');
+  assert.equal(base.generation_kwh, 5);
+  assert.equal(base.grid_import_kwh, null);
+  assert.equal(base.grid_export_kwh, null);
+  assert.equal(base.consumption_kwh, null);
+  // Conteo total del día: solo el primer delta aporta energía.
+  assert.ok(Math.abs(sum(rows, 'grid_import_kwh') - 1) < 1e-9);
+  // Baseline cero + delta empujado; el colisionado no cuenta como no asociado.
+  assert.equal(meta.unmatched_meter_samples, 2);
+  assert.equal(meta.invariant_ok, true);
+});
+
