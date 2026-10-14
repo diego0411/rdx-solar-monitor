@@ -232,6 +232,8 @@ test('18: detalle incluye raw_payload', async t => {
 
 // 25. /summary no cae en /:id
 test('25: summary responde KPIs, no 400/404 de id', async t => {
+  // reloj congelado en NOW para que la ventana de resolved_7d sea determinista
+  t.mock.timers.enable({ apis: ['Date'], now: NOW });
   const { status, body } = await get(t, 'admin', '/api/alarms/summary');
   assert.equal(status, 200);
   assert.deepEqual(Object.keys(body).sort(), ['active', 'by_provider', 'critical', 'resolved_7d', 'warning']);
@@ -283,7 +285,9 @@ test('14/15/19: detalle, scope y sanitización', async () => {
 });
 
 // 20-24. summary respeta scope
-test('20-24: summary con y sin scope', async () => {
+test('20-24: summary con y sin scope', async t => {
+  // reloj congelado en NOW para que la ventana de resolved_7d sea determinista
+  t.mock.timers.enable({ apis: ['Date'], now: NOW });
   const full = fakeRes();
   await controller.getSummary({ scope: { plantIds: null } }, full);
   assert.deepEqual(full.body, { active: 3, critical: 1, warning: 1, resolved_7d: 1, by_provider: { hyxi: 1, growatt: 2 } });
