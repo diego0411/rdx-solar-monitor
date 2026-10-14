@@ -1,3 +1,4 @@
+import { withSyncLock } from './syncLock.js';
 import { HyxiProvider } from '../providers/hyxi/HyxiProvider.js';
 import { normalizeHyxiEnergySummary } from '../providers/hyxi/normalizeHyxiEnergySummary.js';
 import { listActiveHyxiPlants } from '../repositories/plants.repository.js';
@@ -6,6 +7,10 @@ import { upsertPlantEnergySummary } from '../repositories/plantEnergySummary.rep
 const provider = new HyxiProvider();
 
 export async function syncHyxiEnergySummary() {
+  return withSyncLock('hyxi:energy-summary', () => syncHyxiEnergySummaryUnlocked());
+}
+
+async function syncHyxiEnergySummaryUnlocked() {
   const plants = await listActiveHyxiPlants();
   const result = { provider: 'hyxi', fetched: plants.length, updated: 0, failed: 0 };
   for (const plant of plants) {

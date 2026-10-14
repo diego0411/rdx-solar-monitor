@@ -36,18 +36,29 @@ test('a locked runner skips only itself', async () => {
   await first;
 });
 
-test('timeout releases the lock and permits a retry', async () => {
+for (const outcome of ['resolve', 'reject']) test(`timeout retains the lock until real ${outcome}`, async () => {
   let attempts = 0;
+  let settle;
+  const pending = new Promise((resolve, reject) => {
+    settle = () => outcome === 'resolve' ? resolve({ synced: 1 }) : reject(new Error('late failure'));
+  });
+  const logger = recordingLogger();
   const run = createScheduledSync({
     name: 'plants',
-    sync: () => ++attempts === 1 ? new Promise(() => {}) : Promise.resolve({ synced: 1 }),
+    sync: () => ++attempts === 1 ? pending : Promise.resolve({ synced: 1 }),
     timeoutMs: 10,
-    logger: silentLogger,
+    logger,
   });
 
   const timedOut = await run();
   assert.equal(timedOut.failed, true);
   assert.equal(timedOut.error.code, 'SYNC_TIMEOUT');
+  assert.deepEqual(await run(), { skipped: true });
+  assert.equal(attempts, 1);
+  settle();
+  await new Promise(resolve => setImmediate(resolve));
+  const messages = outcome === 'resolve' ? logger.calls.info : logger.calls.error;
+  assert.ok(messages.some(([message]) => message.includes('after timeout')));
   assert.deepEqual(await run(), { synced: 1 });
 });
 

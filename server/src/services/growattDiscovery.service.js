@@ -1,14 +1,19 @@
+import { withSyncLock } from './syncLock.js';
 import { listStoredDevices, upsertGrowattDevice } from '../repositories/devices.repository.js';
 import { GrowattProvider } from '../providers/growatt/GrowattProvider.js';
 import { normalizeGrowattDiscovery } from '../providers/growatt/normalizeGrowattDiscovery.js';
 import { linkPlantMeters } from './growattDevices.service.js';
 
 const provider = new GrowattProvider();
-let running = false;
 
 export async function discoverGrowattPlant(plant) {
-  if (running) return { skipped: true };
-  running = true;
+  return withSyncLock('growatt:discovery', () =>
+    withSyncLock('growatt:device-writes', () =>
+      discoverGrowattPlantUnlocked(plant), { mode: 'queue' }), { mode: 'skip' }
+  );
+}
+
+async function discoverGrowattPlantUnlocked(plant) {
   const result = { plants: 0, inserted: 0, updated: 0, unidentified: 0, failed: 0,
     rate_limited: false, meters_fetched: 0, meters_linked: 0, meter_failed: 0, errors: [] };
   try {
@@ -45,8 +50,6 @@ export async function discoverGrowattPlant(plant) {
       }
   } catch {
     result.failed += 1;
-  } finally {
-    running = false;
   }
   // Never log upstream messages, credentials or payloads.
   const { errors, ...summary } = result;

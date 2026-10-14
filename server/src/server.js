@@ -1,3 +1,4 @@
+import { withSyncLock } from './services/syncLock.js';
 import app from './app.js';
 import { env } from './config/env.js';
 import { syncGrowattPlants } from './services/growattPlants.service.js';
@@ -23,12 +24,12 @@ const HYXI_HISTORY_SYNC_INTERVAL_MS = 10 * 60 * 1000;
 const GROWATT_LATEST_INTERVAL_MS = 5 * 60 * 1000;
 const GROWATT_HISTORY_SYNC_INTERVAL_MS = 30 * 60 * 1000;
 const HISTORY_ROLLUP_INTERVAL_MS = 6 * 60 * 60 * 1000;
-let growattLatestSyncRunning = false;
-let growattHistorySyncRunning = false;
 
-async function runGrowattLatestSync() {
-  if (growattLatestSyncRunning) return;
-  growattLatestSyncRunning = true;
+function runGrowattLatestSync() {
+  return withSyncLock('growatt:latest-cycle', runGrowattLatestSyncUnlocked, { mode: 'skip' });
+}
+
+async function runGrowattLatestSyncUnlocked() {
   try {
     const result = await syncGrowattLatest();
     if (result.failed > 0 || result.rate_limited || result.permission_denied) {
@@ -36,14 +37,14 @@ async function runGrowattLatestSync() {
     }
   } catch (error) {
     console.error('Growatt automatic latest sync failed:', error);
-  } finally {
-    growattLatestSyncRunning = false;
   }
 }
 
-async function runGrowattHistorySync() {
-  if (growattHistorySyncRunning) return;
-  growattHistorySyncRunning = true;
+function runGrowattHistorySync() {
+  return withSyncLock('growatt:history-cycle', runGrowattHistorySyncUnlocked, { mode: 'skip' });
+}
+
+async function runGrowattHistorySyncUnlocked() {
   try {
     const plants = await listActiveGrowattPlants();
     const date = currentBoliviaDate();
@@ -61,8 +62,6 @@ async function runGrowattHistorySync() {
     }
   } catch (error) {
     console.error('Growatt automatic history sync failed:', error);
-  } finally {
-    growattHistorySyncRunning = false;
   }
 }
 

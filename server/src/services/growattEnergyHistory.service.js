@@ -1,3 +1,4 @@
+import { withSyncLock } from './syncLock.js';
 import { listActiveGrowattMinDevicesByPlant, listActiveGrowattMeterByPlant } from '../repositories/devices.repository.js';
 import { listEnergyIntervalsRange, upsertEnergyIntervals } from '../repositories/energyIntervals.repository.js';
 import { listPlantPowerIntervals } from '../repositories/plantPowerIntervals.repository.js';
@@ -472,6 +473,15 @@ export function preserveEnergyProvenance(rows, existingRows) {
 }
 
 export async function syncGrowattEnergyHistory(plant, date) {
+  // Daily derivation and rollups share the plant lock, including source reads.
+  // Power has a separate lock: the fallback below may await a power sync.
+  return withSyncLock(`growatt:energy:${plant.id}:${date}`, () =>
+    withSyncLock(`growatt:energy-writes:${plant.id}`, () =>
+      syncGrowattEnergyHistoryUnlocked(plant, date), { mode: 'queue' }),
+  );
+}
+
+async function syncGrowattEnergyHistoryUnlocked(plant, date) {
   let powerRows = await listPlantPowerIntervals(plant.id, date);
   let powerHistorySynced = false;
   if (!powerRows.length) {
@@ -544,6 +554,13 @@ export async function syncGrowattEnergyHistory(plant, date) {
 }
 
 export async function syncGrowattEnergyRollups(plant, period, selectedDate) {
+  return withSyncLock(`growatt:rollup:${plant.id}:${period}:${periodRange(period, selectedDate).start}`, () =>
+    withSyncLock(`growatt:energy-writes:${plant.id}`, () =>
+      syncGrowattEnergyRollupsUnlocked(plant, period, selectedDate), { mode: 'queue' }),
+  );
+}
+
+async function syncGrowattEnergyRollupsUnlocked(plant, period, selectedDate) {
   if (!['month', 'year'].includes(period)) throw new Error('Periodo de rollup Growatt inválido');
   const sourceType = period === 'month' ? 1 : 2;
   const targetType = period === 'month' ? 2 : 3;

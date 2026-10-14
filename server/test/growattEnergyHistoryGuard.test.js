@@ -28,6 +28,8 @@ let powerRows = [];
 let existingRows = [];
 let upsertCalls = [];
 let powerSyncCalls = 0;
+let beforeUpsert = async () => {};
+let rangeReads = [];
 
 mock.module('../src/repositories/plantPowerIntervals.repository.js', {
   exports: { listPlantPowerIntervals: async () => powerRows },
@@ -40,15 +42,15 @@ mock.module('../src/repositories/devices.repository.js', {
 });
 mock.module('../src/repositories/energyIntervals.repository.js', {
   exports: {
-    listEnergyIntervalsRange: async () => existingRows,
-    upsertEnergyIntervals: async rows => { upsertCalls.push(rows); },
+    listEnergyIntervalsRange: async (...args) => { rangeReads.push(args); return existingRows; },
+    upsertEnergyIntervals: async rows => { await beforeUpsert(rows); upsertCalls.push(rows); },
   },
 });
 mock.module('../src/services/growattPowerHistory.service.js', {
   exports: { syncGrowattPowerHistory: async () => { powerSyncCalls += 1; throw new Error('provider download forbidden'); } },
 });
 
-const { syncGrowattEnergyHistory } = await import('../src/services/growattEnergyHistory.service.js');
+const { syncGrowattEnergyHistory, syncGrowattEnergyRollups } = await import('../src/services/growattEnergyHistory.service.js');
 
 function reset({ power, existing }) {
   powerRows = power;
@@ -56,6 +58,35 @@ function reset({ power, existing }) {
   upsertCalls = [];
   powerSyncCalls = 0;
 }
+
+test('day writes and month/year rollups read committed predecessors without overlap', async () => {
+  reset({ power: [powerRow('2026-09-14 16:00:00', full)], existing: [] });
+  rangeReads = [];
+  let release;
+  const gate = new Promise(resolve => { release = resolve; });
+  beforeUpsert = async rows => {
+    if (rows[0]?.interval_type === 1) await gate;
+    existingRows = rows;
+  };
+  try {
+    const day = syncGrowattEnergyHistory(plant, '2026-09-14');
+    await new Promise(resolve => setImmediate(resolve));
+    const month = syncGrowattEnergyRollups(plant, 'month', '2026-09-01');
+    const sameMonth = syncGrowattEnergyRollups(plant, 'month', '2026-09-30');
+    const year = syncGrowattEnergyRollups(plant, 'year', '2026-09-14');
+    await new Promise(resolve => setImmediate(resolve));
+    assert.equal(rangeReads.length, 1, 'rollups must wait for the day write');
+    assert.equal(upsertCalls.length, 0);
+    release();
+    const [, monthly, joined] = await Promise.all([day, month, sameMonth, year]);
+    assert.deepEqual(monthly, joined);
+    assert.deepEqual(upsertCalls.map(rows => rows[0].interval_type), [1, 2, 3]);
+    assert.equal(upsertCalls[2][0].generation_kwh, upsertCalls[0][0].generation_kwh);
+  } finally {
+    release();
+    beforeUpsert = async () => {};
+  }
+});
 
 test('12. existing parcial + derived all-null bloquea el upsert', async () => {
   reset({

@@ -1,3 +1,4 @@
+import { withSyncLock } from './syncLock.js';
 import { HyxiProvider } from '../providers/hyxi/HyxiProvider.js';
 import { normalizeHyxiDeviceInfo } from '../providers/hyxi/normalizeHyxiDeviceInfo.js';
 import { listActiveHyxiDevices, updateDeviceInfo } from '../repositories/devices.repository.js';
@@ -5,6 +6,13 @@ import { listActiveHyxiDevices, updateDeviceInfo } from '../repositories/devices
 const provider = new HyxiProvider();
 
 export async function syncHyxiDeviceDetails() {
+  return withSyncLock('hyxi:device-details', () =>
+    withSyncLock('hyxi:device-writes', () =>
+      syncHyxiDeviceDetailsUnlocked(), { mode: 'queue' }),
+  );
+}
+
+async function syncHyxiDeviceDetailsUnlocked() {
   const devices = await listActiveHyxiDevices();
   const result = { provider: 'hyxi', fetched: devices.length, updated: 0, failed: 0 };
   for (const device of devices) {

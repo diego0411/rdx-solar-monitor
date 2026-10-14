@@ -30,17 +30,25 @@ mock.module('../src/repositories/energyIntervals.repository.js', {
     resolveHyxiPlant: async () => PLANT_ID,
     upsertEnergyIntervals: async rows => upsertImpl(rows),
     listEnergyIntervalsRange: async (...args) => existingImpl(...args),
+    listEnergyIntervals: async (...args) => existingImpl(...args),
   },
 });
 mock.module('../src/repositories/plantPowerIntervals.repository.js', {
   namedExports: { listPlantPowerIntervals: async () => [] },
 });
 mock.module('../src/services/growattEnergyHistory.service.js', {
-  namedExports: { syncGrowattEnergyHistory: async () => ({ fetched: 0, upserted: 0, failed: 0 }) },
+  namedExports: {
+    syncGrowattEnergyHistory: async () => ({ fetched: 0, upserted: 0, failed: 0 }),
+    syncGrowattEnergyRollups: async () => { throw new Error('unexpected Growatt sync'); },
+  },
+});
+mock.module('../src/repositories/plants.repository.js', {
+  exports: { getStoredPlantById: async () => ({ id: PLANT_ID, external_plant_id: EXT_ID, provider: 'hyxi', active: true }) },
 });
 
 const { syncHyxiEnergyHistory } = await import('../src/services/hyxiEnergyHistory.service.js');
 const { runEnergyBackfill } = await import('../src/services/energyBackfill.service.js');
+const { getStoredEnergyHistory } = await import('../src/controllers/energyHistory.controller.js');
 
 function reset() {
   historyImpl = async () => ({ points: [], timeZone: TZ });
@@ -238,4 +246,76 @@ test('6. todo unchanged aunque el upsert lanzaría: éxito sin llamar al upsert'
   assert.equal(result.failed, 0);
   assert.equal(result.upserted, 0);
   assert.equal(upsertCalls.length, 0);
+});
+
+
+test('GET lazy joins an in-flight monthly rollup across different dates in the same month', async () => {
+  reset();
+  let release;
+  let calls = 0;
+  let stored = [];
+  const gate = new Promise(resolve => { release = resolve; });
+  historyImpl = async () => {
+    calls += 1;
+    await gate;
+    return { points: [point('2026-10-05T04:00:00', [5, 6, 1, 0])], timeZone: TZ };
+  };
+  existingImpl = async () => stored;
+  upsertImpl = async rows => { upsertCalls.push(rows); stored = rows; };
+  const scheduled = syncHyxiEnergyHistory(EXT_ID, 2, '2026-10-01');
+  await new Promise(resolve => setImmediate(resolve));
+  let responded = false;
+  let body;
+  const res = {
+    status(code) { assert.equal(code, 200); return this; },
+    json(value) { responded = true; body = value; return this; },
+  };
+  const lazy = getStoredEnergyHistory({
+    scope: { plantIds: null }, params: { plantId: PLANT_ID },
+    query: { timeType: '2', period: 'month', startTime: '2026-10-15' },
+  }, res);
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(responded, false);
+  assert.equal(calls, 1);
+  release();
+  await Promise.all([scheduled, lazy]);
+  assert.equal(upsertCalls.length, 1);
+  assert.equal(body.buckets.find(row => row.generation_kwh === 5).consumption_kwh, 6);
+});
+
+test('backfill joins daily sync; overlapping candidate rows from distinct requests merge after settlement', async () => {
+  reset();
+  let release;
+  const gate = new Promise(resolve => { release = resolve; });
+  let calls = 0;
+  let stored = [];
+  historyImpl = async () => {
+    calls += 1;
+    return { points: [point('2026-10-05T04:00:00', calls === 1 ? [5, null, null, null] : [null, 6, null, null])], timeZone: TZ };
+  };
+  existingImpl = async () => stored;
+  upsertImpl = async rows => {
+    upsertCalls.push(rows);
+    if (upsertCalls.length === 1) await gate;
+    stored = rows;
+  };
+  const daily = syncHyxiEnergyHistory(EXT_ID, 1, DATE);
+  await new Promise(resolve => setImmediate(resolve));
+  const backfill = runEnergyBackfill({
+    plant: { id: PLANT_ID, external_plant_id: EXT_ID, provider: 'hyxi' }, dates: [DATE],
+    observeDay: async () => ({ rows: stored.length, nullFields: 0 }),
+    syncHyxiDay: (id, date) => syncHyxiEnergyHistory(id, 1, date),
+  });
+  // Providers can return rows outside the requested day: protect the whole plant.
+  const nextDate = syncHyxiEnergyHistory(EXT_ID, 1, '2026-10-06');
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(calls, 1);
+  assert.equal(upsertCalls.length, 1);
+  release();
+  const [, report] = await Promise.all([daily, backfill, nextDate]);
+  assert.equal(report.days[0].status, 'completed');
+  assert.equal(calls, 2);
+  assert.equal(upsertCalls.length, 2);
+  assert.equal(stored[0].generation_kwh, 5);
+  assert.equal(stored[0].consumption_kwh, 6);
 });

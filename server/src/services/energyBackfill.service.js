@@ -113,8 +113,8 @@ function mapGrowattDay(result) {
 
 // Orquestación V1: secuencial (concurrencia 1) en orden start→end.
 // Procesa TODOS los días del rango sin inferir completitud: la
-// granularidad del proveedor no es contractual. Sin locks ni estado:
-// la idempotencia la dan los merges/upserts existentes.
+// granularidad del proveedor no es contractual. Los servicios diarios
+// comparten la exclusi?n con scheduler/GET lazy durante lectura, merge y escritura.
 export async function runEnergyBackfill({
   plant, dates, observeDay, syncHyxiDay, syncGrowattDay,
 }) {

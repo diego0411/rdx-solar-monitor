@@ -100,14 +100,19 @@ test('el upsert lógico inserta faltantes y reemplaza correcciones sin duplicar 
   assert.equal(stored.get('2026-09-23T12:30:00.000Z').generation_power_w, 110);
 });
 
-test('timeout y error liberan el lock del cierre programado', async () => {
+test('timeout retiene el lock del cierre programado hasta que termina el trabajo', async () => {
   let attempts = 0;
+  let release;
+  const pending = new Promise(resolve => { release = resolve; });
   const runner = createScheduledSync({
     name: 'history-test', timeoutMs: 10,
     logger: { info() {}, warn() {}, error() {} },
-    sync: () => ++attempts === 1 ? new Promise(() => {}) : Promise.resolve({ ok: true }),
+    sync: () => ++attempts === 1 ? pending : Promise.resolve({ ok: true }),
   });
   assert.equal((await runner()).failed, true);
+  assert.deepEqual(await runner(), { skipped: true });
+  release({ ok: true });
+  await new Promise(resolve => setImmediate(resolve));
   assert.deepEqual(await runner(), { ok: true });
 });
 

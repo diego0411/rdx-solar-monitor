@@ -20,16 +20,18 @@ let scheduledSync = null;
 let syncRunning = false;
 
 function scheduleNextSync(result) {
-  if (scheduledSync || result.skipped) return;
+  if (result.skipped) return;
   logSyncPass(result);
   if (result.remaining_users === 0 && result.errors.length === 0 && result.processed_user == null) {
     writeProgress({});
   }
+  if (scheduledSync) clearTimeout(scheduledSync);
   const timer = setTimeout(() => {
     scheduledSync = null;
     syncGrowattPlants().catch(() => {});
   }, SYNC_INTERVAL_MS);
   timer.unref();
+  scheduledSync = timer;
 }
 
 function readProgress() {

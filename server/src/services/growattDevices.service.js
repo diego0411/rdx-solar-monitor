@@ -1,3 +1,4 @@
+import { withSyncLock } from './syncLock.js';
 import { upsertGrowattDevice } from '../repositories/devices.repository.js';
 import { linkGrowattDeviceToPlant } from '../repositories/devices.repository.js';
 import { listActiveGrowattPlants } from '../repositories/plants.repository.js';
@@ -22,6 +23,10 @@ function readLinkProgress() {
 }
 
 export async function syncGrowattDevices({ forceCached = false } = {}) {
+  return withSyncLock('growatt:device-writes', () => syncGrowattDevicesUnlocked({ forceCached }), { mode: 'queue' });
+}
+
+async function syncGrowattDevicesUnlocked({ forceCached = false } = {}) {
   const devices = await provider.listDevices({ forceCached });
   const result = {
     provider: 'growatt', fetched: devices.length, inserted: 0, updated: 0,
@@ -127,6 +132,13 @@ export async function linkPlantMeters(plant, realDevices, result) {
 }
 
 export async function linkNextGrowattPlantDevices() {
+  return withSyncLock('growatt:link-devices', () =>
+    withSyncLock('growatt:device-writes', () =>
+      linkNextGrowattPlantDevicesUnlocked(), { mode: 'queue' }),
+  );
+}
+
+async function linkNextGrowattPlantDevicesUnlocked() {
   const plants = await listActiveGrowattPlants();
   const progress = readLinkProgress();
   const pendingPlants = plants.filter(item => !progress[item.external_plant_id]);

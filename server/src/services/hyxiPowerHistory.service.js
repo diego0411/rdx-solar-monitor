@@ -1,3 +1,4 @@
+import { withSyncLock } from './syncLock.js';
 import { HyxiProvider } from '../providers/hyxi/HyxiProvider.js';
 import { normalizeHyxiPowerHistory } from '../providers/hyxi/normalizeHyxiPowerHistory.js';
 import { withHistoryShape } from '../providers/hyxi/hyxiHistoryShape.js';
@@ -35,6 +36,13 @@ export function buildHyxiPowerHistoryRows(response, plantId, updatedAt) {
 }
 
 export async function syncHyxiPowerHistory(externalPlantId, startTime) {
+  return withSyncLock(`hyxi:power:${externalPlantId}:${startTime}`, () =>
+    withSyncLock(`hyxi:power-writes:${externalPlantId}`, () =>
+      syncHyxiPowerHistoryUnlocked(externalPlantId, startTime), { mode: 'queue' }),
+  );
+}
+
+async function syncHyxiPowerHistoryUnlocked(externalPlantId, startTime) {
   const plantId = await resolveHyxiPlant(externalPlantId);
   const response = await provider.getPlantPowerHistory(externalPlantId, startTime);
   const updatedAt = new Date().toISOString();

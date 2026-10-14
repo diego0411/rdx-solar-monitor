@@ -45,10 +45,26 @@ export function createScheduledSync({ name, sync, timeoutMs, warnAfterMs, logger
       if (typeof warnTimer.unref === 'function') warnTimer.unref();
     }
 
+    let timedOut = false;
+    const work = Promise.resolve().then(sync).then(
+      result => {
+        if (timedOut) logger.info(`HYXi automatic ${name} sync finished after timeout`, {
+          duration_ms: Date.now() - startedAt, result: summarizeResult(result),
+        });
+        return result;
+      },
+      error => {
+        if (timedOut) logger.error(`HYXi automatic ${name} sync failed after timeout`, {
+          duration_ms: Date.now() - startedAt, code: error?.code ?? null,
+        });
+        throw error;
+      },
+    ).finally(() => { running = false; });
+
     try {
       const result = warnMode
-        ? await Promise.resolve().then(sync)
-        : await withTimeout(Promise.resolve().then(sync), timeoutMs, name);
+        ? await work
+        : await withTimeout(work, timeoutMs, name);
       if (warnTimer) clearTimeout(warnTimer);
       logger.info(`HYXi automatic ${name} sync finished`, {
         duration_ms: Date.now() - startedAt,
@@ -56,6 +72,7 @@ export function createScheduledSync({ name, sync, timeoutMs, warnAfterMs, logger
       });
       return result;
     } catch (error) {
+      timedOut = error?.code === 'SYNC_TIMEOUT';
       if (warnTimer) clearTimeout(warnTimer);
       logger.error(`HYXi automatic ${name} sync failed`, {
         duration_ms: Date.now() - startedAt,
@@ -63,8 +80,6 @@ export function createScheduledSync({ name, sync, timeoutMs, warnAfterMs, logger
         message: error?.message ?? String(error),
       });
       return { failed: true, error };
-    } finally {
-      running = false;
     }
   };
 }

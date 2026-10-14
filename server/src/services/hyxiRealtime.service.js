@@ -1,3 +1,4 @@
+import { withSyncLock } from './syncLock.js';
 import { HyxiProvider } from '../providers/hyxi/HyxiProvider.js';
 import { normalizeHyxiDeviceRealtime } from '../providers/hyxi/normalizeHyxiDeviceRealtime.js';
 import { listActiveHyxiDevices, updateDeviceInfo } from '../repositories/devices.repository.js';
@@ -6,6 +7,13 @@ import { upsertDeviceLatestData } from '../repositories/deviceLatestData.reposit
 const provider = new HyxiProvider();
 
 export async function syncHyxiRealtime() {
+  return withSyncLock('hyxi:realtime', () =>
+    withSyncLock('hyxi:device-writes', () =>
+      syncHyxiRealtimeUnlocked(), { mode: 'queue' }),
+  );
+}
+
+async function syncHyxiRealtimeUnlocked() {
   const devices = (await listActiveHyxiDevices()).filter(device =>
     device.device_type === 'STRING_INVERTER' || device.device_type === 'HYBRID_INVERTER');
   const result = { provider: 'hyxi', fetched: devices.length, updated: 0, failed: 0 };

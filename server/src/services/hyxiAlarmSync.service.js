@@ -1,3 +1,4 @@
+import { withSyncLock } from './syncLock.js';
 import { HyxiProvider } from '../providers/hyxi/HyxiProvider.js';
 import { listActiveHyxiPlants } from '../repositories/plants.repository.js';
 import { listStoredDevices } from '../repositories/devices.repository.js';
@@ -216,7 +217,11 @@ export function createHyxiAlarmSync({
     }
   }
 
-  return async function syncHyxiAlarms() {
+  return function syncHyxiAlarms() {
+    return withSyncLock('hyxi:alarms', run);
+  };
+
+  async function run() {
     const result = {
       checked_plants: 0, failed_plants: 0, created: [], touched: [], resolved: [], skipped: 0, failures: [],
     };

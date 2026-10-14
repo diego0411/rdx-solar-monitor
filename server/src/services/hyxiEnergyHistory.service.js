@@ -1,3 +1,4 @@
+import { withSyncLock } from './syncLock.js';
 import { HyxiProvider } from '../providers/hyxi/HyxiProvider.js';
 import { resolveHyxiPlant, upsertEnergyIntervals } from '../repositories/energyIntervals.repository.js';
 import { listEnergyIntervalsRange } from '../repositories/energyIntervals.repository.js';
@@ -142,6 +143,15 @@ function candidateDateRange(candidateRows) {
 }
 
 export async function syncHyxiEnergyHistory(externalPlantId, timeType, startTime) {
+  // Join the provider's normalized period; serialize all candidate windows for
+  // this plant because returned rows can extend beyond the requested date.
+  return withSyncLock(`hyxi:energy:${externalPlantId}:${timeType}:${hyxiHistoryStartTime(timeType, startTime)}`, () =>
+    withSyncLock(`hyxi:energy-writes:${externalPlantId}`, () =>
+      syncHyxiEnergyHistoryUnlocked(externalPlantId, timeType, startTime), { mode: 'queue' }),
+  );
+}
+
+async function syncHyxiEnergyHistoryUnlocked(externalPlantId, timeType, startTime) {
   const plantId = await resolveHyxiPlant(externalPlantId);
   const providerStartTime = hyxiHistoryStartTime(timeType, startTime);
   const history = await provider.getPlantEnergyHistory(externalPlantId, timeType, providerStartTime);

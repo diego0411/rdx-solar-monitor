@@ -1,3 +1,4 @@
+import { withSyncLock } from './syncLock.js';
 import { GrowattProvider } from '../providers/growatt/GrowattProvider.js';
 import { normalizeGrowattPowerHistory } from '../providers/growatt/normalizeGrowattPowerHistory.js';
 import { listActiveGrowattMinDevicesByPlant } from '../repositories/devices.repository.js';
@@ -41,6 +42,13 @@ export function aggregateGrowattPowerHistory(plant, devices, pointsByDevice) {
 }
 
 export async function syncGrowattPowerHistory(plant, date) {
+  return withSyncLock(`growatt:power:${plant.id}:${date}`, () =>
+    withSyncLock(`growatt:power-writes:${plant.id}`, () =>
+      syncGrowattPowerHistoryUnlocked(plant, date), { mode: 'queue' }),
+  );
+}
+
+async function syncGrowattPowerHistoryUnlocked(plant, date) {
   const devices = await listActiveGrowattMinDevicesByPlant(plant.id);
   const pointsByDevice = new Map();
   const result = { provider: 'growatt', devices: devices.length, fetched: 0, upserted: 0, failed: 0 };

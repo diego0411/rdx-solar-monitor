@@ -1,3 +1,4 @@
+import { withSyncLock } from './syncLock.js';
 import { HyxiProvider } from '../providers/hyxi/HyxiProvider.js';
 import { normalizeHyxiPlant } from '../providers/hyxi/normalizeHyxiPlant.js';
 import { getActiveHyxiAccount, upsertPlant } from '../repositories/plants.repository.js';
@@ -5,6 +6,13 @@ import { getActiveHyxiAccount, upsertPlant } from '../repositories/plants.reposi
 const provider = new HyxiProvider();
 
 export async function syncHyxiPlants() {
+  return withSyncLock('hyxi:plants', () =>
+    withSyncLock('hyxi:plant-writes', () =>
+      syncHyxiPlantsUnlocked(), { mode: 'queue' }),
+  );
+}
+
+async function syncHyxiPlantsUnlocked() {
   const account = await getActiveHyxiAccount();
   const plants = [];
   const pageSize = 20;

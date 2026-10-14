@@ -1,3 +1,4 @@
+import { withSyncLock } from './syncLock.js';
 import { upsertGrowattLatestData } from '../repositories/deviceLatestData.repository.js';
 import {
   listActiveGrowattDevices,
@@ -31,6 +32,13 @@ function aliasOf(data) {
 }
 
 export async function syncGrowattLatest(now = Date.now()) {
+  return withSyncLock('growatt:latest', () =>
+    withSyncLock('growatt:device-writes', () =>
+      syncGrowattLatestUnlocked(now), { mode: 'queue' }),
+  );
+}
+
+async function syncGrowattLatestUnlocked(now = Date.now()) {
   // Meters excluidos: su telemetría llega en Fase 2 por endpoints de
   // ammeter, no por queryLastData de inversores.
   const devices = (await listActiveGrowattDevices())
