@@ -390,8 +390,40 @@ test('bug D1: segundo delta no reclamado en instante ya empujado → fila única
   assert.equal(base.consumption_kwh, null);
   // Conteo total del día: solo el primer delta aporta energía.
   assert.ok(Math.abs(sum(rows, 'grid_import_kwh') - 1) < 1e-9);
-  // Baseline cero + delta empujado; el colisionado no cuenta como no asociado.
-  assert.equal(meta.unmatched_meter_samples, 2);
+  // H04-6: baseline cero + delta empujado + el delta colisionado que NO
+  // aportó ningún campo (descarte completo) queda contabilizado.
+  assert.equal(meta.unmatched_meter_samples, 3);
   assert.equal(meta.invariant_ok, true);
+});
+
+test('H04-6: aporte parcial en colisión NO se cuenta como unmatched', () => {
+  const powerRows = [minRow('2026-09-27T10:00:00.000Z', 5)];
+  // d0 (10:00): import 4.5/exp 0 → reclama la fila MIN.
+  // d1 (10:10): reset de import (4.5→4.0 → null) y exp 2 → fila empujada.
+  // d2 (10:10): recupera import 0.2 → colisión con la fila de d1: rellena
+  // el import NULL (aporte parcial) sin pisar exp=2.
+  const { rows, meta } = mergeMeterEnergy({
+    plant,
+    minDevices: [minDevice],
+    baseRows: deriveGrowattEnergyHistory(plant, [minDevice], powerRows),
+    powerRows,
+    meterSamples: [
+      meterSample('2026-09-27 06:00:00', 4.5, 0),
+      meterSample('2026-09-27 06:10:00', 4.0, 2),
+      meterSample('2026-09-27 06:10:00', 4.2, 2),
+    ],
+    meter,
+  });
+  assert.equal(rows.length, 2);
+  const collided = rows.find(row => row.interval_start === '2026-09-27T10:10:00.000Z');
+  assert.ok(Math.abs(collided.grid_import_kwh - 0.2) < 1e-12);
+  assert.equal(collided.grid_export_kwh, 2);
+  // Aporte parcial: solo la fila empujada (d1, import null sin energía) cuenta.
+  assert.equal(meta.unmatched_meter_samples, 1);
+  // La fila MIN reclamada por d0 queda intacta.
+  const base = rows.find(row => row.interval_start === '2026-09-27T10:00:00.000Z');
+  assert.equal(base.generation_kwh, 5);
+  assert.ok(Math.abs(base.grid_import_kwh - 4.5) < 1e-12);
+  assert.equal(base.grid_export_kwh, 0);
 });
 

@@ -263,12 +263,23 @@ export function mergeMeterEnergy({ plant, minDevices, baseRows, powerRows, meter
         continue;
       }
       const target = rows[rowIndex];
-      if (target.grid_import_kwh === null) target.grid_import_kwh = meterDelta.grid_import_kwh;
-      if (target.grid_export_kwh === null) target.grid_export_kwh = meterDelta.grid_export_kwh;
+      // H04-6: un delta cuya energía no aporta nada (todos sus campos
+      // bloqueados) se descarta por colisión; se cuenta para que la pérdida
+      // sea visible en meta. Aporte parcial → no se cuenta (semántica actual).
+      let deltaApplied = false;
+      if (target.grid_import_kwh === null && meterDelta.grid_import_kwh !== null) {
+        target.grid_import_kwh = meterDelta.grid_import_kwh;
+        deltaApplied = true;
+      }
+      if (target.grid_export_kwh === null && meterDelta.grid_export_kwh !== null) {
+        target.grid_export_kwh = meterDelta.grid_export_kwh;
+        deltaApplied = true;
+      }
       if (target.consumption_kwh === null) {
         target.consumption_kwh = consumptionFromMeterParts(
           target.generation_kwh, target.grid_export_kwh, target.grid_import_kwh);
       }
+      if (!deltaApplied) unmatchedMeterSamples += 1;
       continue;
     }
     unmatchedMeterSamples += 1;
