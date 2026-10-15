@@ -464,6 +464,19 @@ function energySums(rows) {
   return sums;
 }
 
+// H04-3: un rollup con menos evidencia no sobrescribe uno existente con más.
+// sample_count comparable → manda el conteo; sin conteos comparables
+// (legacy), protección conservadora por sumas observadas.
+function rollupBucketDegraded(next, prior) {
+  const nextCount = Number(next.raw_data?.sample_count);
+  const priorCount = Number(prior.raw_data?.sample_count);
+  if (Number.isFinite(nextCount) && Number.isFinite(priorCount)) return nextCount < priorCount;
+  const nextSums = energySums([next]);
+  const priorSums = energySums([prior]);
+  return ['generation_kwh', 'grid_import_kwh', 'grid_export_kwh']
+    .some(field => nextSums[field] + INVARIANT_EPS_KWH < priorSums[field]);
+}
+
 export function preserveEnergyProvenance(rows, existingRows) {
   const existingByInterval = new Map(existingRows.map(row => [Date.parse(row.interval_start), row]));
   return rows.map(row => {
@@ -588,21 +601,37 @@ async function syncGrowattEnergyRollupsUnlocked(plant, period, selectedDate) {
     period, selectedDate, kind: 'energy',
     localDate: row => localDateKey(row.interval_start, row.timezone),
   });
-  const rows = result.buckets.filter(bucket => bucket.coverage !== 'none').map(bucket => ({
-    plant_id: plant.id,
-    provider: 'growatt',
-    interval_type: targetType,
-    interval_start: bucket.interval_start,
-    timezone: 'UTC',
-    generation_kwh: bucket.generation_kwh,
-    consumption_kwh: bucket.consumption_kwh,
-    grid_import_kwh: bucket.grid_import_kwh,
-    grid_export_kwh: bucket.grid_export_kwh,
-    battery_charge_kwh: null,
-    battery_discharge_kwh: null,
-    raw_data: { derived_from: `energy_intervals.type_${sourceType}`, coverage: bucket.coverage, sample_count: bucket.sample_count },
-    updated_at: new Date().toISOString(),
-  }));
-  await upsertEnergyIntervals(rows);
-  return { provider: 'growatt', period, fetched: sourceRows.length, upserted: rows.length, failed: 0 };
+  // H04-3: leer filas destino existentes; un bucket con menos evidencia se
+  // salta (conserva el existente), el resto se escribe con normalidad.
+  const existingTargets = await listEnergyIntervalsRange(plant.id, targetType, range.start, range.end);
+  const existingByInterval = new Map(existingTargets.map(row => [Date.parse(row.interval_start), row]));
+  let skippedDegraded = false;
+  const rows = result.buckets
+    .filter(bucket => bucket.coverage !== 'none')
+    .map(bucket => ({
+      plant_id: plant.id,
+      provider: 'growatt',
+      interval_type: targetType,
+      interval_start: bucket.interval_start,
+      timezone: 'UTC',
+      generation_kwh: bucket.generation_kwh,
+      consumption_kwh: bucket.consumption_kwh,
+      grid_import_kwh: bucket.grid_import_kwh,
+      grid_export_kwh: bucket.grid_export_kwh,
+      battery_charge_kwh: null,
+      battery_discharge_kwh: null,
+      raw_data: { derived_from: `energy_intervals.type_${sourceType}`, coverage: bucket.coverage, sample_count: bucket.sample_count },
+      updated_at: new Date().toISOString(),
+    }))
+    .filter(row => {
+      const prior = existingByInterval.get(Date.parse(row.interval_start));
+      if (!prior || !rollupBucketDegraded(row, prior)) return true;
+      skippedDegraded = true;
+      return false;
+    });
+  if (rows.length) await upsertEnergyIntervals(rows);
+  return {
+    provider: 'growatt', period, fetched: sourceRows.length, upserted: rows.length, failed: 0,
+    skipped_degraded: skippedDegraded,
+  };
 }
