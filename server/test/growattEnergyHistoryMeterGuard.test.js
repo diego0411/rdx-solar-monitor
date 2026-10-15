@@ -218,3 +218,116 @@ test('E: meter válido pero import pierde cobertura bloquea', { skip: !supportsM
   assert.equal(result.skipped_degraded, true);
   assert.equal(syncState.upserts.length, 0);
 });
+
+// H04-1/H04-2 (regresión): sin meter, la medición directa previa (4.8) y su
+// procedencia por campo se conservan; el candidato MIN no la pisa ni la
+// mal etiqueta.
+test('H04-1: sync sin meter conserva medición directa 4.8 y su procedencia (regresión)', { skip: !supportsModuleMocks }, async () => {
+  const meterStoredRow = (utc, imp) => ({
+    interval_start: utc,
+    timezone: 'America/La_Paz',
+    generation_kwh: 10, consumption_kwh: 8, grid_import_kwh: imp, grid_export_kwh: 2,
+    raw_data: { energy_provenance: { grid_import_kwh: { source: 'growatt_meter' } } },
+  });
+  syncState.powerRows = [
+    minRow('2026-09-27T10:00:00.000Z', '2026-09-27 06:00:00', 5),
+    minRow('2026-09-27T14:00:00.000Z', '2026-09-27 10:00:00', 10),
+  ];
+  // Existing directo del meter: import=4.8, cobertura completa, provenance meter.
+  syncState.existingRows = [
+    meterStoredRow('2026-09-27T10:00:00.000Z', 4.8),
+    meterStoredRow('2026-09-27T14:00:00.000Z', 4.8),
+  ];
+  syncState.upserts = [];
+  syncState.meter = null; // mismo mecanismo que C: sin meter → meter_used=false
+  syncState.meterSamples = [];
+  syncState.meterError = null;
+  const result = await syncGrowattEnergyHistory(syncPlant, '2026-09-27');
+  assert.equal(result.meter_used, false);
+  assert.equal(result.existing_nulls, 0);
+  assert.equal(result.derived_nulls, 0);
+  // El guard no bloquea (nulls iguales 0==0): la no-destrucción es campo a campo.
+  assert.equal(result.skipped_degraded, false);
+  assert.equal(syncState.upserts.length, 1);
+  const restored = syncState.upserts[0]
+    .find(row => row.interval_start === '2026-09-27T10:00:00.000Z');
+  // Regresión H04-1: el directo 4.8 se conserva; el delta 0 del MIN no lo pisa.
+  assert.equal(restored.grid_import_kwh, 4.8);
+  // Regresión H04-2: la procedencia meter se arrastra solo al campo restaurado.
+  assert.equal(restored.raw_data.energy_provenance.grid_import_kwh.source, 'growatt_meter');
+});
+
+// H04: la derivación rellena el null de export (2.2) sin degradar el import
+// directo (4.8); la procedencia meter queda solo en el campo con claim directo.
+test('H04: derived rellena export null sin degradar import directo (provenance por campo)', { skip: !supportsModuleMocks }, async () => {
+  syncState.powerRows = [{
+    interval_start: '2026-09-27T10:00:00.000Z',
+    timezone: 'America/La_Paz',
+    raw_data: {
+      devices: [{
+        device_id: 'device-1',
+        serial_number: 'MIN-1',
+        data: {
+          time: '2026-09-27 06:00:00',
+          eacToday: 5, elocalLoadToday: 0, etoUserToday: 0, etoGridToday: 2.2,
+        },
+      }],
+    },
+  }];
+  syncState.existingRows = [{
+    interval_start: '2026-09-27T10:00:00.000Z',
+    timezone: 'America/La_Paz',
+    generation_kwh: 10, consumption_kwh: 8, grid_import_kwh: 4.8, grid_export_kwh: null,
+    raw_data: { energy_provenance: { grid_import_kwh: { source: 'growatt_meter' } } },
+  }];
+  syncState.upserts = [];
+  syncState.meter = null;
+  syncState.meterSamples = [];
+  syncState.meterError = null;
+  const result = await syncGrowattEnergyHistory(syncPlant, '2026-09-27');
+  assert.equal(result.meter_used, false);
+  assert.equal(result.existing_nulls, 1);
+  assert.equal(result.derived_nulls, 0);
+  assert.equal(result.skipped_degraded, false);
+  assert.equal(syncState.upserts.length, 1);
+  const row = syncState.upserts[0][0];
+  assert.equal(row.grid_import_kwh, 4.8);
+  assert.equal(row.raw_data.energy_provenance.grid_import_kwh.source, 'growatt_meter');
+  assert.equal(row.grid_export_kwh, 2.2);
+  assert.equal(row.raw_data.energy_provenance.grid_export_kwh, undefined);
+});
+
+// H04: 0 es un valor directo válido; el derivado 3 del MIN no lo sobrescribe.
+test('H04: import directo 0 se conserva frente a derivado 3 (cero es valor)', { skip: !supportsModuleMocks }, async () => {
+  syncState.powerRows = [{
+    interval_start: '2026-09-27T10:00:00.000Z',
+    timezone: 'America/La_Paz',
+    raw_data: {
+      devices: [{
+        device_id: 'device-1',
+        serial_number: 'MIN-1',
+        data: {
+          time: '2026-09-27 06:00:00',
+          eacToday: 5, elocalLoadToday: 0, etoUserToday: 3, etoGridToday: 0,
+        },
+      }],
+    },
+  }];
+  syncState.existingRows = [{
+    interval_start: '2026-09-27T10:00:00.000Z',
+    timezone: 'America/La_Paz',
+    generation_kwh: 10, consumption_kwh: 8, grid_import_kwh: 0, grid_export_kwh: 2,
+    raw_data: { energy_provenance: { grid_import_kwh: { source: 'growatt_meter' } } },
+  }];
+  syncState.upserts = [];
+  syncState.meter = null;
+  syncState.meterSamples = [];
+  syncState.meterError = null;
+  const result = await syncGrowattEnergyHistory(syncPlant, '2026-09-27');
+  assert.equal(result.meter_used, false);
+  assert.equal(result.skipped_degraded, false);
+  assert.equal(syncState.upserts.length, 1);
+  const row = syncState.upserts[0][0];
+  assert.equal(row.grid_import_kwh, 0);
+  assert.equal(row.raw_data.energy_provenance.grid_import_kwh.source, 'growatt_meter');
+});

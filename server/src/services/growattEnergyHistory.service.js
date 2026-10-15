@@ -468,12 +468,24 @@ export function preserveEnergyProvenance(rows, existingRows) {
   const existingByInterval = new Map(existingRows.map(row => [Date.parse(row.interval_start), row]));
   return rows.map(row => {
     if (row.raw_data?.energy_provenance != null) return row;
-    const existingProvenance = existingByInterval.get(Date.parse(row.interval_start))
-      ?.raw_data?.energy_provenance;
-    if (existingProvenance == null) return row;
+    const prior = existingByInterval.get(Date.parse(row.interval_start));
+    const priorProvenance = prior?.raw_data?.energy_provenance;
+    if (priorProvenance == null) return row;
+    // Restauración campo a campo: directo (meter) > derivado; 0 es un valor
+    // válido. Los campos sin claim directo previo conservan el valor derivado
+    // y quedan sin entrada de procedencia (llenado derivado honesto).
+    const restored = {};
+    const provenance = {};
+    for (const [field, entry] of Object.entries(priorProvenance)) {
+      if (entry?.source == null || prior[field] == null) continue;
+      restored[field] = prior[field];
+      provenance[field] = entry;
+    }
+    if (Object.keys(provenance).length === 0) return row;
     return {
       ...row,
-      raw_data: { ...row.raw_data, energy_provenance: existingProvenance },
+      ...restored,
+      raw_data: { ...row.raw_data, energy_provenance: provenance },
     };
   });
 }
