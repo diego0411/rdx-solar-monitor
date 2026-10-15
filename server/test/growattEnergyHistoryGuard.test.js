@@ -281,3 +281,52 @@ test('H04-3 legacy: sin sample_count en destino aplica protección por sumas', a
   assert.equal(result.skipped_degraded, true);
   assert.equal(upsertCalls.length, 0);
 });
+
+// AUD-05: cobertura honesta de buckets mes en rollups 2→3 (días distintos
+// representados vs días transcurridos del mes; fechas siempre controladas).
+const type2Day = date => ({
+  plant_id: plant.id, interval_type: 2,
+  interval_start: `${date}T00:00:00.000Z`, timezone: 'UTC',
+  generation_kwh: 1, consumption_kwh: 1, grid_import_kwh: 1, grid_export_kwh: 1,
+});
+const monthDays = (year, month, count) => Array.from({ length: count }, (_, i) =>
+  `${year}-${String(month).padStart(2, '0')}-${String(i + 1).padStart(2, '0')}`);
+
+test('AUD-05: mes histórico incompleto (10/31 días) marca coverage partial', async () => {
+  reset({ power: [], existing: [] });
+  rollupTargets.set(2, monthDays(2024, 3, 10).map(type2Day));
+  const result = await syncGrowattEnergyRollups(plant, 'year', '2024-06-15');
+  assert.equal(result.upserted, 1);
+  assert.equal(upsertCalls[0][0].raw_data.coverage, 'partial');
+  assert.equal(upsertCalls[0][0].raw_data.sample_count, 10);
+});
+
+test('AUD-05: mes histórico completo (31/31 días) mantiene coverage available', async () => {
+  reset({ power: [], existing: [] });
+  rollupTargets.set(2, monthDays(2024, 3, 31).map(type2Day));
+  const result = await syncGrowattEnergyRollups(plant, 'year', '2024-06-15');
+  assert.equal(result.upserted, 1);
+  assert.equal(upsertCalls[0][0].raw_data.coverage, 'available');
+  assert.equal(upsertCalls[0][0].raw_data.sample_count, 31);
+});
+
+test('AUD-05: mes en curso no exige días futuros', async t => {
+  t.mock.timers.enable({ apis: ['Date'], now: Date.UTC(2026, 4, 15, 12, 0, 0) });
+  reset({ power: [], existing: [] });
+  // 15 días transcurridos (1-15 may) presentes; 16-31 son futuros.
+  rollupTargets.set(2, monthDays(2026, 5, 15).map(type2Day));
+  const result = await syncGrowattEnergyRollups(plant, 'year', '2026-05-15');
+  assert.equal(result.upserted, 1);
+  assert.equal(upsertCalls[0][0].raw_data.coverage, 'available');
+});
+
+test('AUD-05: fechas duplicadas no inflan la cobertura (cuenta días distintos)', async () => {
+  reset({ power: [], existing: [] });
+  // 20 filas pero solo 10 días distintos de 31 transcurridos.
+  const duplicated = monthDays(2024, 3, 10).flatMap(date => [type2Day(date), type2Day(date)]);
+  rollupTargets.set(2, duplicated);
+  const result = await syncGrowattEnergyRollups(plant, 'year', '2024-06-15');
+  assert.equal(result.upserted, 1);
+  assert.equal(upsertCalls[0][0].raw_data.coverage, 'partial');
+  assert.equal(upsertCalls[0][0].raw_data.sample_count, 20);
+});

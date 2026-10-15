@@ -597,10 +597,38 @@ async function syncGrowattEnergyRollupsUnlocked(plant, period, selectedDate) {
   const targetType = period === 'month' ? 2 : 3;
   const range = periodRange(period, selectedDate);
   const sourceRows = await listEnergyIntervalsRange(plant.id, sourceType, range.start, range.end);
-  const result = aggregateHistory(sourceRows, {
-    period, selectedDate, kind: 'energy',
-    localDate: row => localDateKey(row.interval_start, row.timezone),
-  });
+  const localDate = row => localDateKey(row.interval_start, row.timezone);
+  const result = aggregateHistory(sourceRows, { period, selectedDate, kind: 'energy', localDate });
+  // AUD-05: cobertura honesta en buckets mes (tipo 3): días locales distintos
+  // representados por filas tipo 2 vs días transcurridos del mes; los días
+  // futuros no se exigen y un 'partial' ya existente por campos NULL se conserva.
+  if (targetType === 3) {
+    const daysByMonth = new Map();
+    for (const row of sourceRows) {
+      const day = localDate(row);
+      if (!day) continue;
+      const month = day.slice(0, 7);
+      if (!daysByMonth.has(month)) daysByMonth.set(month, new Set());
+      daysByMonth.get(month).add(day);
+    }
+    const now = new Date();
+    const todayUtc = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
+    const dayMs = 86400000;
+    for (const bucket of result.buckets) {
+      if (bucket.coverage === 'none') continue;
+      const days = daysByMonth.get(bucket.interval_start.slice(0, 7));
+      if (!days) continue;
+      const year = Number(bucket.interval_start.slice(0, 4));
+      const month = Number(bucket.interval_start.slice(5, 7));
+      const monthStart = Date.UTC(year, month - 1, 1);
+      const monthEnd = Date.UTC(year, month, 1);
+      let elapsed;
+      if (todayUtc < monthStart) elapsed = 0;
+      else if (todayUtc >= monthEnd) elapsed = (monthEnd - monthStart) / dayMs;
+      else elapsed = Math.floor((todayUtc - monthStart) / dayMs) + 1;
+      if (days.size < elapsed) bucket.coverage = 'partial';
+    }
+  }
   // H04-3: leer filas destino existentes; un bucket con menos evidencia se
   // salta (conserva el existente), el resto se escribe con normalidad.
   const existingTargets = await listEnergyIntervalsRange(plant.id, targetType, range.start, range.end);
