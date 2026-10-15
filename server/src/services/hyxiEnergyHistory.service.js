@@ -15,6 +15,8 @@ const derivedFields = {
   grid_export_power_w: 'grid_export_kwh',
 };
 
+const ENERGY_FIELDS = Object.values(derivedFields);
+
 export function energyFromPower(value, intervalHours) {
   if (value === null || value === undefined || String(value).trim() === '') return null;
   const power = Number(value);
@@ -51,6 +53,44 @@ async function deriveFromPowerHistory(plantId, startTime) {
     });
   }
   return points;
+}
+
+// H04-4: combina historia directa con derivada por instante y por campo.
+// Un valor directo (incluido 0) nunca se sobrescribe; la derivación solo
+// rellena campos NULL y agrega instantes ausentes del historial directo.
+function combineDirectAndDerived(directPoints, derivedPoints) {
+  const derivedByInstant = new Map();
+  for (const point of derivedPoints) {
+    const instant = Date.parse(point.timestamp);
+    if (Number.isFinite(instant) && !derivedByInstant.has(instant)) {
+      derivedByInstant.set(instant, point);
+    }
+  }
+  const directInstants = new Set();
+  const combined = directPoints.map(direct => {
+    const instant = Date.parse(direct.timestamp);
+    if (Number.isFinite(instant)) directInstants.add(instant);
+    const derived = Number.isFinite(instant) ? derivedByInstant.get(instant) : undefined;
+    if (!derived) return direct;
+    const merged = { ...direct };
+    let contributed = false;
+    for (const field of ENERGY_FIELDS) {
+      if (isEmpty(direct[field]) && !isEmpty(derived[field])) {
+        merged[field] = derived[field];
+        contributed = true;
+      }
+    }
+    if (!contributed) return direct;
+    // Procedencia: la fila conserva su evidencia del proveedor mientras quede
+    // alguna medición directa; solo una fila sin ninguna adopta la de potencia.
+    if (ENERGY_FIELDS.some(field => !isEmpty(direct[field]))) return merged;
+    merged.raw_data = derived.raw_data;
+    return merged;
+  });
+  for (const [instant, point] of derivedByInstant) {
+    if (!directInstants.has(instant)) combined.push(point);
+  }
+  return combined;
 }
 
 // Anti-degradación HYXi (merge por campo sobre la clave UNIQUE
@@ -155,15 +195,16 @@ async function syncHyxiEnergyHistoryUnlocked(externalPlantId, timeType, startTim
   const plantId = await resolveHyxiPlant(externalPlantId);
   const providerStartTime = hyxiHistoryStartTime(timeType, startTime);
   const history = await provider.getPlantEnergyHistory(externalPlantId, timeType, providerStartTime);
-  const hasEnergy = history.points.some(point => [
-    point.generation_kwh,
-    point.consumption_kwh,
-    point.grid_import_kwh,
-    point.grid_export_kwh,
-  ].some(value => value !== null && value !== undefined));
-  const points = !hasEnergy && timeType === 1
-    ? await deriveFromPowerHistory(plantId, startTime)
-    : history.points;
+  // H04-4: sin hasEnergy global a la ventana. El fallback se activa para
+  // timeType 1 solo con huecos identificables (campos de energía NULL o
+  // ventana vacía) y combina por instante y por campo: la medición directa
+  // (incluido 0) siempre manda; la derivación solo rellena y agrega huecos.
+  const directPoints = history.points;
+  const energyGap = directPoints.length === 0
+    || directPoints.some(point => ENERGY_FIELDS.some(field => isEmpty(point[field])));
+  const points = energyGap && timeType === 1
+    ? combineDirectAndDerived(directPoints, await deriveFromPowerHistory(plantId, startTime))
+    : directPoints;
   const updatedAt = new Date().toISOString();
   const rows = points.map(point => ({
     plant_id: plantId,

@@ -15,6 +15,8 @@ let historyImpl = async () => ({ points: [], timeZone: TZ });
 let existingImpl = async () => [];
 let upsertCalls = [];
 let upsertImpl = async rows => { upsertCalls.push(rows); };
+let powerImpl = async () => [];
+let powerCalls = 0;
 
 class FakeHyxiProvider {
   async getPlantEnergyHistory(...args) {
@@ -34,7 +36,7 @@ mock.module('../src/repositories/energyIntervals.repository.js', {
   },
 });
 mock.module('../src/repositories/plantPowerIntervals.repository.js', {
-  namedExports: { listPlantPowerIntervals: async () => [] },
+  namedExports: { listPlantPowerIntervals: async (...args) => { powerCalls += 1; return powerImpl(...args); } },
 });
 mock.module('../src/services/growattEnergyHistory.service.js', {
   namedExports: {
@@ -55,6 +57,8 @@ function reset() {
   existingImpl = async () => [];
   upsertCalls = [];
   upsertImpl = async rows => { upsertCalls.push(rows); };
+  powerImpl = async () => [];
+  powerCalls = 0;
 }
 
 // Punto manufacturer tal como lo entrega normalizeHyxiEnergyHistory.
@@ -112,6 +116,8 @@ test('1. 152 existentes completos + 152 candidatos equivalentes: éxito sin upse
   assert.equal(result.upserted, 0);
   assert.equal(result.failed, 0);
   assert.equal(result.merge.unchanged, 152);
+  // H04-4: cobertura directa completa → sin consulta de potencia.
+  assert.equal(powerCalls, 0);
   // unchanged no genera escritura: el upsert nunca se ejecuta.
   assert.equal(upsertCalls.length, 0);
 });
@@ -318,4 +324,129 @@ test('backfill joins daily sync; overlapping candidate rows from distinct reques
   assert.equal(upsertCalls.length, 2);
   assert.equal(stored[0].generation_kwh, 5);
   assert.equal(stored[0].consumption_kwh, 6);
+});
+
+// H04-4: regresión — una medición real NO impide derivar energía para otros
+// intervalos; el fallback se activa por huecos (campos NULL) y combina
+// directo+derivado por instante y por campo sin duplicados.
+test('H04-4 regresión: energía real en un intervalo no bloquea el fallback del otro', async () => {
+  reset();
+  const t1 = instantAt(0);
+  const t2 = instantAt(1);
+  historyImpl = async () => ({
+    points: [
+      point(t1, [10, 12, 3, 2]),                 // intervalo con energía real
+      point(t2, [null, null, null, null]),       // intervalo sin energía real
+    ],
+    timeZone: TZ,
+  });
+  // Potencia suficiente para derivar ambos intervalos (2 derivados posibles).
+  powerImpl = async () => [
+    { id: 'p1', interval_start: `${t1}.000Z`, timezone: TZ,
+      generation_power_w: 1000, consumption_power_w: 500, grid_import_power_w: 100, grid_export_power_w: 0 },
+    { id: 'p2', interval_start: `${t2}.000Z`, timezone: TZ,
+      generation_power_w: 2000, consumption_power_w: 600, grid_import_power_w: 120, grid_export_power_w: 0 },
+    { id: 'p3', interval_start: `${instantAt(2)}.000Z`, timezone: TZ,
+      generation_power_w: 3000, consumption_power_w: 700, grid_import_power_w: 130, grid_export_power_w: 0 },
+  ];
+  existingImpl = async () => [];
+
+  const result = await syncHyxiEnergyHistory(EXT_ID, 1, DATE);
+
+  assert.equal(result.failed, 0);
+  assert.equal(result.fetched, 2);
+  // El fallback se ejecuta aunque la ventana contiene energía real.
+  assert.equal(powerCalls, 1);
+  assert.equal(upsertCalls[0].length, 2, 'un solo registro por instante');
+  const t1Row = upsertCalls[0].find(row => row.interval_start === `${t1}.000Z`);
+  const t2Row = upsertCalls[0].find(row => row.interval_start === `${t2}.000Z`);
+  // La medición directa se conserva intacta y con su procedencia.
+  assert.equal(t1Row.generation_kwh, 10);
+  assert.equal(t1Row.raw_data?.derived_from, undefined);
+  // El segundo intervalo recibe la energía derivada de potencia (2000 W,
+  // 5 min → 2000 * (5/60) / 1000) con procedencia de potencia.
+  assert.ok(Math.abs(t2Row.generation_kwh - 1 / 6) < 1e-12);
+  assert.equal(t2Row.raw_data?.derived_from, 'plant_power_intervals');
+});
+
+test('H04-4: campo NULL se rellena con derivado sin pisar mediciones directas', async () => {
+  reset();
+  const t1 = instantAt(0);
+  historyImpl = async () => ({
+    points: [point(t1, [10, null, 3, 2])],
+    timeZone: TZ,
+  });
+  powerImpl = async () => [
+    { id: 'p1', interval_start: `${t1}.000Z`, timezone: TZ,
+      generation_power_w: 1000, consumption_power_w: 500, grid_import_power_w: 100, grid_export_power_w: 0 },
+    { id: 'p2', interval_start: `${instantAt(1)}.000Z`, timezone: TZ,
+      generation_power_w: 2000, consumption_power_w: 600, grid_import_power_w: 120, grid_export_power_w: 0 },
+  ];
+  existingImpl = async () => [];
+
+  const result = await syncHyxiEnergyHistory(EXT_ID, 1, DATE);
+
+  assert.equal(result.fetched, 1);
+  assert.equal(powerCalls, 1);
+  const row = upsertCalls[0].find(item => item.interval_start === `${t1}.000Z`);
+  assert.equal(row.generation_kwh, 10);
+  assert.equal(row.grid_import_kwh, 3);
+  assert.ok(Math.abs(row.consumption_kwh - 500 / 12 / 1000) < 1e-12);
+  // Procedencia directa: la fila conserva medición del proveedor.
+  assert.equal(row.raw_data?.derived_from, undefined);
+});
+
+test('H04-4: cero directo se conserva aunque el derivado proponga energía', async () => {
+  reset();
+  const t1 = instantAt(0);
+  historyImpl = async () => ({
+    points: [point(t1, [0, null, 1, 0])],
+    timeZone: TZ,
+  });
+  powerImpl = async () => [
+    { id: 'p1', interval_start: `${t1}.000Z`, timezone: TZ,
+      generation_power_w: 1000, consumption_power_w: 500, grid_import_power_w: 100, grid_export_power_w: 0 },
+    { id: 'p2', interval_start: `${instantAt(1)}.000Z`, timezone: TZ,
+      generation_power_w: 2000, consumption_power_w: 600, grid_import_power_w: 120, grid_export_power_w: 0 },
+  ];
+  existingImpl = async () => [];
+
+  await syncHyxiEnergyHistory(EXT_ID, 1, DATE);
+
+  const row = upsertCalls[0].find(item => item.interval_start === `${t1}.000Z`);
+  assert.equal(row.generation_kwh, 0);
+  assert.equal(row.grid_export_kwh, 0);
+  assert.ok(Math.abs(row.consumption_kwh - 500 / 12 / 1000) < 1e-12);
+});
+
+test('H04-4: agrega intervalos derivados ausentes del historial directo', async () => {
+  reset();
+  const t0 = new Date(Date.UTC(2026, 9, 5, 4, 0, 0) - 5 * 60 * 1000).toISOString().slice(0, 19);
+  const t1 = instantAt(0);
+  historyImpl = async () => ({
+    points: [point(t1, [10, null, 3, 2])],   // hueco que dispara el fallback
+    timeZone: TZ,
+  });
+  // Potencia cubre t0 (ausente del historial directo), t1 y t2.
+  powerImpl = async () => [
+    { id: 'p0', interval_start: `${t0}.000Z`, timezone: TZ,
+      generation_power_w: 1000, consumption_power_w: 500, grid_import_power_w: 100, grid_export_power_w: 0 },
+    { id: 'p1', interval_start: `${t1}.000Z`, timezone: TZ,
+      generation_power_w: 2000, consumption_power_w: 600, grid_import_power_w: 120, grid_export_power_w: 0 },
+    { id: 'p2', interval_start: `${instantAt(1)}.000Z`, timezone: TZ,
+      generation_power_w: 3000, consumption_power_w: 700, grid_import_power_w: 130, grid_export_power_w: 0 },
+  ];
+  existingImpl = async () => [];
+
+  const result = await syncHyxiEnergyHistory(EXT_ID, 1, DATE);
+
+  assert.equal(result.fetched, 2);
+  assert.equal(upsertCalls[0].length, 2);
+  const instants = upsertCalls[0].map(row => row.interval_start);
+  assert.equal(new Set(instants).size, 2, 'sin duplicados por instante');
+  const t0Row = upsertCalls[0].find(row => row.interval_start === `${t0}.000Z`);
+  assert.ok(Math.abs(t0Row.generation_kwh - 1 / 12) < 1e-12);
+  assert.equal(t0Row.raw_data?.derived_from, 'plant_power_intervals');
+  const t1Row = upsertCalls[0].find(row => row.interval_start === `${t1}.000Z`);
+  assert.ok(Math.abs(t1Row.consumption_kwh - 600 / 12 / 1000) < 1e-12);
 });
