@@ -31,6 +31,17 @@ function aliasOf(data) {
   return typeof data?.alias === 'string' && data.alias.trim() ? data.alias.trim() : null;
 }
 
+function sanitizeSyncError(error) {
+  return {
+    category: error?.permissionDenied ? 'permission_denied'
+      : error?.rateLimited ? 'rate_limited'
+      : error?.name === 'TimeoutError' || error?.name === 'AbortError' ? 'timeout'
+      : String(error?.name ?? 'Error').toLowerCase(),
+    status_code: error?.statusCode ?? error?.httpStatus ?? null,
+    message: String(error?.message ?? error).slice(0, 200),
+  };
+}
+
 export async function syncGrowattLatest(now = Date.now()) {
   return withSyncLock('growatt:latest', () =>
     withSyncLock('growatt:device-writes', () =>
@@ -55,6 +66,9 @@ async function syncGrowattLatestUnlocked(now = Date.now()) {
     groups.get(key).push({ device, apiToken });
   }
 
+  // Errores por dispositivo equivalentes se agregan en UNA línea al final.
+  const deviceErrorCounts = new Map();
+
   for (const group of groups.values()) {
     for (let offset = 0; offset < group.length; offset += 100) {
       const batch = group.slice(offset, offset + 100);
@@ -77,6 +91,12 @@ async function syncGrowattLatestUnlocked(now = Date.now()) {
           result.no_data += batch.length;
         } else {
           result.failed += batch.length;
+          console.error('Growatt latest sync batch failed:', {
+            stage: 'batch',
+            device_type: deviceType,
+            batch_size: batch.length,
+            ...sanitizeSyncError(error),
+          });
         }
         continue;
       }
@@ -126,9 +146,20 @@ async function syncGrowattLatestUnlocked(now = Date.now()) {
           }
         } catch (error) {
           result.failed += 1;
+          const sanitized = sanitizeSyncError(error);
+          const key = `${sanitized.category}|${sanitized.status_code}|${sanitized.message}`;
+          const existing = deviceErrorCounts.get(key);
+          if (existing) {
+            existing.count += 1;
+          } else {
+            deviceErrorCounts.set(key, { stage: 'device', ...sanitized, count: 1 });
+          }
         }
       }
     }
+  }
+  if (deviceErrorCounts.size) {
+    console.error('Growatt latest sync device errors:', [...deviceErrorCounts.values()]);
   }
   return result;
 }
