@@ -19,18 +19,20 @@ function withTimeout(promise, timeoutMs, taskName) {
   return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
 }
 
-export function createScheduledSync({ name, sync, timeoutMs, warnAfterMs, logger = console }) {
+export function createScheduledSync({
+  name, sync, timeoutMs, warnAfterMs, label = 'HYXi', logger = console,
+}) {
   let running = false;
 
   return async function runScheduledSync() {
     if (running) {
-      logger.warn(`HYXi automatic ${name} sync skipped: previous execution is still running`);
+      logger.warn(`${label} automatic ${name} sync skipped: previous execution is still running`);
       return { skipped: true };
     }
 
     running = true;
     const startedAt = Date.now();
-    logger.info(`HYXi automatic ${name} sync started`);
+    logger.info(`${label} automatic ${name} sync started`);
 
     // Modo advertencia (sin timeout): para trabajos que legítimamente
     // superan el umbral. El control se mantiene hasta el fin real; al
@@ -40,7 +42,7 @@ export function createScheduledSync({ name, sync, timeoutMs, warnAfterMs, logger
     let warnTimer = null;
     if (warnMode) {
       warnTimer = setTimeout(() => {
-        logger.warn(`HYXi automatic ${name} sync still running after ${warnAfterMs} ms`);
+        logger.warn(`${label} automatic ${name} sync still running after ${warnAfterMs} ms`);
       }, warnAfterMs);
       if (typeof warnTimer.unref === 'function') warnTimer.unref();
     }
@@ -48,25 +50,27 @@ export function createScheduledSync({ name, sync, timeoutMs, warnAfterMs, logger
     let timedOut = false;
     const work = Promise.resolve().then(sync).then(
       result => {
-        if (timedOut) logger.info(`HYXi automatic ${name} sync finished after timeout`, {
+        if (timedOut) logger.info(`${label} automatic ${name} sync finished after timeout`, {
           duration_ms: Date.now() - startedAt, result: summarizeResult(result),
         });
         return result;
       },
       error => {
-        if (timedOut) logger.error(`HYXi automatic ${name} sync failed after timeout`, {
+        if (timedOut) logger.error(`${label} automatic ${name} sync failed after timeout`, {
           duration_ms: Date.now() - startedAt, code: error?.code ?? null,
         });
         throw error;
       },
     ).finally(() => { running = false; });
 
+    // Sin timeoutMs ni warnAfterMs: observación pura, sin abortar el trabajo.
+    const hasTimeout = timeoutMs !== undefined && timeoutMs !== null;
     try {
-      const result = warnMode
+      const result = warnMode || !hasTimeout
         ? await work
         : await withTimeout(work, timeoutMs, name);
       if (warnTimer) clearTimeout(warnTimer);
-      logger.info(`HYXi automatic ${name} sync finished`, {
+      logger.info(`${label} automatic ${name} sync finished`, {
         duration_ms: Date.now() - startedAt,
         result: summarizeResult(result),
       });
@@ -74,7 +78,7 @@ export function createScheduledSync({ name, sync, timeoutMs, warnAfterMs, logger
     } catch (error) {
       timedOut = error?.code === 'SYNC_TIMEOUT';
       if (warnTimer) clearTimeout(warnTimer);
-      logger.error(`HYXi automatic ${name} sync failed`, {
+      logger.error(`${label} automatic ${name} sync failed`, {
         duration_ms: Date.now() - startedAt,
         code: error?.code ?? null,
         message: error?.message ?? String(error),

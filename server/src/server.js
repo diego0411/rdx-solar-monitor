@@ -1,4 +1,3 @@
-import { withSyncLock } from './services/syncLock.js';
 import app from './app.js';
 import { env } from './config/env.js';
 import { syncGrowattPlants } from './services/growattPlants.service.js';
@@ -25,45 +24,37 @@ const GROWATT_LATEST_INTERVAL_MS = 5 * 60 * 1000;
 const GROWATT_HISTORY_SYNC_INTERVAL_MS = 30 * 60 * 1000;
 const HISTORY_ROLLUP_INTERVAL_MS = 6 * 60 * 60 * 1000;
 
-function runGrowattLatestSync() {
-  return withSyncLock('growatt:latest-cycle', runGrowattLatestSyncUnlocked, { mode: 'skip' });
-}
+const runGrowattLatestSync = createScheduledSync({
+  // Sin timeout: equivalente al lock 'skip' anterior. El wrapper aporta
+  // inicio/fin con duration_ms, skip y el result (failed/rate_limited/...).
+  name: 'latest', label: 'Growatt', sync: syncGrowattLatest,
+});
 
-async function runGrowattLatestSyncUnlocked() {
-  try {
-    const result = await syncGrowattLatest();
-    if (result.failed > 0 || result.rate_limited || result.permission_denied) {
-      console.error('Growatt automatic latest sync failed:', result);
-    }
-  } catch (error) {
-    console.error('Growatt automatic latest sync failed:', error);
-  }
-}
-
-function runGrowattHistorySync() {
-  return withSyncLock('growatt:history-cycle', runGrowattHistorySyncUnlocked, { mode: 'skip' });
-}
-
-async function runGrowattHistorySyncUnlocked() {
-  try {
-    const plants = await listActiveGrowattPlants();
-    const date = currentBoliviaDate();
-    for (const plant of plants) {
-      try {
-        await syncGrowattPowerHistory(plant, date);
-        await syncGrowattEnergyHistory(plant, date);
-      } catch (error) {
-        if (error?.frequentAccess) {
-          console.error(`Growatt automatic history sync FREQUENTLY_ACCESS for ${plant.external_plant_id}`);
-        } else {
-          console.error(`Growatt automatic history sync failed for ${plant.external_plant_id}:`, error);
-        }
+async function syncGrowattHistoryCycle() {
+  const plants = await listActiveGrowattPlants();
+  const date = currentBoliviaDate();
+  let failedPlants = 0;
+  let frequentAccess = 0;
+  for (const plant of plants) {
+    try {
+      await syncGrowattPowerHistory(plant, date);
+      await syncGrowattEnergyHistory(plant, date);
+    } catch (error) {
+      failedPlants += 1;
+      if (error?.frequentAccess) {
+        frequentAccess += 1;
+        console.error(`Growatt automatic history sync FREQUENTLY_ACCESS for ${plant.external_plant_id}`);
+      } else {
+        console.error(`Growatt automatic history sync failed for ${plant.external_plant_id}:`, error);
       }
     }
-  } catch (error) {
-    console.error('Growatt automatic history sync failed:', error);
   }
+  return { plants: plants.length, failed_plants: failedPlants, frequent_access: frequentAccess };
 }
+
+const runGrowattHistorySync = createScheduledSync({
+  name: 'history', label: 'Growatt', sync: syncGrowattHistoryCycle,
+});
 
 const runHyxiPlantsSync = createScheduledSync({
   name: 'plants', sync: syncHyxiPlants, timeoutMs: HYXI_TASK_TIMEOUT_MS,

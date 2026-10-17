@@ -162,3 +162,29 @@ test('warn mode: synchronous throw is handled, never unhandled', async () => {
   assert.equal(calls.error.length, 1);
 });
 
+test('label option prefixes job messages', async () => {
+  const logger = recordingLogger();
+  const run = createScheduledSync({
+    name: 'latest', label: 'Growatt', sync: async () => ({ rate_limited: false }), timeoutMs: 1000, logger,
+  });
+  await run();
+  assert.match(logger.calls.info[0][0], /^Growatt automatic latest sync started/);
+  assert.match(logger.calls.info[1][0], /^Growatt automatic latest sync finished/);
+  assert.equal(logger.calls.info[1][1].result.rate_limited, false);
+});
+
+test('without timeoutMs the work is never aborted by SYNC_TIMEOUT', async () => {
+  const logger = recordingLogger();
+  let release;
+  const gate = new Promise(resolve => { release = resolve; });
+  const run = createScheduledSync({
+    name: 'history', label: 'Growatt', sync: () => gate.then(() => ({ failed_plants: 0 })), logger,
+  });
+  const pending = run();
+  await sleep(40);
+  assert.deepEqual(await run(), { skipped: true });
+  release();
+  assert.deepEqual(await pending, { failed_plants: 0 });
+  assert.equal(logger.calls.error.length, 0);
+});
+
