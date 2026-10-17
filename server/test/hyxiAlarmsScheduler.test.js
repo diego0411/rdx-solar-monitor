@@ -19,8 +19,12 @@ test('9: scheduler HYXi alarms registrado con createScheduledSync', () => {
 });
 
 test('10/11: intervalo 5 min con el ciclo de vida de los demás syncs HYXi', () => {
-  assert.match(source, /setInterval\(runSync, HYXI_SYNC_INTERVAL_MS\)/);
-  assert.match(source, /runHyxiAlarmsSync,\r?\n/);
+  // Tras el escalonamiento, alarms entra por schedulePeriodic con offset y
+  // conserva el intervalo de 5 min (sin depender de saltos de línea).
+  assert.match(source, /function schedulePeriodic\(run, offsetMs, intervalMs\)/);
+  assert.match(source, /setInterval\(run, intervalMs\)/);
+  assert.match(source, /schedulePeriodic\(runSync, offsetMs, HYXI_SYNC_INTERVAL_MS\)/);
+  assert.match(source, /\[\s*runHyxiAlarmsSync,\s*STAGGER_OFFSETS_MS\.hyxiAlarms\s*\]/);
   assert.match(source, /const HYXI_SYNC_INTERVAL_MS = 5 \* 60 \* 1000;/);
 });
 

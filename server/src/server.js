@@ -24,6 +24,28 @@ const GROWATT_LATEST_INTERVAL_MS = 5 * 60 * 1000;
 const GROWATT_HISTORY_SYNC_INTERVAL_MS = 30 * 60 * 1000;
 const HISTORY_ROLLUP_INTERVAL_MS = 6 * 60 * 60 * 1000;
 
+// Fases únicas módulo 300 s (MCM de los intervalos): ningún par de jobs
+// comparte segundo de tick. El setInterval se ancla tras el offset para que
+// el desfase inicial se conserve en cada ejecución posterior.
+const STAGGER_OFFSETS_MS = {
+  growattLatest: 30 * 1000,
+  hyxiPlants: 60 * 1000,
+  hyxiDevices: 90 * 1000,
+  hyxiRealtime: 120 * 1000,
+  hyxiEnergySummary: 150 * 1000,
+  hyxiAlarms: 180 * 1000,
+  hyxiHistory: 210 * 1000,
+  growattHistory: 240 * 1000,
+  historyRollups: 270 * 1000,
+};
+
+function schedulePeriodic(run, offsetMs, intervalMs) {
+  setTimeout(() => {
+    run();
+    setInterval(run, intervalMs);
+  }, offsetMs);
+}
+
 const runGrowattLatestSync = createScheduledSync({
   // Sin timeout: equivalente al lock 'skip' anterior. El wrapper aporta
   // inicio/fin con duration_ms, skip y el result (failed/rate_limited/...).
@@ -115,23 +137,18 @@ app.listen(env.PORT, () => {
   startAutomaticSchedulers(env.ENABLE_SCHEDULERS, () => {
     syncGrowattPlants().catch(() => {});
     startGrowattDiscoveryWorker();
-    runGrowattLatestSync();
-    setInterval(runGrowattLatestSync, GROWATT_LATEST_INTERVAL_MS);
-    runGrowattHistorySync();
-    setInterval(runGrowattHistorySync, GROWATT_HISTORY_SYNC_INTERVAL_MS);
-    for (const runSync of [
-      runHyxiPlantsSync,
-      runHyxiDevicesSync,
-      runHyxiRealtimeSync,
-      runHyxiEnergySummarySync,
-      runHyxiAlarmsSync,
+    schedulePeriodic(runGrowattLatestSync, STAGGER_OFFSETS_MS.growattLatest, GROWATT_LATEST_INTERVAL_MS);
+    schedulePeriodic(runGrowattHistorySync, STAGGER_OFFSETS_MS.growattHistory, GROWATT_HISTORY_SYNC_INTERVAL_MS);
+    for (const [runSync, offsetMs] of [
+      [runHyxiPlantsSync, STAGGER_OFFSETS_MS.hyxiPlants],
+      [runHyxiDevicesSync, STAGGER_OFFSETS_MS.hyxiDevices],
+      [runHyxiRealtimeSync, STAGGER_OFFSETS_MS.hyxiRealtime],
+      [runHyxiEnergySummarySync, STAGGER_OFFSETS_MS.hyxiEnergySummary],
+      [runHyxiAlarmsSync, STAGGER_OFFSETS_MS.hyxiAlarms],
     ]) {
-      void runSync();
-      setInterval(runSync, HYXI_SYNC_INTERVAL_MS);
+      schedulePeriodic(runSync, offsetMs, HYXI_SYNC_INTERVAL_MS);
     }
-    runHyxiHistorySync();
-    setInterval(runHyxiHistorySync, HYXI_HISTORY_SYNC_INTERVAL_MS);
-    void runHistoricalRollupsSync();
-    setInterval(runHistoricalRollupsSync, HISTORY_ROLLUP_INTERVAL_MS);
+    schedulePeriodic(runHyxiHistorySync, STAGGER_OFFSETS_MS.hyxiHistory, HYXI_HISTORY_SYNC_INTERVAL_MS);
+    schedulePeriodic(runHistoricalRollupsSync, STAGGER_OFFSETS_MS.historyRollups, HISTORY_ROLLUP_INTERVAL_MS);
   });
 });
